@@ -171,6 +171,14 @@ Two reasons to open it:
    and asserts identical verdicts.
 2. **Research material** — `../MAWOS/evaluation/` if a paper is ever wanted.
 
-**Do not copy MAWOS's data, documents or dependencies into this repo.** It is public and
-unlicensed and carries third-party personal data and a third-party dataset; see its
-`docs/OPEN_SOURCE_AUDIT.md`. Nothing from `ml/data/`, `MAWOS_Review1.*` or `psycopg` belongs here.
+**Do not copy MAWOS's data, documents or dependencies into this repo.** MAWOS is public but
+unlicensed by choice — this is the licensed, distributable project, and that one is a research
+archive. Nothing from `ml/data/`, its Review-1 material, or `psycopg` (LGPL-3.0) belongs here.
+
+Its `docs/OPEN_SOURCE_AUDIT.md` is worth reading once before adding *anything* third-party here,
+less for its findings than for what it got wrong: it called a public research dataset and a set
+of university roll numbers an "exposure" and repeated it until the word stopped meaning anything.
+Both were real issues — CC BY 4.0 data cannot be sublicensed under Apache 2.0, and other people's
+identifiers are not ours to publish — and neither was dangerous. **State severity as it actually
+is.** Over-flagging trains the reader to discount the next finding, which is the expensive
+failure. The same discipline the solver notes above demand of measurements applies to risks.
