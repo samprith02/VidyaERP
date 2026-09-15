@@ -1,0 +1,40 @@
+# Secrets. llm.py reads the provider credential from the process environment
+# first and falls back to .env; neither may ever be committed. Ship .env.example.
+.env
+.env.*
+!.env.example
+
+# The seeded database. NOT tracked on purpose.
+#
+# db.seed() rebuilds it on first import and the SEEDED DATA is reproducible:
+# db.py pins random.seed(20), and a fresh seed was verified table-by-table
+# against a previously shipped copy — departments, faculty, students, subjects,
+# rooms, timetable, leaves, requests, exams and placements all hash identically.
+#
+# The FILE is not byte-identical, for two reasons worth knowing before anyone
+# "fixes" this by committing it: SQLite page layout and freelist ordering are
+# not reproducible, and a database that ships in git also accumulates runtime
+# rows. The copy this rule replaced had five stray `audit` entries from someone
+# demoing the console, committed by accident. A 244 KB binary that changes on
+# every run produces unreadable diffs and merge conflicts nobody can resolve.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local scratch
+*.log
+/tmp/

@@ -1,0 +1,8 @@
+# VidyaERP runtime dependencies — deliberately two packages.
+#
+# There is no LLM SDK: llm.py speaks OpenAI-compatible HTTP over urllib, so any
+# provider works without a vendor library and nothing here needs upgrading when
+# a provider changes its client. Everything else is the Python standard library.
+
+fastapi>=0.115           # MIT
+uvicorn[standard]>=0.30  # BSD-3-Clause
