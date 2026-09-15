@@ -8,25 +8,10 @@ Config comes from .env (see .env.example).
 """
 import os, json, time, urllib.request, urllib.error
 
-ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-
-
-def load_env(path=ENV_PATH):
-    """Minimal .env loader — no python-dotenv dependency."""
-    if not os.path.exists(path):
-        return {}
-    out = {}
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            v = v.strip().strip('"').strip("'")
-            out[k.strip()] = v
-            if v:
-                os.environ.setdefault(k.strip(), v)
-    return out
+# The .env reader lives in db.py, not here, because db.py computes DB_PATH at
+# import time and is imported first — see load_env()'s docstring there. Still
+# re-exported under this name: it was llm.load_env() for as long as it existed.
+from db import ENV_PATH, load_env                                   # noqa: E402,F401
 
 
 class LLMConfig:
@@ -35,7 +20,13 @@ class LLMConfig:
 
     def reload(self):
         env = load_env()
-        g = lambda k, d="": (env.get(k) or os.environ.get(k) or d).strip()
+        # The real environment wins over .env, not the other way round. A
+        # platform (Render, Docker, systemd) configures a deployment through
+        # environment variables and has no .env file to edit; if a stale .env
+        # ever shipped inside an image it would silently shadow the dashboard
+        # and the operator would have no way to see why. `.env` is the fallback
+        # for local development, which is all it was ever meant to be.
+        g = lambda k, d="": (os.environ.get(k) or env.get(k) or d).strip()
         self.provider = g("LLM_PROVIDER", "openai-compatible")
         self.api_key = g("LLM_API_KEY")
         self.base_url = g("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")

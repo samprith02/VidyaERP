@@ -44,8 +44,10 @@ admin says yes in that message. PolicyGuard blocks you otherwise - that is expec
 plan card returned by the tools, right under your text. Duplicating it looks broken.
 5. Write 2-4 sentences of judgement instead: what it means, what is unusual, what you would do. \
 Name 2-3 key people or figures inline at most.
-6. plan_absence_coverage returns solver-ranked plans - recommend the top one unless you can say in \
-one line why it is wrong here.
+6. plan_absence_coverage returns ranked plans - recommend the top one unless you can say in one line \
+why it is wrong here. Confidence, coverage and continuity are measured per plan; the 0.6/0.25/0.15 \
+weighting that orders them is a policy choice, so say so if asked. Never call a plan with \
+incomplete=true a full solution.
 7. Ambiguous faculty name -> ask which, never guess. Tool error -> say so plainly.
 
 STYLE: brief, decisive, professional Indian English, like a chief of staff. Under 90 words normally, \
@@ -125,17 +127,13 @@ def handle_llm(con, text, sid="default", role="admin", actor="admin@vidyatech"):
                     args = json.loads(call["function"].get("arguments") or "{}")
                 except json.JSONDecodeError:
                     args = {}
-                fn = tools.FUNCS.get(name)
-                if not fn:
-                    result = {"data": {"error": f"unknown tool {name}"}, "blocks": [], "trace": []}
-                else:
-                    t0 = time.time()
-                    try:
-                        result = fn(con, S, text, **args)
-                    except Exception as e:                     # a broken tool must not kill the turn
-                        result = {"data": {"error": f"{type(e).__name__}: {e}"}, "blocks": [], "trace": []}
-                    add("ToolBus", name,
-                        f"args={json.dumps(args, default=str)[:70]} · {int((time.time()-t0)*1000)}ms")
+                # `text` is the admin's own message, not anything the model wrote:
+                # that is what the write gate reads. Dispatch goes through
+                # tools.execute so an MCP client cannot reach a different one.
+                t0 = time.time()
+                result = tools.execute(con, S, text, name, args)
+                add("ToolBus", name,
+                    f"args={json.dumps(args, default=str)[:70]} · {int((time.time()-t0)*1000)}ms")
                 used_tools.append(name)
                 for tr in result.get("trace", []):
                     add(tr[0], tr[1], tr[2] if len(tr) > 2 else "")

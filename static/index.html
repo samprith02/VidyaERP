@@ -165,6 +165,12 @@ tbody tr:hover td{background:#fafbfc}
 .chipx.swap{border-color:#d3c9f0;background:#f7f4ff;color:#624aa5}
 .chipx.makeup{border-color:#ead0ae;background:#fff8ef;color:#92500c}
 .chipx.unc{border-color:#edc3ca;background:#fff4f5;color:#a92c3d}
+.chipx.vacated{border-color:#d8dde6;background:#f6f7f9;color:#5b6675}
+/* the ranking is arguable on purpose: show the weights and the components */
+.wts{padding:7px 14px;border-bottom:1px solid var(--line);background:#fcfcfd;color:var(--dim);font-size:10.5px;line-height:1.55}
+.wts b{color:#3d4757;font-weight:650}
+.pol{display:block;color:#98a2b3;font-style:italic}
+.incomp{padding:8px 14px;border-bottom:1px solid var(--line);background:#fff8ef;color:#92500c;font-size:11px;line-height:1.5}
 .pc{display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:0 14px 12px;color:#667085;font-size:10.5px}
 .pc .h{font-size:9px;letter-spacing:.065em;text-transform:uppercase;color:#98a2b3;font-weight:700}
 .pc ul{margin:5px 0 0;padding-left:16px}.pc li{margin:2px 0}
@@ -535,7 +541,7 @@ function rNotice(b){
 function rPlans(b){
   return b.plans.map((p,i)=>{
     const legs=p.legs.map(l=>{
-      const cls={SUBSTITUTE:'sub',SWAP:'swap',MAKEUP:'makeup',UNCOVERED:'unc'}[l.action];
+      const cls={SUBSTITUTE:'sub',SWAP:'swap',MAKEUP:'makeup',UNCOVERED:'unc',VACATED:'vacated'}[l.action];
       return `<div class="leg"><div class="p">P${l.period}<br><small style="color:#54648f">${l.time}</small></div>
         <div class="act"><span class="chipx ${cls}">${l.action}</span></div>
         <div class="d"><b>${esc(l.class)}</b> · ${esc(l.subject)} ${esc(l.subject_name||'')}
@@ -551,6 +557,16 @@ function rPlans(b){
         <div class="metric"><div class="l">Continuity <span class="n">${p.continuity}</span></div>
           <div class="bar"><i style="width:${p.continuity}%"></i></div></div>
       </div>
+      ${p.weights?`<div class="wts">ranked <b>${p.rank}</b> =
+        ${p.weights.confidence}·confidence + ${p.weights.coverage}·coverage
+        + ${p.weights.continuity}·continuity
+        <span class="pol">weighting is a policy choice, not a measurement</span></div>`:''}
+      ${p.components?`<div class="wts">continuity measures —
+        syllabus hours preserved <b>${p.components.hours_preserved}%</b> ·
+        delivered by the subject's own teacher <b>${p.components.own_teacher}%</b> ·
+        timing intact <b>${p.components.timing_intact}%</b></div>`:''}
+      ${p.incomplete?`<div class="incomp">⚠ Incomplete — only <b>${p.coverage}%</b> of the affected
+        subject-hours have a concrete arrangement. Ranking it first would not make it whole.</div>`:''}
       <div class="pb"><div style="color:var(--mut);font-size:12.5px;margin-bottom:7px">${esc(p.summary)}</div>
         <div class="legs">${legs}</div></div>
       <div class="pc"><div style="flex:1"><div class="h">Upside</div><ul>${p.pros.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>
@@ -583,8 +599,12 @@ function rGrid(b){
         const o=c.override;
         const k=(c.kind||'T');
         const cls=o?'ovr':k==='L'?'lab':k==='A'?'act':'has';
-        h+=`<td><div class="cell ${cls}"><div class="s">${esc(c.subject)}</div>
-          <div class="f">${esc(o&&o.faculty?o.faculty:c.faculty)}</div>
+        // a VACATED period is released: the absent teacher must not be left
+        // standing against it, and a swapped-in subject shows what it replaced
+        const who=o&&o.released?'— released —':(o&&o.faculty?o.faculty:c.faculty);
+        const was=o&&o.was?` (was ${esc(o.was)})`:'';
+        h+=`<td><div class="cell ${cls}"><div class="s">${esc(c.subject)}${was}</div>
+          <div class="f">${esc(who)}</div>
           <div class="r">${esc(c.room)}${o?' · '+o.action:''}</div></div></td>`;
       }
       if(br[p]) h+=`<td class="brk"></td>`;

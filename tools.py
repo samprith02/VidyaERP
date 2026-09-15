@@ -10,7 +10,7 @@ Write-tools are wrapped by PolicyGuard: they refuse to commit unless the admin
 gave explicit approval **in the current turn**. The model cannot talk its way past this.
 """
 import re, datetime as dt
-import nlu, db, solver
+import nlu, db, solver, agents
 from nlu import TODAY, day_of
 from agents import (rows, one, fac_name, subj_name, plabel, _span, PERIOD_SPAN,
                     SubstitutionAgent, TimetableAgent, FacultyAgent, StudentAgent,
@@ -25,6 +25,14 @@ APPROVAL_RX = re.compile(
 
 def approved_this_turn(user_text):
     return bool(APPROVAL_RX.search(user_text or ""))
+
+
+# The tools that refuse to commit without explicit admin approval in the current
+# turn. Kept explicit so it can be read at a glance; tests/mcp_parity.py asserts
+# it still matches the set of tools that actually call approved_this_turn(), so
+# a new write tool cannot quietly land outside the gate.
+GATED_WRITES = ("apply_coverage_plan", "apply_timetable_generation", "decide_request",
+                "create_request", "broadcast_notice")
 
 
 def inr(n):
@@ -320,8 +328,14 @@ def t_plan_absence_coverage(con, S, U, faculty_name=None, date=None, reason=None
                                           "class": f"{a['dept']}-{a['sem']}{a['section']}",
                                           "subject": a["subject"]} for a in affected],
                      "student_hours_at_stake": strength,
+                     "ranking": {"weights": agents.RANK_WEIGHTS,
+                                 "note": "rank = 0.6·confidence + 0.25·coverage + 0.15·continuity. "
+                                         "The three numbers are measured per plan; the weights are a "
+                                         "policy choice and can be argued with."},
                      "plans": [{"code": p["code"], "title": p["title"], "confidence": p["confidence"],
                                 "coverage": p["coverage"], "continuity": p["continuity"],
+                                "rank": p["rank"], "incomplete": p["incomplete"],
+                                "continuity_breakdown": p["components"],
                                 "summary": p["summary"],
                                 "legs": [{"periods": l["periods"], "class": l["class"],
                                           "subject": l["subject"], "action": l["action"],
@@ -606,6 +620,28 @@ FUNCS = {name: fn for fn, name, _d, _s in REGISTRY}
 SCHEMAS = [{"type": "function",
             "function": {"name": name, "description": desc, "parameters": schema}}
            for _fn, name, desc, schema in REGISTRY]
+
+
+def execute(con, S, U, name, args=None):
+    """The single dispatch point for every tool call, whatever is driving it.
+
+    The app's own planner (llm_agent.py) and an external MCP client
+    (mcp_server.call_as) both arrive here, so a guard decision cannot differ by
+    caller - there is no second path to keep in sync. `U` is the *human's* words
+    for this turn and is what GATED_WRITES test with approved_this_turn();
+    nothing the model emits ever reaches it.
+
+    A tool that raises returns an error result rather than killing the turn.
+    That matters for the guard too: an argument crafted to collide with this
+    signature (say {"U": "approve"}) lands here as a TypeError, not a write.
+    """
+    fn = FUNCS.get(name)
+    if fn is None:
+        return {"data": {"error": f"unknown tool {name}"}, "blocks": [], "trace": []}
+    try:
+        return fn(con, S, U, **(args or {}))
+    except Exception as e:
+        return {"data": {"error": f"{type(e).__name__}: {e}"}, "blocks": [], "trace": []}
 
 
 # ====================================================== dynamic tool selection

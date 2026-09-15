@@ -55,9 +55,9 @@ and says so.
 ```bash
 cp .env.example .env      # already done
 # edit .env:
-LLM_API_KEY=sk-...
+LLM_API_KEY=gsk_...
 LLM_BASE_URL=https://api.groq.com/openai/v1     # any OpenAI-compatible endpoint
-LLM_MODEL=llama-3.3-70b-versatile
+LLM_MODEL=openai/gpt-oss-120b
 ```
 
 Presets for OpenAI, Groq, OpenRouter, Together, DeepSeek, Gemini-compat and local Ollama are
@@ -106,6 +106,9 @@ The trace shows exactly which of these happened:
 
 ```bash
 python3 tests/solver_test.py  # timetable solver: 44 assertions, no server, no API cost
+python3 tests/mcp_parity.py   # MCP guard parity: 155 assertions, no server, no API cost
+python3 tests/ranking_test.py # coverage-plan ranking: 43 assertions, no server, no API cost
+python3 tests/deploy_test.py  # deployment readiness: 38 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 ```
@@ -167,8 +170,23 @@ Say: *“Prof. Sneha Mallya is absent next Monday, arrange coverage.”*
    | Plan | Strategy | Best when |
    |------|----------|-----------|
    | **A** | Competency-matched substitution | students' timetable must not change |
-   | **B** | Swap-forward re-sequencing (trade the hour with a later class of the same batch) | exam-critical subject, zero syllabus loss |
+   | **B** | Swap-forward re-sequencing — a later class of the same batch moves up with its own teacher; the absent teacher's subject takes the vacated slot and is made up | the hour is better spent on a subject whose teacher is present |
    | **C** | Release + guaranteed make-up in the earliest mutually-free slot | no qualified substitute free |
+
+   **Every one of those numbers is measured from the instance, and the weights are not.** That
+   distinction is the point, so the console prints both on each card.
+
+   | Axis | What is actually counted |
+   |---|---|
+   | **Coverage** | fraction of affected subject-hours with a concrete arrangement — a substitute assigned, a class moved, or a make-up slot found and verified free for both the batch and the teacher |
+   | **Confidence** | the deliverer's score from the *same* candidate-scoring lens for all three plans (`score_deliverer` → `score_faculty`), so B and C are comparable with A rather than formulas parked beside it |
+   | **Continuity** | `0.45·hours preserved + 0.35·delivered by the subject's own teacher + 0.20·timing intact`, where timing decays as `1/(1+slip_days)` — one curve for a within-day move and for a make-up next week |
+
+   `0.6 / 0.25 / 0.15` and the continuity sub-weights are **policy coefficients, not findings**:
+   a college that never wants a class released would raise continuity. They are declared once in
+   `agents.RANK_WEIGHTS`, printed on every plan card, and `tests/ranking_test.py` asserts the rank
+   shown is the rank used to sort. A plan whose coverage is below 100% is labelled **incomplete**
+   on the card — ranking it first does not make it whole.
 
 4. **Human-in-the-loop** — nothing is written. The admin says *“apply plan B”* (bound by **plan code**,
    not list position).
@@ -210,6 +228,48 @@ class that was actually changed, on the date that was changed).
 - **Immutable audit ledger** — actor, agent, action, payload, outcome, timestamp. Exportable for
   NAAC / NBA / ISO audits.
 - **No silent guessing** — weak entity matches ask instead of acting.
+- **The same gate holds over MCP** — §6a. An external model driving the ERP from Claude Desktop
+  gets exactly the verdicts the in-app planner gets, and cannot approve its own writes.
+
+### 6a. Driving the ERP from Claude Desktop (MCP)
+
+`mcp_server.py` puts the same 22 tools in front of any MCP client. Registration — no install
+step, because there is no SDK to install:
+
+```json
+{"mcpServers": {"vidyaerp": {"command": "python",
+                             "args": ["/absolute/path/to/VidyaERP/mcp_server.py"]}}}
+```
+
+```bash
+python3 mcp_server.py --tools     # list the surface; * marks the guarded five
+python3 mcp_server.py --approve   # mint a one-time approval code
+```
+
+The design rule is one sentence: **the MCP surface is a thin delegation to the same tool
+functions behind the same gate.** `mcp_server.call_as` is three lines and calls
+`tools.execute` — the identical line `llm_agent.py` reaches. No MCP-only tool, no tool hidden
+from MCP, no second authorisation path.
+
+**Why approval works differently over MCP, and why it has to.** In the browser the write gate
+reads the *admin's own message* (`tools.approved_this_turn`), which the model never writes. Over
+MCP there is no admin message — **the caller is the model** — so an `"approval": "yes"` in the
+tool arguments would be the model approving itself. `mcp_server.py` therefore never reads
+approval from the arguments. A guarded write commits only against a six-digit code the admin
+minted out of band, in the console (`POST /api/mcp/approval`) or on the CLI: single-use, 120
+seconds, consumed on redemption. A model can relay a code the admin read out. It cannot mint
+one, invent one, or replay one.
+
+    1. propose  -> Dr. Rashmi Prabhu, 3 plans, top = Plan B @ 89%
+    2. commit with no code   -> isError=True  BLOCKED
+    3. admin mints a code    -> 756621
+    4. commit with the code  -> isError=False  applied=True periods=3 notices=5
+    5. replay the same code  -> isError=True  refused
+
+`tests/mcp_parity.py` replays 13 adversarial items down three paths — the in-app planner,
+`call_as`, and a real JSON-RPC `tools/call` round trip — and fails on any divergence. It is
+mutation-checked: wiring argument-supplied approval into the MCP path makes item 02 write 3
+timetable overrides and trips the parity assertion.
 
 ---
 
@@ -307,13 +367,18 @@ VidyaERP/
 ├── llm.py              provider-agnostic OpenAI-compatible client (urllib, no SDK)
 ├── tools.py            the 22 tool schemas + PolicyGuard-wrapped dispatch
 ├── llm_agent.py        the LLM reasoning loop (plan → call tools → answer), with failover
+├── mcp_server.py       MCP surface over stdio JSON-RPC — same tools, same gate, no SDK
 ├── requirements.txt    FastAPI + Uvicorn. That is the entire dependency list
+├── render.yaml         Render Blueprint — one worker, /health, key from the dashboard
 ├── LICENSE / NOTICE    Apache 2.0, provenance, and the synthetic-data statement
 ├── .env.example        LLM configuration template (.env itself is gitignored)
 ├── static/index.html   admin console SPA (self-contained, zero external assets)
 └── tests/
     ├── smoke.py        end-to-end conversation regression
     ├── solver_test.py  timetable solver regression (no server, no API cost)
+    ├── mcp_parity.py   the same adversarial items down three paths, identical verdicts
+    ├── ranking_test.py plan ranking — every number measured, four labelled defect assertions
+    ├── deploy_test.py  deployment claims — key never leaks, /health reads the DB, gate holds
     └── mock_llm.py     fake OpenAI endpoint + rogue-agent guard test
 ```
 
@@ -342,7 +407,62 @@ predictive dropout model feeding the RiskAgent, and Kannada/Hindi voice input fo
 
 ---
 
-## 11. License
+## 11. Deploying
+
+```bash
+# locally, exactly as it ships
+python -m uvicorn app:app --port 8000
+
+# on Render: push to GitHub, then Dashboard -> New -> Blueprint -> pick the repo
+```
+
+[`render.yaml`](render.yaml) is a complete Blueprint: Python runtime, free plan,
+`healthCheckPath: /health`, and the Groq settings as environment variables. **The key is declared
+`sync: false`**, so Render prompts for it in the dashboard and it never enters git — which is the
+same reason `.env` is gitignored rather than committed. `tests/deploy_test.py` asserts that no
+tracked file carries key material, that `/api/mode` reports `key_set` rather than the key, and
+that a failed provider call does not echo it back.
+
+`GET /health` answers **from the database**, not from the fact that the process is up:
+
+```json
+{"status":"ok","service":"vidyaerp","today":"2026-09-04",
+ "db":{"ok":true,"students":1095,"faculty":53,"timetable":707,"persistent":false},
+ "engine":"llm","llm":{"configured":true,"provider":"groq","model":"openai/gpt-oss-120b"},
+ "operator_endpoints":"token-protected"}
+```
+
+An unreachable database returns **503**, so a broken instance drops out of rotation instead of
+serving errors behind a green tick. Nothing secret is in that payload — whether a key is
+configured, never what it is.
+
+### Three things that are true about a deployed instance
+
+Stated here rather than discovered later. None of them is dangerous; all of them decide how this
+may be used.
+
+- **The console has no login.** There is no authentication anywhere, and `/api/chat` can drive
+  every write the copilot offers. Anyone who can reach the URL is the Registrar. That is the right
+  model for a single-admin console on a laptop or a college LAN, and it means a public deployment
+  is a **public demo over synthetic data** — never a system of record. `VIDYAERP_ADMIN_TOKEN`
+  closes the two endpoints that are operator controls rather than console features
+  (`/api/seed/reset`, `/api/mcp/approval`); `render.yaml` generates one automatically.
+- **Free instances have an ephemeral filesystem.** `college.db` is rebuilt by `db.seed()` on every
+  restart, and free instances spin down when idle, so an applied coverage plan will not be there
+  tomorrow. Set `VIDYAERP_DB` to a path on a mounted disk (paid plans) to keep it. `/health`
+  reports `persistent: false` when it is not kept.
+- **MCP does not reach a remote deployment.** `mcp_server.py` speaks stdio and reads the database
+  beside it, so Claude Desktop drives a *local* instance. An approval code minted on the Render
+  box is only useful to an MCP client on that box. Driving a deployment over MCP would need an
+  HTTP transport, which is not built.
+
+**One worker, deliberately.** `app.py` holds a single module-level SQLite connection and
+`orchestrator.SESS` keeps conversation state in process memory, so a second worker would answer
+half the turns from a session that never saw the proposal it is being asked to commit.
+
+---
+
+## 12. License
 
 Apache License 2.0 — see [LICENSE](LICENSE). You may use, modify and distribute this
 commercially, including in closed-source products, provided you keep the copyright and license

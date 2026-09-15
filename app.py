@@ -1,10 +1,25 @@
-"""VidyaERP :: FastAPI application"""
+"""VidyaERP :: FastAPI application
+
+Deployment note, stated plainly because it decides how this may be used:
+**the console has no authentication.** There is no login, and /api/chat can
+drive every write the copilot offers. Anyone who can reach the URL is the
+Registrar. That is correct for a single-admin console on a laptop or a college
+LAN, and it is the whole security model — a public deployment is a public demo
+over synthetic data, nothing more.
+
+VIDYAERP_ADMIN_TOKEN gates the two endpoints that are NOT console features:
+/api/seed/reset (wipes and rebuilds the database) and /api/mcp/approval (mints
+the human half of the MCP write gate). Those are out-of-band operator controls,
+so leaving them open on a public URL would contradict a claim the project makes
+about itself. Unset, they stay open, which is what keeps `git clone && uvicorn`
+working with no configuration.
+"""
 import os, json, datetime as dt
-from fastapi import FastAPI, Body
+from fastapi import FastAPI, Body, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-import db, orchestrator as orch, llm, llm_agent, solver
+import db, orchestrator as orch, llm, llm_agent, solver, mcp_server
 from agents import (rows, one, fac_name, PERIOD_TIME, TimetableAgent, AnalyticsAgent,
                     RequestAgent, Auditor)
 from nlu import TODAY, DAYS, day_of
@@ -14,6 +29,52 @@ db.seed()
 con = db.connect()
 
 app = FastAPI(title="VidyaERP", docs_url="/api/docs")
+
+ADMIN_TOKEN = (os.environ.get("VIDYAERP_ADMIN_TOKEN") or "").strip()
+
+
+def _denied(request):
+    """None if the caller may use an operator endpoint, else a 401 response."""
+    if not ADMIN_TOKEN:
+        return None                      # unset: local development, stays open
+    if request.headers.get("X-Admin-Token", "") == ADMIN_TOKEN:
+        return None
+    return JSONResponse({"error": "operator endpoint — send the X-Admin-Token header"},
+                        status_code=401)
+
+
+@app.get("/health")
+def health():
+    """Liveness and readiness, for the platform health check and for a human.
+
+    It answers from the database, not from the fact that the process is up: a
+    health check that passes while the data layer is unreachable is worse than
+    no health check, because it keeps a broken instance in rotation.
+
+    Nothing secret is returned. Whether a key is configured, never what it is.
+    """
+    try:
+        counts = {t: one(con, f"SELECT COUNT(*) c FROM {t}")["c"]
+                  for t in ("students", "faculty", "timetable")}
+        ok = all(counts.values())
+    except Exception as e:
+        return JSONResponse({"status": "unhealthy", "service": "vidyaerp",
+                             "db": {"ok": False, "error": f"{type(e).__name__}: {e}"}},
+                            status_code=503)
+    cfg = llm.CFG.reload()
+    return JSONResponse({
+        "status": "ok" if ok else "unhealthy",
+        "service": "vidyaerp",
+        "today": TODAY.isoformat(),
+        "db": {"ok": ok, **counts,
+               "path": os.path.basename(db.DB_PATH),
+               # A default filesystem is ephemeral on most platforms: the data
+               # re-seeds on restart and applied overrides do not survive.
+               "persistent": bool((os.environ.get("VIDYAERP_DB") or "").strip())},
+        "engine": "llm" if cfg.enabled else "rule-engine",
+        "llm": {"configured": cfg.enabled, "provider": cfg.provider, "model": cfg.model},
+        "operator_endpoints": "token-protected" if ADMIN_TOKEN else "open",
+    }, status_code=200 if ok else 503)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -56,6 +117,25 @@ def mode_test():
 def reset(payload: dict = Body(default={})):
     orch.SESS.pop(payload.get("session", "default"), None)
     return {"ok": True}
+
+
+@app.post("/api/mcp/approval")
+def mcp_approval(request: Request, payload: dict = Body(default={})):
+    """Mint a one-time code that lets an MCP client commit ONE guarded write.
+
+    This is the human half of the write gate. In the browser the admin's own
+    message is the approval and the model cannot forge it; over MCP there is no
+    such message, so the admin mints a code here and reads it out. A model can
+    relay a code, never mint one - which is why this endpoint exists on the
+    console and not on the MCP surface.
+
+    Operator endpoint: minting write approvals from an open URL would hand the
+    gate to whoever found it, so VIDYAERP_ADMIN_TOKEN protects it in any
+    deployment. Note also that the MCP server is stdio and reads the database
+    beside it, so a code minted here is only useful to an MCP client running
+    against this same instance - see the MCP section of the README.
+    """
+    return _denied(request) or mcp_server.mint_approval(con, payload.get("actor", "admin@vidyatech"))
 
 
 @app.get("/api/kpis")
@@ -222,7 +302,11 @@ def exams():
 
 
 @app.post("/api/seed/reset")
-def reseed():
+def reseed(request: Request):
+    """Operator endpoint: drops every table and rebuilds the synthetic college."""
+    d = _denied(request)
+    if d:
+        return d
     global con
     con.close()
     db.seed(force=True)

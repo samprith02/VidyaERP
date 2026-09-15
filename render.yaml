@@ -1,0 +1,97 @@
+# VidyaERP on Render — Blueprint (Infrastructure as Code).
+#
+#   1. Push this repo to GitHub.
+#   2. Render Dashboard -> New -> Blueprint -> pick the repo.
+#   3. Render prompts for LLM_API_KEY (sync: false). Paste the Groq key there.
+#      It is stored by Render and never enters git — that is the whole point of
+#      `sync: false`, and it is why .env is gitignored rather than committed.
+#
+# Nothing else needs configuring. With no key the app still runs: db.seed()
+# builds the institution on first import and the deterministic rule engine
+# answers every query offline. The key only switches the copilot to the LLM
+# agent, behind the same guardrails.
+#
+# Two things about this deployment that are true and worth knowing before you
+# send anyone the URL:
+#
+#   * THE CONSOLE HAS NO LOGIN. Anyone who can reach the URL is the Registrar
+#     and can drive every write the copilot offers. The data is entirely
+#     synthetic, so the blast radius is a fake college's timetable — but treat
+#     the deployment as a public demo, never as a system of record.
+#   * FREE INSTANCES HAVE AN EPHEMERAL FILESYSTEM. college.db is rebuilt from
+#     db.seed() on every restart, and free instances spin down when idle. A
+#     coverage plan applied on Monday will not be there on Tuesday. Uncomment
+#     the `disk:` block below (paid plans only) to keep it.
+
+services:
+  - type: web
+    name: vidyaerp
+    runtime: python
+    plan: free
+    region: singapore                 # closest Render region to Indian users
+    buildCommand: pip install -r requirements.txt
+
+    # ONE worker, deliberately. `app.py` holds a single module-level SQLite
+    # connection and orchestrator.SESS keeps conversation state in process
+    # memory; a second worker would answer half the turns from a session that
+    # never saw the proposal it is being asked to commit.
+    startCommand: python -m uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1
+
+    healthCheckPath: /health          # answers from the database, not just the process
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+
+      # The console carries '·' separators and typographic quotes. Without
+      # this, a traceback printed on a cp1252 console raises inside the
+      # exception handler and hides the real error.
+      - key: PYTHONIOENCODING
+        value: utf-8
+
+      # Protects /api/seed/reset and /api/mcp/approval — the two endpoints that
+      # are operator controls rather than console features. Render generates
+      # and stores the value; read it from the dashboard when you need it.
+      - key: VIDYAERP_ADMIN_TOKEN
+        generateValue: true
+
+      # ---- LLM: any OpenAI-compatible endpoint. Groq by default. ----
+      - key: LLM_API_KEY
+        sync: false                   # prompted for in the dashboard, never in git
+      - key: LLM_PROVIDER
+        value: groq
+      - key: LLM_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: LLM_MODEL
+        value: openai/gpt-oss-120b
+      # Groq meters per model, so a fallback chain multiplies usable throughput
+      # instead of dropping the admin onto the rule engine mid-conversation.
+      #
+      # Every id here must still be served AND support tool calling — the agent
+      # loop is nothing but tool calls, so a chat-only model (groq/compound-mini,
+      # for one) answers HTTP 400 "tool calling is not supported" and burns the
+      # hop. llama-3.3-70b-versatile sat in this slot until it was retired,
+      # which turned the last hop into a dead end that exhausted the chain into
+      # the rule engine under exactly the rate-limit pressure it exists to
+      # absorb. Confirm against console.groq.com/docs/models before editing.
+      - key: LLM_FALLBACK_MODELS
+        value: openai/gpt-oss-20b,qwen/qwen3.8-27b
+      - key: LLM_TEMPERATURE
+        value: "0.35"
+      - key: LLM_MAX_TOKENS
+        value: "1400"
+      - key: LLM_TIMEOUT
+        value: "60"
+
+    # ---- Persistence (paid plans only; free instances cannot mount a disk) ----
+    # Uncomment BOTH this block and the VIDYAERP_DB variable to keep applied
+    # overrides, notifications and the audit ledger across deploys.
+    #
+    # disk:
+    #   name: vidyaerp-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
+    #
+    # and add to envVars:
+    #   - key: VIDYAERP_DB
+    #     value: /var/data/college.db

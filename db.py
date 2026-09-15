@@ -14,7 +14,46 @@ Timetable rules enforced by the generator (this is how real colleges actually ru
 """
 import os, sqlite3, random, itertools, datetime as dt
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "college.db")
+ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+
+
+def load_env(path=ENV_PATH):
+    """Minimal .env loader — no python-dotenv dependency.
+
+    It lives HERE, in the lowest module, rather than in llm.py where it began,
+    because DB_PATH below is computed at import time: `app.py` imports db before
+    llm, and `mcp_server.py` never imported llm at all, so a VIDYAERP_DB set in
+    .env was silently ignored by both. Worse than ignored — had one entry point
+    honoured it and the other not, the console and the MCP server would open
+    different databases, and an approval code minted in one would be invisible
+    to the other. Read the file before anything reads a setting out of it.
+
+    setdefault, never overwrite: a real environment variable always wins.
+    """
+    if not os.path.exists(path):
+        return {}
+    out = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            v = v.strip().strip('"').strip("'")
+            out[k.strip()] = v
+            if v:
+                os.environ.setdefault(k.strip(), v)
+    return out
+
+
+load_env()
+
+# Beside the code by default, which is what makes `git clone && uvicorn` work
+# with no configuration. VIDYAERP_DB moves it — point it at a mounted disk to
+# survive a redeploy, because a platform's default filesystem is ephemeral and
+# every applied override would otherwise vanish on the next restart.
+DB_PATH = (os.environ.get("VIDYAERP_DB") or "").strip() or \
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "college.db")
 random.seed(20)
 
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -144,6 +183,9 @@ FAC_COUNT = {"CSE": 15, "ISE": 9, "ECE": 13, "MECH": 8, "CIVIL": 8}
 
 
 def connect():
+    d = os.path.dirname(os.path.abspath(DB_PATH))
+    if d and not os.path.isdir(d):
+        os.makedirs(d, exist_ok=True)      # a disk mount point may not exist yet
     con = sqlite3.connect(DB_PATH, check_same_thread=False)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys=ON")
