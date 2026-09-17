@@ -40,6 +40,14 @@ import shutil
 import sys
 import tempfile
 
+# The failure path prints U+2718, and Windows encodes a piped stdout as cp1252
+# by default - which turns a FAILING run into a UnicodeEncodeError traceback
+# instead of the name of the assertion that failed. Exit codes were always
+# right, so CI never noticed; the person debugging locally got the wrong error
+# at the worst moment. errors="replace" so an exotic console degrades to '?'
+# rather than taking the suite down on its way to reporting a failure.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db                                                          # noqa: E402

@@ -153,8 +153,16 @@ ships a timetable back.
   — SQLite page layout is not reproducible, and a tracked DB accumulates runtime rows. The copy
   this replaced had five stray `audit` entries committed by accident. Do not commit it.
 - **`tests/smoke.py` hardcodes port 8000** and needs the server already running.
-- Set `PYTHONIOENCODING=utf-8` when a test prints the trace, or the Windows console throws on the
-  `→` characters.
+- **The no-server suites set their own stdout encoding; the two server/LLM ones do not.**
+  `mcp_parity`, `ranking_test` and `deploy_test` call
+  `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` before they print anything, because
+  Windows encodes a piped stdout as cp1252 and their failure path prints `✘` (U+2718) — which
+  replaced the name of the failed assertion with a `UnicodeEncodeError` traceback at exactly the
+  moment you needed it. Exit codes were always right, so CI never noticed; only the human
+  debugging did. `solver_test` is ASCII-only and needs nothing.
+  **`smoke.py` and `live_llm.py` still need `PYTHONIOENCODING=utf-8`** — they print `→`, `✔` and
+  `✘` on the *success* path, so they throw on every run rather than only a failing one. Same
+  one-line fix if it ever becomes worth it.
 
 ---
 
