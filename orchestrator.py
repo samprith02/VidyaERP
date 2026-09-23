@@ -135,7 +135,11 @@ def resolve_pending(con, text, st, tr, actor):
         letter = re.search(r"\b(?:plan|option)?\s*\b([abc])\b", text.lower())
         plan = None
         if letter:
-            plan = next((x for x in p["plans"] if x["code"] == letter.group(1).upper()), None)
+            want = letter.group(1).upper()
+            # ...including a letter whose plan was folded into another because
+            # the two would commit identical rows (see commit_signature).
+            plan = next((x for x in p["plans"]
+                         if want == x["code"] or want in x.get("also_commits", [])), None)
         if plan is None:
             idx = min(choice if choice is not None else 0, len(p["plans"]) - 1)
             plan = p["plans"][idx]

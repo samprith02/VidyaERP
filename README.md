@@ -107,8 +107,8 @@ The trace shows exactly which of these happened:
 ```bash
 python3 tests/solver_test.py  # timetable solver: 44 assertions, no server, no API cost
 python3 tests/mcp_parity.py   # MCP guard parity: 155 assertions, no server, no API cost
-python3 tests/ranking_test.py # coverage-plan ranking: 43 assertions, no server, no API cost
-python3 tests/deploy_test.py  # deployment readiness: 38 assertions, no server, no API cost
+python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
+python3 tests/deploy_test.py  # deployment readiness: 53 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 ```
@@ -165,7 +165,7 @@ Say: *“Prof. Sneha Mallya is absent next Monday, arrange coverage.”*
    - **Soft scoring:** already teaches the same subject to another section (+46), subject in
      expertise profile (+24), same department (+14), free head-room (up to +16), fairness penalty
      for a second adjustment the same day (−9), professors de-prioritised for adjustments (−4).
-3. **Three strategies generated, then re-ranked** by `0.6·confidence + 0.25·coverage + 0.15·continuity`:
+3. **Three strategies generated, then re-ranked** by `0.8·confidence + 0.2·continuity`:
 
    | Plan | Strategy | Best when |
    |------|----------|-----------|
@@ -178,15 +178,32 @@ Say: *“Prof. Sneha Mallya is absent next Monday, arrange coverage.”*
 
    | Axis | What is actually counted |
    |---|---|
-   | **Coverage** | fraction of affected subject-hours with a concrete arrangement — a substitute assigned, a class moved, or a make-up slot found and verified free for both the batch and the teacher |
+   | **Coverage** | fraction of affected subject-hours with a concrete arrangement. A **feasibility floor, not a ranking axis** — see below |
    | **Confidence** | the deliverer's score from the *same* candidate-scoring lens for all three plans (`score_deliverer` → `score_faculty`), so B and C are comparable with A rather than formulas parked beside it |
    | **Continuity** | `0.45·hours preserved + 0.35·delivered by the subject's own teacher + 0.20·timing intact`, where timing decays as `1/(1+slip_days)` — one curve for a within-day move and for a make-up next week |
 
-   `0.6 / 0.25 / 0.15` and the continuity sub-weights are **policy coefficients, not findings**:
-   a college that never wants a class released would raise continuity. They are declared once in
+   `0.8 / 0.2` and the continuity sub-weights are **policy coefficients, not findings**: a college
+   that never wants a class released would raise continuity. They are declared once in
    `agents.RANK_WEIGHTS`, printed on every plan card, and `tests/ranking_test.py` asserts the rank
-   shown is the rank used to sort. A plan whose coverage is below 100% is labelled **incomplete**
-   on the card — ranking it first does not make it whole.
+   shown is the rank used to sort — including a **documented tie-break** (rank, then continuity,
+   then coverage, then plan code), so an order an administrator acts on never depends on dict
+   insertion order.
+
+   **Coverage carries 0 of the ranking weight, and that is a measurement.** It was worth 0.25 and
+   had never moved an ordering. Two ways of checking: under normal load all 813 plans across every
+   faculty × working day score 100%, so the term added a constant 25 to every rank (0 of 271
+   absences reorder when it is deleted at the same coefficients); and under total scarcity an
+   uncoverable plan scores **0 on confidence and continuity as well**, because an arrangement that
+   does not exist scores zero on every axis. It is collinear by construction, so a case where it
+   discriminates cannot be built. It is still measured and still shown, as the **incomplete** flag
+   — a plan that cannot arrange every hour must look incomplete whatever it scores.
+
+   **Two plans that would commit the same rows are one option.** When no period can be
+   re-sequenced, Plan B falls back to substitution and picks the same candidates as Plan A —
+   measured, 90 of 271 absences, a third of them — producing two byte-identical cards at an exact
+   rank tie, which made "recommended" arbitrary. They are folded by *committed effect*
+   (`commit_signature`), and the surviving card names what it subsumed. Applying by the folded
+   letter still works.
 
 4. **Human-in-the-loop** — nothing is written. The admin says *“apply plan B”* (bound by **plan code**,
    not list position).

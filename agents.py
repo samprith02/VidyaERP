@@ -110,7 +110,24 @@ class PolicyGuard:
 # sort key.
 #
 # What IS measured is everything they are applied to: see score_plan().
-RANK_WEIGHTS = {"confidence": 0.60, "coverage": 0.25, "continuity": 0.15}
+#
+# Coverage used to sit here at 0.25 and it has been removed, because it could
+# not change an ordering. Measured two ways:
+#   * normal load - 813 plans across every faculty x every working day all score
+#     100% coverage, so the term added a constant 25 to every rank: 0 of 271
+#     absences reordered when it was deleted at the same coefficients;
+#   * total scarcity - with every other teacher on leave, plan A collapses to
+#     confidence 0 AND continuity 0 as well as coverage 0, because score_leg()
+#     returns zero on every axis for an arrangement that does not exist. So the
+#     ordering is unchanged there too.
+# That is collinearity by construction, not a property of the seeded data: a
+# case where the term discriminates cannot be built. Coverage is still measured
+# and still shown, as a FEASIBILITY FLOOR (`incomplete`) rather than as a
+# ranking axis. Advertising 25% of a ranking to a number that has never moved
+# one is the kind of claim that trains a reader to discount the next one.
+# The surviving 0.80 / 0.20 is the old 0.60 / 0.15 renormalised - the same
+# policy about confidence versus continuity, with the dead term taken out.
+RANK_WEIGHTS = {"confidence": 0.80, "continuity": 0.20}
 
 # Continuity is three measured things about the batch's learning thread:
 #   hours   - does this subject's contact hour happen at all?
@@ -397,6 +414,17 @@ class SubstitutionAgent:
                 "hours": hours, "teacher": teacher, "timing": timing,
                 "arrangements": len(parts)}
 
+    @staticmethod
+    def commit_signature(legs):
+        """Exactly what this plan would write, and nothing about how it is sold.
+
+        Two plans with the same signature commit the same override rows, so they
+        are one option however differently their cards are titled.
+        """
+        return tuple((l["action"], l.get("to_id"), tuple(l.get("periods") or [l["period"]]),
+                      l.get("swap_with"), (l.get("makeup") or {}).get("date"))
+                     for l in legs)
+
     def score_plan(self, con, legs, absent, date):
         """Plan-level score: the mean of its legs on each axis, plus the
         rank the policy weights give it. Nothing here is per-strategy."""
@@ -411,8 +439,8 @@ class SubstitutionAgent:
                 "components": {"hours_preserved": round(100 * mean("hours")),
                                "own_teacher": round(100 * mean("teacher")),
                                "timing_intact": round(100 * mean("timing"))},
+                # Coverage is deliberately NOT in here - see RANK_WEIGHTS.
                 "rank": round(conf * RANK_WEIGHTS["confidence"]
-                              + cov * RANK_WEIGHTS["coverage"]
                               + cont * RANK_WEIGHTS["continuity"], 2)}
 
     # ---------------------------------------------------------- main
@@ -567,7 +595,47 @@ class SubstitutionAgent:
             p.update(self.score_plan(con, p["legs"], faculty, date))
             p["weights"] = dict(RANK_WEIGHTS)
             p["incomplete"] = p["coverage"] < 100
-        plans.sort(key=lambda p: -p["rank"])
+            p["duplicate_of"] = None
+            p["also_commits"] = []
+
+        # ---- two plans that would commit the same rows are ONE option -------
+        # When no period can be re-sequenced, plan B falls back to substitution
+        # and picks the same candidates plan A did, so it IS plan A under a
+        # different title. Measured on the seeded college: 90 of 271 absences,
+        # a third of them, and every single one produced an exact rank tie that
+        # made "recommended" arbitrary between two identical cards. A tie-break
+        # would have hidden that rather than fixed it. Keep the first in A-B-C
+        # order and record what it subsumes.
+        kept, by_effect = [], {}
+        for p in plans:
+            sig = self.commit_signature(p["legs"])
+            if sig in by_effect:
+                first = by_effect[sig]
+                first["also_commits"].append(p["code"])
+                p["duplicate_of"] = first["code"]
+                continue
+            by_effect[sig] = p
+            kept.append(p)
+        for p in kept:
+            if p["also_commits"]:
+                others = ", ".join(p["also_commits"])
+                p["summary"] += (f" Plan {others} would commit exactly this, so it is not offered "
+                                 f"separately.")
+        plans = kept
+
+        # Ranked by the published weights. The rest of the key is a DOCUMENTED
+        # tie-break, not an accident of sort order: prefer the plan that keeps
+        # the batch's learning thread most intact, then the one with a concrete
+        # arrangement for more of the hours, then A before B before C. Ordering
+        # an administrator acts on should never depend on dict insertion order.
+        plans.sort(key=lambda p: (-p["rank"], -p["continuity"], -p["coverage"], p["code"]))
+
+        # Coverage is a feasibility FLOOR, not a ranking axis — see RANK_WEIGHTS
+        # for the measurement that took it out of the formula. It is still worth
+        # showing: a plan that cannot arrange every hour must be visibly
+        # incomplete, whatever it scores.
+        for p in plans:
+            p["coverage_is_floor"] = True
 
         n_fac = one(con, "SELECT COUNT(*) c FROM faculty")["c"]
         trace.add(self.name, "constraint_solve",
@@ -583,8 +651,8 @@ class SubstitutionAgent:
                   " · ".join(f"{p['code']} rank {p['rank']} "
                              f"(conf {p['confidence']} cov {p['coverage']} cont {p['continuity']})"
                              for p in plans)
-                  + f" · weights {RANK_WEIGHTS['confidence']}/{RANK_WEIGHTS['coverage']}"
-                    f"/{RANK_WEIGHTS['continuity']}")
+                  + f" · weights {RANK_WEIGHTS['confidence']}/{RANK_WEIGHTS['continuity']}"
+                    f" (conf/cont) · coverage is a floor, not a rank axis")
         return plans, affected
 
     # ---------------------------------------------------------- commit

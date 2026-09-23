@@ -552,15 +552,21 @@ function rPlans(b){
       <div class="metrics">
         <div class="metric g"><div class="l">Confidence <span class="n">${p.confidence}%</span></div>
           <div class="bar"><i style="width:${p.confidence}%"></i></div></div>
-        <div class="metric"><div class="l">Coverage <span class="n">${p.coverage}%</span></div>
+        <div class="metric"><div class="l">Coverage${p.coverage_is_floor?' <small style="color:#98a2b3">(floor)</small>':''}
+          <span class="n">${p.coverage}%</span></div>
           <div class="bar"><i style="width:${p.coverage}%"></i></div></div>
         <div class="metric"><div class="l">Continuity <span class="n">${p.continuity}</span></div>
           <div class="bar"><i style="width:${p.continuity}%"></i></div></div>
       </div>
       ${p.weights?`<div class="wts">ranked <b>${p.rank}</b> =
-        ${p.weights.confidence}·confidence + ${p.weights.coverage}·coverage
-        + ${p.weights.continuity}·continuity
-        <span class="pol">weighting is a policy choice, not a measurement</span></div>`:''}
+        ${p.weights.confidence}·confidence + ${p.weights.continuity}·continuity
+        <span class="pol">weighting is a policy choice, not a measurement${
+          p.coverage_is_floor
+            ? ' · coverage is a feasibility floor, not a ranking axis: it has never changed an ordering, because an hour nobody can take scores zero on the other two axes as well'
+            : ''}</span></div>`:''}
+      ${p.also_commits&&p.also_commits.length?`<div class="wts">Plan
+        ${p.also_commits.join(', ')} would commit exactly these same changes and
+        ${p.also_commits.length>1?'are':'is'} not offered separately.</div>`:''}
       ${p.components?`<div class="wts">continuity measures —
         syllabus hours preserved <b>${p.components.hours_preserved}%</b> ·
         delivered by the subject's own teacher <b>${p.components.own_teacher}%</b> ·

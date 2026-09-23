@@ -138,10 +138,9 @@ worst = 0.0
 for _f, ps, _a in SAMPLE:
     for p in ps:
         expect = (p["confidence"] * RANK_WEIGHTS["confidence"]
-                  + p["coverage"] * RANK_WEIGHTS["coverage"]
                   + p["continuity"] * RANK_WEIGHTS["continuity"])
         worst = max(worst, abs(expect - p["rank"]))
-check("2a rank equals the weighted sum of the three published numbers", worst < 1.0,
+check("2a rank equals the weighted sum of the published numbers", worst < 1.0,
       f"largest disagreement {worst:.3f}")
 check("2b plans are returned in rank order",
       all([p["rank"] for p in ps] == sorted((p["rank"] for p in ps), reverse=True)
@@ -363,6 +362,105 @@ check("6c plan B keeps its own fairness accumulator",
                for x in {l["to_id"] for l in p["legs"] if l["action"] == "SUBSTITUTE"}] or [0]) <= 2
           for _f, ps, _a in SAMPLE for p in ps if p["code"] == "B"),
       "one stand-in was handed more than two fallback legs in a single plan")
+
+
+# ================================== 7 · coverage is a floor, not a rank axis
+print()
+print("7 · coverage is a feasibility floor — it cannot change an ordering")
+print("-" * 78)
+# DEFECT THIS ENCODES: coverage was worth 0.25 of the rank and had never moved
+# an ordering. Two measurements put it out of the formula:
+#   * normal load - all 813 plans across every faculty x working day score 100%,
+#     so the term added a constant 25 to every rank;
+#   * scarcity - with every other teacher on leave, plan A goes to confidence 0
+#     AND continuity 0 as well as coverage 0, because score_leg() returns zero
+#     on every axis for an arrangement that does not exist.
+# So it is collinear BY CONSTRUCTION. A case where it discriminates cannot be
+# built, which is why this section asserts that rather than pretending one.
+check("7a coverage is not a ranking weight", "coverage" not in RANK_WEIGHTS,
+      f"RANK_WEIGHTS={RANK_WEIGHTS} — a term that never moves an ordering must not "
+      f"be advertised as a quarter of the ranking")
+check("7b every plan still reports coverage, labelled as a floor",
+      all(p["coverage_is_floor"] and "coverage" in p for _f, ps, _a in SAMPLE for p in ps))
+check("7c coverage does not discriminate on this dataset",
+      {p["coverage"] for _f, ps, _a in SAMPLE for p in ps} == {100})
+
+
+def _order(ps, with_coverage):
+    """Rank the plans with and without a coverage term at the SAME coefficients.
+    Renormalising instead would change the confidence:continuity ratio and
+    reorder plans for that reason, which would look like coverage mattering."""
+    def key(p):
+        base = p["confidence"] * 0.6 + p["continuity"] * 0.15
+        return -(base + p["coverage"] * 0.25) if with_coverage else -base
+    return [p["code"] for p in sorted(ps, key=key)]
+
+
+moved = [f["name"] for f, ps, _a in SAMPLE if _order(ps, True) != _order(ps, False)]
+check("7d adding a coverage term back would reorder nothing", not moved,
+      f"{len(moved)} absences reorder — if this ever fires, coverage has started "
+      f"carrying information and belongs back in RANK_WEIGHTS")
+
+# And the same under the scarcity the seeded data never produces.
+_absent = next(f for f, ps, _a in SAMPLE)
+_others = [r["id"] for r in rows(con, "SELECT id FROM faculty WHERE id<>?", (_absent["id"],))]
+con.executemany("""INSERT INTO leaves(faculty,from_date,to_date,kind,reason,status,applied_on)
+                   VALUES(?,?,?,?,?,?,?)""",
+                [(fid, DATE.isoformat(), DATE.isoformat(), "Casual Leave",
+                  "ranking_test scarcity probe", "Approved", DATE.isoformat())
+                 for fid in _others])
+con.commit()
+try:
+    scarce, _a2 = SUB.build_plans(con, _absent, DATE, Tr())
+    sa = next((p for p in scarce if p["code"] == "A"), None)
+    check("7e under scarcity a plan really can cover nothing",
+          sa is not None and sa["coverage"] == 0, str(sa and sa["coverage"]))
+    check("7f an uncoverable plan is flagged incomplete", sa and sa["incomplete"] is True)
+    check("7g an uncoverable plan scores zero on the OTHER axes too — which is why "
+          "the coverage term is redundant",
+          sa and sa["confidence"] == 0 and sa["continuity"] == 0,
+          f"conf {sa and sa['confidence']}, cont {sa and sa['continuity']}")
+    check("7h so it ranks last with or without a coverage term",
+          _order(scarce, True) == _order(scarce, False) and _order(scarce, True)[-1] == "A",
+          f"with={_order(scarce, True)} without={_order(scarce, False)}")
+finally:
+    con.execute("DELETE FROM leaves WHERE reason='ranking_test scarcity probe'")
+    con.commit()
+
+
+# ============================== 8 · no plan is offered twice under two names
+print()
+print("8 · two plans that commit the same rows are one option")
+print("-" * 78)
+# DEFECT THIS ENCODES: when find_swap finds nothing, plan B falls back to
+# substitution and picks the SAME candidates plan A did — measured, 90 of 271
+# absences, a third of them. Every one produced an exact rank tie between two
+# byte-identical cards, which made "recommended" arbitrary. A tie-break would
+# have hidden the duplication instead of removing it.
+dupes = [(f["name"], p) for f, ps, _a in SAMPLE for p in ps if p["also_commits"]]
+check("8a the sample contains folded duplicates", len(dupes) > 0,
+      f"{len(dupes)} — if zero, the fallback stopped colliding and this is stale")
+check("8b no two offered plans would commit the same rows",
+      all(len({SUB.commit_signature(p["legs"]) for p in ps}) == len(ps)
+          for _f, ps, _a in SAMPLE),
+      "a duplicate survived the fold")
+check("8c a folded plan is named on the card that subsumed it",
+      all(any(c in p["summary"] for c in p["also_commits"]) for _n, p in dupes))
+check("8d folding removed the exact rank ties it was causing",
+      not [1 for _f, ps, _a in SAMPLE
+           for i in range(len(ps) - 1)
+           if abs(ps[i]["rank"] - ps[i + 1]["rank"]) < 1e-9
+           and SUB.commit_signature(ps[i]["legs"]) == SUB.commit_signature(ps[i + 1]["legs"])])
+check("8e ordering is deterministic even when ranks genuinely coincide",
+      all([(round(-p["rank"], 6), -p["continuity"], -p["coverage"], p["code"]) for p in ps]
+          == sorted((round(-p["rank"], 6), -p["continuity"], -p["coverage"], p["code"])
+                    for p in ps)
+          for _f, ps, _a in SAMPLE),
+      "the documented tie-break is rank, then continuity, then coverage, then code")
+# The admin may still say "apply plan B" from an earlier message.
+_n, _folded = dupes[0]
+check("8f a folded letter still resolves to the plan that absorbed it",
+      _folded["also_commits"] and _folded["code"] not in _folded["also_commits"])
 
 
 print("-" * 78)

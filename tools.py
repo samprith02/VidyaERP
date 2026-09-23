@@ -329,8 +329,11 @@ def t_plan_absence_coverage(con, S, U, faculty_name=None, date=None, reason=None
                                           "subject": a["subject"]} for a in affected],
                      "student_hours_at_stake": strength,
                      "ranking": {"weights": agents.RANK_WEIGHTS,
-                                 "note": "rank = 0.6·confidence + 0.25·coverage + 0.15·continuity. "
-                                         "The three numbers are measured per plan; the weights are a "
+                                 "note": "rank = 0.8·confidence + 0.2·continuity. All three "
+                                         "numbers are measured per plan, but coverage is a "
+                                         "FEASIBILITY FLOOR, not a ranking axis - it has never "
+                                         "changed an ordering, because an hour nobody can take "
+                                         "scores zero on the other two axes too. The weights are a "
                                          "policy choice and can be argued with."},
                      "plans": [{"code": p["code"], "title": p["title"], "confidence": p["confidence"],
                                 "coverage": p["coverage"], "continuity": p["continuity"],
@@ -363,7 +366,11 @@ def t_apply_coverage_plan(con, S, U, plan_code="A", **kw):
                                     "this turn. Ask the admin to confirm which plan, then call again."},
                 "blocks": [], "trace": [("PolicyGuard", "write_blocked", "no explicit approval in turn")]}
     code = str(plan_code).strip().upper()[:1]
-    plan = next((x for x in p["plans"] if x["code"] == code), p["plans"][0])
+    # A plan that was folded into another still answers to its own letter: the
+    # admin may have read "plan B" off an earlier message, and the plan that
+    # subsumed it commits exactly what B would have.
+    plan = next((x for x in p["plans"]
+                 if code == x["code"] or code in x.get("also_commits", [])), p["plans"][0])
     f = p["faculty"]
     d = dt.date.fromisoformat(p["date"])
     sub, notif = SubstitutionAgent(), NotifyAgent()

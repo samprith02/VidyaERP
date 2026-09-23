@@ -171,8 +171,8 @@ ships a timetable back.
 ```bash
 python tests/solver_test.py    # 44 assertions, no server, no API cost
 python tests/mcp_parity.py     # 155 assertions, no server, no API cost
-python tests/ranking_test.py   # 43 assertions, no server, no API cost
-python tests/deploy_test.py    # 38 assertions, no server, no API cost
+python tests/ranking_test.py   # 57 assertions, no server, no API cost
+python tests/deploy_test.py    # 53 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, no API cost
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 ```
@@ -196,8 +196,8 @@ and room scarcity must degrade rather than collapse.
   three measured terms (syllabus hours preserved · delivered by the subject's own teacher · timing
   intact, via `timing_intact(slip) = 1/(1+slip)`), and B and C confidence come from
   `score_deliverer`, which is the same candidate-scoring lens Plan A always used. The weights
-  `0.6 / 0.25 / 0.15` (`RANK_WEIGHTS`) and the continuity sub-weights are **policy coefficients,
-  not findings** — they are declared in one place and printed on every plan card, which is the
+  `0.8 / 0.2` (`RANK_WEIGHTS`) and the continuity sub-weights are **policy coefficients, not
+  findings** — they are declared in one place and printed on every plan card, which is the
   point. `tests/ranking_test.py` asserts each number varies across 30+ absences; a measurement
   that never varies is a constant wearing a function's clothes.
 - **Three defects surfaced while computing them**, each by measurement, each with a labelled
@@ -215,6 +215,26 @@ and room scarcity must degrade rather than collapse.
   3. Plan B's fallback substitutes were scored against **Plan A's** `used` accumulator, so B was
      penalised `-9` per assignment only A would have made. The plans are alternatives; B has its
      own accumulator now.
+- **Coverage is a floor, not a ranking axis, and taking it out of `RANK_WEIGHTS` was a
+  measurement.** It was worth 0.25 and had never moved an ordering: under normal load all 813
+  plans score 100% (0 of 271 absences reorder when the term is deleted at the same coefficients),
+  and under scarcity an uncoverable plan scores 0 on confidence and continuity too, because
+  `score_leg` returns zero on every axis for an arrangement that does not exist. Collinear by
+  construction — a discriminating case cannot be built, and `ranking_test.py:7d/7h` assert exactly
+  that. It is still measured and still shown as `incomplete`. **Do not put it back without a
+  measurement showing it now separates something.**
+- **Two plans that would commit the same rows are folded into one.** With no swap available Plan B
+  falls back to substitution and picks Plan A's candidates — 90 of 271 absences — which produced
+  two identical cards at an exact rank tie and made "recommended" arbitrary. `commit_signature`
+  compares what a plan would actually write, not how its card reads. A tie-break alone would have
+  hidden this; there is also a documented one (rank → continuity → coverage → code) for genuine
+  coincidences, of which the sweep found exactly one.
+- **"next Monday" skips the coming Monday.** `nlu.parse_date` treats `this/coming/on X` as the next
+  occurrence and `next X` as that plus a week, so on Fri 04 Sep "next monday" is **14 Sep**, not
+  the 7th. Deliberate, but two things about it are not: the `delta == 0` half of the condition at
+  `nlu.py:143` is dead (the body adds 0 in that branch), and when X is *today's* weekday `this X`
+  and `next X` both land +7. The resolved date is always echoed back in the proposal, which is the
+  only thing stopping it writing to the wrong week.
 - **A swap must never split a lab.** `find_swap` refuses any partner whose subject is `kind='L'`
   or which sits in a contiguous same-subject block (`in_multi_period_block`). Labs run three
   consecutive periods; CIVIL-3A Mon P5-P7 is the live example. Removing that guard makes
