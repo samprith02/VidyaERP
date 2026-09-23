@@ -239,6 +239,7 @@ check("3e it says whether the operator endpoints are protected",
       payload["operator_endpoints"] in ("open", "token-protected"))
 check("3f no key material in /health", "gsk_" not in body_of(h) and SENTINEL not in body_of(h))
 
+
 # The point of checking the DB: a broken data layer must FAIL the health check,
 # not pass it and keep a dead instance serving traffic.
 _real_con = A.con
@@ -257,6 +258,64 @@ check("3g an unreachable database returns 503, not 200",
 check("3h the 503 says what failed",
       "database is locked" in body_of(broken), body_of(broken)[:160])
 check("3i /health recovers once the database does", A.health().status_code == 200)
+
+# DEFECT THIS ENCODES: the deployment silently stopped tracking the repository.
+# autoDeploy was on and correctly configured, but the webhook never reached the
+# platform, so no deploy was ever CREATED — not a failed build, nothing at all.
+# Two commits sat unshipped for six days behind a green /health, and the only
+# way to notice was spotting a superseded ranking weight in an API response.
+# /health now reports the commit, so "is the deployment current?" is one string
+# compared against `git rev-parse HEAD`.
+build = payload.get("build", {})
+check("3j /health reports which commit is running",
+      {"commit", "short", "branch", "source"} <= set(build), str(build))
+check("3k the commit is a real SHA, not a placeholder",
+      len(build.get("commit", "")) == 40
+      and all(c in "0123456789abcdef" for c in build.get("commit", "")),
+      f"{build.get('commit')!r} — 'unknown' means neither the platform nor .git "
+      f"could answer, and staleness becomes undetectable again")
+check("3l the short form is the first 7 of the full SHA",
+      build.get("short") == build.get("commit", "")[:7])
+check("3m locally it resolves from .git without shelling out",
+      build.get("source") == "git", f"source={build.get('source')!r}")
+check("3n and it matches what git itself reports",
+      build.get("commit") == os.popen(f'git -C "{HERE}" rev-parse HEAD').read().strip(),
+      "the SHA in /health must be the code actually loaded, not a stale constant")
+
+# On Render the platform variable is authoritative — there may be no .git at
+# all in the running image, and if there is, it is not necessarily the deploy.
+_saved = (A.COMMIT, A.BRANCH, A.COMMIT_SOURCE)
+try:
+    A.COMMIT = "a" * 40
+    A.BRANCH, A.COMMIT_SOURCE = "main", "platform"
+    _p = json.loads(body_of(A.health()))["build"]
+    check("3o a platform-supplied commit is reported as such",
+          _p["commit"] == "a" * 40 and _p["source"] == "platform", str(_p))
+finally:
+    A.COMMIT, A.BRANCH, A.COMMIT_SOURCE = _saved
+
+# 3o only proves the REPORTING honours a platform value. These exercise the
+# read itself, which is the half that runs in production: if RENDER_GIT_COMMIT
+# were ignored, the deployed box would report its build image's .git — or
+# nothing — and staleness would quietly stop being detectable again.
+check("3q RENDER_GIT_COMMIT is actually read, and wins over .git",
+      A.resolve_build({"RENDER_GIT_COMMIT": "b" * 40, "RENDER_GIT_BRANCH": "main"})
+      == ("b" * 40, "main", "platform"),
+      str(A.resolve_build({"RENDER_GIT_COMMIT": "b" * 40, "RENDER_GIT_BRANCH": "main"})))
+check("3r with no platform variable it falls back to .git",
+      A.resolve_build({})[2] == "git" and len(A.resolve_build({})[0]) == 40,
+      str(A.resolve_build({})))
+check("3s with neither, it says so rather than inventing one",
+      A.resolve_build({}, root=os.path.join(tempfile.gettempdir(), "no-such-repo"))
+      == (None, "", "unavailable"),
+      str(A.resolve_build({}, root=os.path.join(tempfile.gettempdir(), "no-such-repo"))))
+check("3t a blank platform variable does not count as an answer",
+      A.resolve_build({"RENDER_GIT_COMMIT": "   "})[2] == "git",
+      "an empty env var must fall through, not report an empty commit")
+
+check("3p the 503 path still reports the build",
+      "build" in json.loads(body_of(broken)),
+      "an unhealthy instance is exactly when you need to know which code it is")
 
 
 # =========================================== 4 · operator endpoints are gated

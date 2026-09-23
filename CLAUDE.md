@@ -141,6 +141,15 @@ ships a timetable back.
 - **Stop the server before deleting or restoring `college.db`.** A running server holds the file
   and the delete fails — on Windows `git checkout` reports `unable to unlink old ... Invalid
   argument`. Kill the uvicorn process first.
+- **A deployment can silently stop tracking the repo, so `/health` reports the commit.**
+  `autoDeploy: yes` / `autoDeployTrigger: commit` were set correctly and the webhook still never
+  reached Render: no deploy was *created* for two commits over six days — not a failed build,
+  nothing at all, just a stale box behind a green health check. Compare
+  `curl .../health | grep short` against `git rev-parse --short HEAD` rather than inferring from
+  behaviour. `app.resolve_build()` takes the platform's `RENDER_GIT_COMMIT` first and falls back
+  to reading `.git/HEAD` directly (no subprocess, resolved once at import);
+  `deploy_test.py:3q-3t` exercise the env read itself, not just the reporting — asserting on the
+  module constant alone passes even when the variable is never read.
 - **Storage is ephemeral on a free host, and `/health` says so.** `db.seed()` rebuilds the whole
   institution on a cold start (~0.07 s), so a restart silently discards every applied override.
   `VIDYAERP_DB` points the database at a mounted disk; `/health` reports `persistent: false` when
@@ -172,7 +181,7 @@ ships a timetable back.
 python tests/solver_test.py    # 44 assertions, no server, no API cost
 python tests/mcp_parity.py     # 155 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
-python tests/deploy_test.py    # 53 assertions, no server, no API cost
+python tests/deploy_test.py    # 64 assertions, no server, no API cost
 python tests/nlu_test.py       # 15 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, no API cost
 python tests/live_llm.py       # 6 real-model queries; costs tokens

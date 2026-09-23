@@ -33,6 +33,66 @@ app = FastAPI(title="VidyaERP", docs_url="/api/docs")
 ADMIN_TOKEN = (os.environ.get("VIDYAERP_ADMIN_TOKEN") or "").strip()
 
 
+def _git_head(root):
+    """(commit, branch) read straight out of .git, with no subprocess.
+
+    Only for local development — a deployment gets the commit from the platform
+    instead. Resolved once at import, never per request.
+    """
+    g = os.path.join(root, ".git")
+    try:
+        with open(os.path.join(g, "HEAD"), encoding="utf-8") as f:
+            head = f.read().strip()
+    except OSError:
+        return None, None
+    if not head.startswith("ref:"):
+        return head, None                                   # detached HEAD
+    ref = head.split(" ", 1)[1].strip()
+    branch = ref.rsplit("/", 1)[-1]
+    try:
+        with open(os.path.join(g, ref), encoding="utf-8") as f:
+            return f.read().strip(), branch
+    except OSError:
+        pass
+    try:                                                    # a packed ref
+        with open(os.path.join(g, "packed-refs"), encoding="utf-8") as f:
+            for line in f:
+                if line.rstrip().endswith(" " + ref):
+                    return line.split()[0], branch
+    except OSError:
+        pass
+    return None, branch
+
+
+# Which code is actually running. Render sets RENDER_GIT_COMMIT on every deploy.
+#
+# This exists because a deployment silently stopped tracking the repository:
+# auto-deploy was configured and enabled, but the webhook never reached the
+# platform, so no deploy was created at all — no failure, no error, just a
+# stale box behind a green /health for six days. The only way to notice was to
+# spot an old ranking weight in an API response. A build identifier turns
+# "which code is live" into a question you can answer directly.
+def resolve_build(env=None, root=None):
+    """(commit, branch, source), platform variable first.
+
+    The platform wins over `.git` deliberately: a deployed image may carry no
+    .git at all, and if it does, the checkout is not necessarily what is
+    running. Takes `env` so the precedence can be tested without re-importing
+    this module — asserting on the module constant alone would pass even if the
+    environment were never read, which is the half that matters in production.
+    """
+    env = os.environ if env is None else env
+    sha = (env.get("RENDER_GIT_COMMIT") or "").strip()
+    branch = (env.get("RENDER_GIT_BRANCH") or "").strip()
+    if sha:
+        return sha, branch, "platform"
+    sha, b = _git_head(root or HERE)
+    return sha, branch or b or "", ("git" if sha else "unavailable")
+
+
+COMMIT, BRANCH, COMMIT_SOURCE = resolve_build()
+
+
 def _denied(request):
     """None if the caller may use an operator endpoint, else a 401 response."""
     if not ADMIN_TOKEN:
@@ -51,20 +111,28 @@ def health():
     health check that passes while the data layer is unreachable is worse than
     no health check, because it keeps a broken instance in rotation.
 
-    Nothing secret is returned. Whether a key is configured, never what it is.
+    It also reports the commit it is running, so "is the deployment current?"
+    is answerable by comparing one string against `git rev-parse HEAD` instead
+    of by probing the app's behaviour and inferring.
+
+    Nothing secret is returned. Whether a key is configured, never what it is;
+    the commit is a public repository's SHA.
     """
+    build = {"commit": COMMIT or "unknown", "short": (COMMIT or "unknown")[:7],
+             "branch": BRANCH or "unknown", "source": COMMIT_SOURCE}
     try:
         counts = {t: one(con, f"SELECT COUNT(*) c FROM {t}")["c"]
                   for t in ("students", "faculty", "timetable")}
         ok = all(counts.values())
     except Exception as e:
-        return JSONResponse({"status": "unhealthy", "service": "vidyaerp",
+        return JSONResponse({"status": "unhealthy", "service": "vidyaerp", "build": build,
                              "db": {"ok": False, "error": f"{type(e).__name__}: {e}"}},
                             status_code=503)
     cfg = llm.CFG.reload()
     return JSONResponse({
         "status": "ok" if ok else "unhealthy",
         "service": "vidyaerp",
+        "build": build,
         "today": TODAY.isoformat(),
         "db": {"ok": ok, **counts,
                "path": os.path.basename(db.DB_PATH),

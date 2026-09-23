@@ -108,7 +108,7 @@ The trace shows exactly which of these happened:
 python3 tests/solver_test.py  # timetable solver: 44 assertions, no server, no API cost
 python3 tests/mcp_parity.py   # MCP guard parity: 155 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
-python3 tests/deploy_test.py  # deployment readiness: 53 assertions, no server, no API cost
+python3 tests/deploy_test.py  # deployment readiness: 64 assertions, no server, no API cost
 python3 tests/nlu_test.py     # date resolution: 15 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
@@ -443,11 +443,27 @@ that a failed provider call does not echo it back.
 `GET /health` answers **from the database**, not from the fact that the process is up:
 
 ```json
-{"status":"ok","service":"vidyaerp","today":"2026-09-04",
+{"status":"ok","service":"vidyaerp",
+ "build":{"commit":"9980206...","short":"9980206","branch":"main","source":"platform"},
  "db":{"ok":true,"students":1095,"faculty":53,"timetable":707,"persistent":false},
  "engine":"llm","llm":{"configured":true,"provider":"groq","model":"openai/gpt-oss-120b"},
  "operator_endpoints":"token-protected"}
 ```
+
+**Check the deployment is current** — one string, no behavioural guessing:
+
+```bash
+curl -s https://your-app.onrender.com/health | grep -o '"short":"[^"]*"'
+git rev-parse --short HEAD
+```
+
+This exists because auto-deploy silently stopped firing. `autoDeploy` was on
+and correctly configured, but the webhook never reached Render, so no deploy
+was *created* — not a failed build, nothing at all. Two commits sat unshipped
+for six days behind a green `/health`, and the only way to notice was spotting
+a superseded ranking weight in an API response. `source` says where the commit
+came from: `platform` (Render's `RENDER_GIT_COMMIT`), `git` (local `.git`), or
+`unavailable`.
 
 An unreachable database returns **503**, so a broken instance drops out of rotation instead of
 serving errors behind a green tick. Nothing secret is in that payload — whether a key is
