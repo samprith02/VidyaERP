@@ -139,11 +139,22 @@ def parse_date(text, today=None):
     if m:
         target = DAY_FULL[m.group(2)]
         idx = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].index(target)
-        delta = (idx - today.weekday()) % 7
-        if delta == 0 or m.group(1) == "next":
-            delta += 7 if m.group(1) == "next" else 0
-        if delta == 0:
-            delta = 7
+        # "next Monday", "this Monday", "coming Monday" and "on Monday" all mean
+        # the SAME thing: the next Monday to occur. `next` used to add a further
+        # week, so on Fri 04 Sep it skipped the 7th and returned the 14th.
+        #
+        # Three reasons that went:
+        #   * it already collapsed for one weekday in seven - when the target is
+        #     today's own weekday both readings land +7, so the distinction was
+        #     never honoured consistently anyway;
+        #   * the failure costs are asymmetric. Resolving a week LATE leaves the
+        #     real absence uncovered on the day it happens, with nothing to
+        #     notice it; resolving early is caught by the date echoed back in
+        #     the proposal before anything commits;
+        #   * the coming Monday is the dominant reading, and more so in Indian
+        #     English than in the one the old branch encoded.
+        # Today never counts as "the next one" - say "today" for that.
+        delta = (idx - today.weekday()) % 7 or 7
         d = today + dt.timedelta(days=delta)
         return d, f"{m.group(1)} {target}"
     m = re.search(r"\bon\s+(mon|tue|tues|wed|thu|thur|thurs|fri|sat)[a-z]*", t)

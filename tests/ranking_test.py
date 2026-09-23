@@ -366,66 +366,85 @@ check("6c plan B keeps its own fairness accumulator",
 
 # ================================== 7 · coverage is a floor, not a rank axis
 print()
-print("7 · coverage is a feasibility floor — it cannot change an ordering")
+print("7 · coverage duplicates the hours term inside continuity")
 print("-" * 78)
-# DEFECT THIS ENCODES: coverage was worth 0.25 of the rank and had never moved
-# an ordering. Two measurements put it out of the formula:
-#   * normal load - all 813 plans across every faculty x working day score 100%,
-#     so the term added a constant 25 to every rank;
-#   * scarcity - with every other teacher on leave, plan A goes to confidence 0
-#     AND continuity 0 as well as coverage 0, because score_leg() returns zero
-#     on every axis for an arrangement that does not exist.
-# So it is collinear BY CONSTRUCTION. A case where it discriminates cannot be
-# built, which is why this section asserts that rather than pretending one.
+# DEFECT THIS ENCODES: coverage was worth 0.25 of the rank while continuity
+# already contained 45% of the same measurement, so hours was really weighted
+# 0.25 + 0.15*0.45 = 0.3175 and presented to the admin as two separate axes.
+#
+# An earlier version of this section asserted something weaker AND wrong - that
+# the term "could not change an ordering" and that a discriminating case could
+# not be built. It missed PARTIAL scarcity, where some legs are coverable and
+# some are not: measured over 720 probe scenarios, 203 scored below 100 across
+# {0, 33, 50, 60, 67, 75, 80, 100}. The structural argument below survives
+# that; the ordering argument did not. Assert the one that holds.
 check("7a coverage is not a ranking weight", "coverage" not in RANK_WEIGHTS,
-      f"RANK_WEIGHTS={RANK_WEIGHTS} — a term that never moves an ordering must not "
-      f"be advertised as a quarter of the ranking")
+      f"RANK_WEIGHTS={RANK_WEIGHTS}")
 check("7b every plan still reports coverage, labelled as a floor",
       all(p["coverage_is_floor"] and "coverage" in p for _f, ps, _a in SAMPLE for p in ps))
-check("7c coverage does not discriminate on this dataset",
-      {p["coverage"] for _f, ps, _a in SAMPLE for p in ps} == {100})
 
+# THE structural claim: plan coverage is exactly the hours component that
+# continuity is already built from. If these ever come apart, the double-count
+# argument for removing the weight no longer holds and this should fail loudly.
+worst_gap = max(abs(p["coverage"] - p["components"]["hours_preserved"])
+                for _f, ps, _a in SAMPLE for p in ps)
+check("7c coverage IS the hours component, not an independent axis", worst_gap <= 1,
+      f"largest divergence {worst_gap} — coverage = mean(hours) at agents.py:411 and "
+      f"hours_preserved is the same mean, so these must track exactly")
+check("7d continuity is built from that same hours term",
+      CONTINUITY_WEIGHTS["hours"] > 0,
+      "if continuity stopped weighting hours, coverage would become independent "
+      "and would deserve reconsideration as a ranking axis")
 
-def _order(ps, with_coverage):
-    """Rank the plans with and without a coverage term at the SAME coefficients.
-    Renormalising instead would change the confidence:continuity ratio and
-    reorder plans for that reason, which would look like coverage mattering."""
-    def key(p):
-        base = p["confidence"] * 0.6 + p["continuity"] * 0.15
-        return -(base + p["coverage"] * 0.25) if with_coverage else -base
-    return [p["code"] for p in sorted(ps, key=key)]
+# Reconstruct continuity from its published components; that proves the 0.45
+# share of hours really is inside it rather than merely declared.
+worst_rebuild = 0.0
+for _f, ps, _a in SAMPLE:
+    for p in ps:
+        c = p["components"]
+        rebuilt = (CONTINUITY_WEIGHTS["hours"] * c["hours_preserved"]
+                   + CONTINUITY_WEIGHTS["teacher"] * c["own_teacher"]
+                   + CONTINUITY_WEIGHTS["timing"] * c["timing_intact"])
+        worst_rebuild = max(worst_rebuild, abs(rebuilt - p["continuity"]))
+check("7e continuity rebuilds from its own published components", worst_rebuild < 1.0,
+      f"largest disagreement {worst_rebuild:.3f}")
+_double = 0.25 + 0.15 * CONTINUITY_WEIGHTS["hours"]
+check("7f the old formula really did weight hours twice",
+      abs(_double - 0.3175) < 1e-9,
+      f"0.25 + 0.15*{CONTINUITY_WEIGHTS['hours']} = {_double} — the card said 0.25 and 0.15")
 
-
-moved = [f["name"] for f, ps, _a in SAMPLE if _order(ps, True) != _order(ps, False)]
-check("7d adding a coverage term back would reorder nothing", not moved,
-      f"{len(moved)} absences reorder — if this ever fires, coverage has started "
-      f"carrying information and belongs back in RANK_WEIGHTS")
-
-# And the same under the scarcity the seeded data never produces.
-_absent = next(f for f, ps, _a in SAMPLE)
-_others = [r["id"] for r in rows(con, "SELECT id FROM faculty WHERE id<>?", (_absent["id"],))]
-con.executemany("""INSERT INTO leaves(faculty,from_date,to_date,kind,reason,status,applied_on)
-                   VALUES(?,?,?,?,?,?,?)""",
-                [(fid, DATE.isoformat(), DATE.isoformat(), "Casual Leave",
-                  "ranking_test scarcity probe", "Approved", DATE.isoformat())
-                 for fid in _others])
+# Partial scarcity: the band the withdrawn claim missed. Coverage genuinely
+# varies here, which is exactly why "it can never discriminate" was wrong.
+import random as _random                                            # noqa: E402
+_rng = _random.Random(11)
+_allf = [r["id"] for r in rows(con, "SELECT id FROM faculty")]
+_seen, _partial = set(), 0
+for _frac in (0.85, 0.92, 0.96, 1.0):
+    for _f, _ps, _a in SAMPLE[:6]:
+        _pool = [i for i in _allf if i != _f["id"]]
+        con.execute("DELETE FROM leaves WHERE reason='ranking_test partial probe'")
+        con.executemany(
+            """INSERT INTO leaves(faculty,from_date,to_date,kind,reason,status,applied_on)
+               VALUES(?,?,?,?,?,?,?)""",
+            [(i, DATE.isoformat(), DATE.isoformat(), "Casual Leave",
+              "ranking_test partial probe", "Approved", DATE.isoformat())
+             for i in _rng.sample(_pool, int(len(_pool) * _frac))])
+        con.commit()
+        _sp, _sa = SUB.build_plans(con, _f, DATE, Tr())
+        if not _sp:
+            continue
+        _covs = {p["coverage"] for p in _sp}
+        _seen |= _covs
+        if _covs != {100}:
+            _partial += 1
+con.execute("DELETE FROM leaves WHERE reason='ranking_test partial probe'")
 con.commit()
-try:
-    scarce, _a2 = SUB.build_plans(con, _absent, DATE, Tr())
-    sa = next((p for p in scarce if p["code"] == "A"), None)
-    check("7e under scarcity a plan really can cover nothing",
-          sa is not None and sa["coverage"] == 0, str(sa and sa["coverage"]))
-    check("7f an uncoverable plan is flagged incomplete", sa and sa["incomplete"] is True)
-    check("7g an uncoverable plan scores zero on the OTHER axes too — which is why "
-          "the coverage term is redundant",
-          sa and sa["confidence"] == 0 and sa["continuity"] == 0,
-          f"conf {sa and sa['confidence']}, cont {sa and sa['continuity']}")
-    check("7h so it ranks last with or without a coverage term",
-          _order(scarce, True) == _order(scarce, False) and _order(scarce, True)[-1] == "A",
-          f"with={_order(scarce, True)} without={_order(scarce, False)}")
-finally:
-    con.execute("DELETE FROM leaves WHERE reason='ranking_test scarcity probe'")
-    con.commit()
+check("7g under partial scarcity coverage takes values other than 100",
+      len(_seen) > 1 and _partial > 0,
+      f"values seen {sorted(_seen)} across {_partial} partial scenarios — this is the "
+      f"case the withdrawn 'cannot be built' claim missed")
+check("7h an uncoverable plan is still flagged incomplete, floor intact",
+      all(p["incomplete"] == (p["coverage"] < 100) for _f, ps, _a in SAMPLE for p in ps))
 
 
 # ============================== 8 · no plan is offered twice under two names

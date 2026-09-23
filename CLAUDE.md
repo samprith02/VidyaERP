@@ -173,6 +173,7 @@ python tests/solver_test.py    # 44 assertions, no server, no API cost
 python tests/mcp_parity.py     # 155 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 53 assertions, no server, no API cost
+python tests/nlu_test.py       # 15 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, no API cost
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 ```
@@ -215,26 +216,34 @@ and room scarcity must degrade rather than collapse.
   3. Plan B's fallback substitutes were scored against **Plan A's** `used` accumulator, so B was
      penalised `-9` per assignment only A would have made. The plans are alternatives; B has its
      own accumulator now.
-- **Coverage is a floor, not a ranking axis, and taking it out of `RANK_WEIGHTS` was a
-  measurement.** It was worth 0.25 and had never moved an ordering: under normal load all 813
-  plans score 100% (0 of 271 absences reorder when the term is deleted at the same coefficients),
-  and under scarcity an uncoverable plan scores 0 on confidence and continuity too, because
-  `score_leg` returns zero on every axis for an arrangement that does not exist. Collinear by
-  construction — a discriminating case cannot be built, and `ranking_test.py:7d/7h` assert exactly
-  that. It is still measured and still shown as `incomplete`. **Do not put it back without a
-  measurement showing it now separates something.**
+- **Coverage is a floor, not a ranking axis, because it was being counted twice.**
+  `coverage = mean(hours)` (`agents.py:411`) and `continuity = 100·(0.45·hours + …)`
+  (`:412`) — coverage IS the hours term, and continuity already contains 45% of it. The old
+  formula therefore weighted hours at `0.25 + 0.15×0.45 = 0.3175` while the card told the
+  administrator they were two separate axes worth 0.25 and 0.15. That double-count is the reason
+  the weight is gone, and it holds for every instance. `ranking_test.py:7c/7e/7f` assert the
+  relationship itself, so if continuity ever stops being built from hours the argument fails
+  loudly. It is still measured and still shown as `incomplete`. **Do not put it back without a
+  measurement showing it has become independent.**
+  An earlier version of this note argued instead that the term "could not change an ordering" and
+  that a discriminating case "cannot be built". That was too strong and wrong: it reasoned only
+  from normal load and *total* scarcity, and missed **partial scarcity**, where some legs are
+  coverable and some are not — 203 of 720 probe scenarios score below 100, across
+  {0, 33, 50, 60, 67, 75, 80, 100}. Ordering survives nearly all of it, but that is supporting
+  evidence, not the argument.
 - **Two plans that would commit the same rows are folded into one.** With no swap available Plan B
   falls back to substitution and picks Plan A's candidates — 90 of 271 absences — which produced
   two identical cards at an exact rank tie and made "recommended" arbitrary. `commit_signature`
   compares what a plan would actually write, not how its card reads. A tie-break alone would have
   hidden this; there is also a documented one (rank → continuity → coverage → code) for genuine
   coincidences, of which the sweep found exactly one.
-- **"next Monday" skips the coming Monday.** `nlu.parse_date` treats `this/coming/on X` as the next
-  occurrence and `next X` as that plus a week, so on Fri 04 Sep "next monday" is **14 Sep**, not
-  the 7th. Deliberate, but two things about it are not: the `delta == 0` half of the condition at
-  `nlu.py:143` is dead (the body adds 0 in that branch), and when X is *today's* weekday `this X`
-  and `next X` both land +7. The resolved date is always echoed back in the proposal, which is the
-  only thing stopping it writing to the wrong week.
+- **`this`, `next`, `coming` and `on <weekday>` all mean the next occurrence.** `next X` used to
+  add a further week — on Fri 04 Sep "next monday" was the 14th, skipping the 7th. Changed because
+  the distinction held for only 6 of 7 weekdays (when X is today's own weekday both readings land
+  +7 anyway) and the failure costs are asymmetric: a week *late* leaves the real absence uncovered
+  on the day it happens and nothing notices, while a week early is caught by the date echoed back
+  before anything commits. `tests/nlu_test.py` pins all 7×7 reference-target pairs, so changing the
+  convention again is a deliberate act with a failing test attached.
 - **A swap must never split a lab.** `find_swap` refuses any partner whose subject is `kind='L'`
   or which sits in a contiguous same-subject block (`in_multi_period_block`). Labs run three
   consecutive periods; CIVIL-3A Mon P5-P7 is the live example. Removing that guard makes

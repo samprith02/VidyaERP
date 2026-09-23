@@ -111,22 +111,41 @@ class PolicyGuard:
 #
 # What IS measured is everything they are applied to: see score_plan().
 #
-# Coverage used to sit here at 0.25 and it has been removed, because it could
-# not change an ordering. Measured two ways:
-#   * normal load - 813 plans across every faculty x every working day all score
-#     100% coverage, so the term added a constant 25 to every rank: 0 of 271
-#     absences reordered when it was deleted at the same coefficients;
-#   * total scarcity - with every other teacher on leave, plan A collapses to
-#     confidence 0 AND continuity 0 as well as coverage 0, because score_leg()
-#     returns zero on every axis for an arrangement that does not exist. So the
-#     ordering is unchanged there too.
-# That is collinearity by construction, not a property of the seeded data: a
-# case where the term discriminates cannot be built. Coverage is still measured
-# and still shown, as a FEASIBILITY FLOOR (`incomplete`) rather than as a
-# ranking axis. Advertising 25% of a ranking to a number that has never moved
-# one is the kind of claim that trains a reader to discount the next one.
-# The surviving 0.80 / 0.20 is the old 0.60 / 0.15 renormalised - the same
-# policy about confidence versus continuity, with the dead term taken out.
+# Coverage used to sit here at 0.25 and has been removed, because the formula
+# was counting the same measurement twice while presenting it as two axes.
+#
+# The two are not independent quantities. In score_leg():
+#
+#     coverage   = mean(hours)                                        (line ~411)
+#     continuity = 100*(0.45*hours + 0.35*teacher + 0.20*timing)      (line ~412)
+#
+# so coverage IS the hours term, and continuity already contains 45% of it. The
+# old rank therefore weighted hours at
+#
+#     0.25  +  0.15 * 0.45  =  0.3175
+#
+# while the card told the administrator the two numbers were worth 0.25 and
+# 0.15 of separate things. That is structural double-counting, and it is the
+# whole reason the term is gone. It holds for every instance, coverable or not.
+#
+# An earlier version of this comment argued instead that the term "could not
+# change an ordering" and that a discriminating case "cannot be built". That
+# was too strong and it was wrong. It rested on two bands - normal load, where
+# all 813 plans score 100%, and total scarcity, where a plan collapses to zero
+# on all three axes at once - and missed the band between them. Under PARTIAL
+# scarcity, where some legs are coverable and some are not, coverage takes
+# plenty of distinct values: measured over 720 probe scenarios, 203 of them
+# scored below 100, across {0, 33, 50, 60, 67, 75, 80, 100}.
+#
+# Ordering turns out to survive almost all of that anyway - 0 changes in those
+# 720 scenarios here, and a wider probe found 1 - but that is supporting
+# evidence, not the argument, and a change is not a regression: where removing
+# the term does reorder, it is the double-count being corrected.
+#
+# Coverage is still measured and still shown, as a FEASIBILITY FLOOR
+# (`incomplete`) rather than as a ranking axis. The surviving 0.80 / 0.20 is
+# the old 0.60 / 0.15 renormalised - the same policy about confidence versus
+# continuity, with the duplicated term taken out.
 RANK_WEIGHTS = {"confidence": 0.80, "continuity": 0.20}
 
 # Continuity is three measured things about the batch's learning thread:

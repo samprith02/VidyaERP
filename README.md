@@ -109,6 +109,7 @@ python3 tests/solver_test.py  # timetable solver: 44 assertions, no server, no A
 python3 tests/mcp_parity.py   # MCP guard parity: 155 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
 python3 tests/deploy_test.py  # deployment readiness: 53 assertions, no server, no API cost
+python3 tests/nlu_test.py     # date resolution: 15 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 ```
@@ -189,14 +190,12 @@ Say: *“Prof. Sneha Mallya is absent next Monday, arrange coverage.”*
    then coverage, then plan code), so an order an administrator acts on never depends on dict
    insertion order.
 
-   **Coverage carries 0 of the ranking weight, and that is a measurement.** It was worth 0.25 and
-   had never moved an ordering. Two ways of checking: under normal load all 813 plans across every
-   faculty × working day score 100%, so the term added a constant 25 to every rank (0 of 271
-   absences reorder when it is deleted at the same coefficients); and under total scarcity an
-   uncoverable plan scores **0 on confidence and continuity as well**, because an arrangement that
-   does not exist scores zero on every axis. It is collinear by construction, so a case where it
-   discriminates cannot be built. It is still measured and still shown, as the **incomplete** flag
-   — a plan that cannot arrange every hour must look incomplete whatever it scores.
+   **Coverage carries 0 of the ranking weight, because it was being counted twice.**
+   `coverage = mean(hours)` and `continuity = 100·(0.45·hours + 0.35·teacher + 0.20·timing)` —
+   coverage *is* the hours term, and continuity already contains 45% of it. The old formula
+   weighted hours at `0.25 + 0.15×0.45 = 0.3175` while presenting the two as separate axes worth
+   0.25 and 0.15. It is still measured and still shown, as the **incomplete** flag — a plan that
+   cannot arrange every hour must look incomplete whatever it scores.
 
    **Two plans that would commit the same rows are one option.** When no period can be
    re-sequenced, Plan B falls back to substitution and picks the same candidates as Plan A —
@@ -396,6 +395,7 @@ VidyaERP/
     ├── mcp_parity.py   the same adversarial items down three paths, identical verdicts
     ├── ranking_test.py plan ranking — every number measured, four labelled defect assertions
     ├── deploy_test.py  deployment claims — key never leaks, /health reads the DB, gate holds
+    ├── nlu_test.py     date resolution — all 7x7 weekday pairs pinned
     └── mock_llm.py     fake OpenAI endpoint + rogue-agent guard test
 ```
 
