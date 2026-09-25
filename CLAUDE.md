@@ -284,10 +284,10 @@ python tests/mcp_parity.py     # 254 assertions, no server, no API cost
 python tests/campus_test.py    # 122 assertions, no server, no API cost
 python tests/mesh_test.py      # 22 assertions, no server, no API cost
 python tests/auth_test.py      # 77 assertions, no server, no API cost
-python tests/makeup_test.py    # 27 assertions, no server, no API cost
+python tests/makeup_test.py    # 30 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 68 assertions, no server, no API cost
-python tests/nlu_test.py       # 19 assertions, no server, no API cost
+python tests/nlu_test.py       # 24 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 ```
@@ -365,6 +365,12 @@ and room scarcity must degrade rather than collapse.
   on the day it happens and nothing notices, while a week early is caught by the date echoed back
   before anything commits. `tests/nlu_test.py` pins all 7×7 reference-target pairs, so changing the
   convention again is a deliberate act with a failing test attached.
+- **A written calendar date beats a weekday word, and a disagreement is asked about (#17).**
+  "Absent on Monday 14 Sep" used to take the "on Monday" branch and return the 7th, a week early.
+  ISO and "14 Sep" forms are now read first (`nlu._explicit_date`). If a weekday in the same
+  sentence names a different day (`nlu.date_conflict`), the absence flow asks which day was meant,
+  plans nothing, and offers both as chips. The bare numeric `dd-mm` form is deliberately *not*
+  promoted: "for 2-3 days" would become 2 March.
 - **An ISO date is parsed before the Indian dd-mm form (#55).** Without that branch, the dd-mm
   pattern matched the `09-08` inside `2026-09-08` and returned 9 August, a Sunday, so the reply
   was "no coverage needed". `nlu_test.py` section 4 pins it.

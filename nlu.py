@@ -185,6 +185,15 @@ def parse_date(text, today=None):
     """Return (date, human_label) or (None, None)."""
     today = today or TODAY
     t = text.lower()
+    # A written calendar date is the most specific thing in the sentence, so it
+    # wins over every relative phrase (#17). "Absent on Monday 14 Sep" used to
+    # take the "on Monday" branch and return the 7th - a week early. When the
+    # weekday word names a different day, date_conflict() says so and the
+    # caller asks rather than guessing. The bare numeric dd-mm form is NOT
+    # promoted: "for 2-3 days" would become 2 March.
+    d = _explicit_date(t, today)
+    if d:
+        return d
     if "day after tomorrow" in t:
         d = today + dt.timedelta(days=2); return d, "day after tomorrow"
     if "tomorrow" in t or "tmrw" in t:
@@ -222,24 +231,6 @@ def parse_date(text, today=None):
         delta = (idx - today.weekday()) % 7 or 7
         d = today + dt.timedelta(days=delta)
         return d, target
-    m = re.search(r"\b(\d{1,2})\s*(?:st|nd|rd|th)?\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)", t)
-    if m:
-        day, mon = int(m.group(1)), MONTHS[m.group(2)]
-        yr = today.year if (mon, day) >= (today.month, today.day) else today.year + 1
-        try:
-            return dt.date(yr, mon, day), f"{day} {m.group(2).title()}"
-        except ValueError:
-            return None, None
-    # ISO first (#55). The dd-mm pattern below used to match the "09-08" inside
-    # "2026-09-08" and return 9 August - a Sunday, so the reply said no cover
-    # was needed. ISO is what the console's own date fields produce.
-    m = re.search(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", t)
-    if m:
-        try:
-            d = dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-        except ValueError:
-            return None, None
-        return d, d.strftime("%d %b")
     m = re.search(r"(?<![\d/-])\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b(?![/-]\d)", t)
     if m:
         day, mon = int(m.group(1)), int(m.group(2))
@@ -250,6 +241,48 @@ def parse_date(text, today=None):
         except ValueError:
             return None, None
     return None, None
+
+
+def _explicit_date(t, today):
+    """(date, label) for a written calendar date, (None, None) for an
+    impossible one, or None when the text holds no calendar date at all."""
+    # ISO first (#55). The dd-mm pattern in parse_date used to match the
+    # "09-08" inside "2026-09-08" and return 9 August - a Sunday, so the reply
+    # said no cover was needed. ISO is what the console's own date fields produce.
+    m = re.search(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", t)
+    if m:
+        try:
+            d = dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None, None
+        return d, d.strftime("%d %b")
+    m = re.search(r"\b(\d{1,2})\s*(?:st|nd|rd|th)?\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)", t)
+    if m:
+        day, mon = int(m.group(1)), MONTHS[m.group(2)]
+        yr = today.year if (mon, day) >= (today.month, today.day) else today.year + 1
+        try:
+            return dt.date(yr, mon, day), f"{day} {m.group(2).title()}"
+        except ValueError:
+            return None, None
+    return None
+
+
+WEEKDAY_WORD = re.compile(r"\b(monday|mon|tuesday|tues|tue|wednesday|wed|thursday|thurs|thur|thu|"
+                          r"friday|fri|saturday|sat|sunday|sun)\b")
+
+
+def date_conflict(text, d):
+    """The weekday the text names, when it is not the day `d` falls on (#17).
+
+    "Absent Monday 15 Sep" when the 15th is a Tuesday is two different
+    instructions; picking either one silently covers the wrong day. Returns
+    None when the text names no weekday or names d's own weekday."""
+    if not d:
+        return None
+    said = {DAY_FULL[w] for w in WEEKDAY_WORD.findall(text.lower())}
+    if not said or day_of(d) in said:
+        return None
+    return sorted(said, key=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].index)[0]
 
 
 def date_range(text, today=None):

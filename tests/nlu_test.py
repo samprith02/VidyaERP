@@ -141,10 +141,12 @@ check("3c day after tomorrow",
 check("3d yesterday", nlu.parse_date("yesterday", today=FRI)[0] == dt.date(2026, 9, 3))
 check("3e an explicit '8 sep'",
       nlu.parse_date("on 8 sep", today=FRI)[0] == dt.date(2026, 9, 8))
+# This assertion used to pin the OPPOSITE of its own name: the weekday phrase
+# won and returned the 7th (#17). An explicit calendar date now wins, and the
+# disagreement is surfaced by date_conflict() instead of being settled silently.
 check("3f an explicit date beats a weekday word in the same sentence",
       nlu.parse_date("absent next monday, i mean 9 sep", today=FRI)[0]
-      == dt.date(2026, 9, 7),
-      "weekday phrases are matched first — documented here rather than assumed")
+      == dt.date(2026, 9, 9))
 check("3g nothing date-like returns None", nlu.parse_date("arrange coverage")[0] is None)
 check("3h a label comes back with the date",
       nlu.parse_date("next monday", today=FRI)[1] and
@@ -166,6 +168,20 @@ check("4c the Indian dd-mm and dd-mm-yyyy forms still read day first",
       and nlu.parse_date("08-09-2026", FRI)[0] == dt.date(2026, 9, 8))
 check("4d an impossible ISO date gives no date, not a fragment of it",
       nlu.parse_date("on 2026-02-30", FRI) == (None, None), str(nlu.parse_date("on 2026-02-30", FRI)))
+
+# ------------------------------------------ 5 · a weekday and a date in one sentence (#17)
+print("\n5 · a written date wins; a weekday that disagrees with it is a conflict")
+print("-" * 78)
+d, _ = nlu.parse_date("absent on Monday 14 Sep", FRI)
+# Defect: "on Monday" was matched first and returned Mon 7 Sep - a week early.
+check("5a 'absent on Monday 14 Sep' is the 14th, not the 7th", d == dt.date(2026, 9, 14), str(d))
+check("5b a weekday that agrees with the date is not a conflict", nlu.date_conflict("absent on Monday 14 Sep", d) is None)
+d2, _ = nlu.parse_date("absent on monday 15 sep", FRI)
+check("5c a weekday that disagrees is reported, so the caller can ask",
+      d2 == dt.date(2026, 9, 15) and nlu.date_conflict("absent on monday 15 sep", d2) == "Mon")
+check("5d a range like '2-3 days' is still not read as a date",
+      nlu.parse_date("next monday for 2-3 days", FRI)[0] == dt.date(2026, 9, 7))
+check("5e no weekday word, no conflict", nlu.date_conflict("absent on 15 sep", d2) is None)
 
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")
