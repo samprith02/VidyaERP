@@ -204,7 +204,8 @@ ships a timetable back.
   moment you needed it. Exit codes were always right, so CI never noticed; only the human
   debugging did. `solver_test` is ASCII-only and needs nothing.
   `smoke.py` and `live_llm.py` printed `→`, `✔`, `✘` on the *success* path and so threw on every
-  run; they got the same one-line fix on 2026-09-25 (#16). All seven suites now self-configure.
+  run; they got the same one-line fix on 2026-09-25 (#16). Every suite that prints non-ASCII now
+  self-configures; `solver_test` alone does not need to.
 
 ---
 
