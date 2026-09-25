@@ -1,0 +1,341 @@
+{
+ "generated_by": "docs/charts/make_charts.py",
+ "today": "2026-09-04",
+ "coverage": {
+  "absences": 271,
+  "dates": [
+   "2026-09-05",
+   "2026-09-07",
+   "2026-09-08",
+   "2026-09-09",
+   "2026-09-10",
+   "2026-09-11"
+  ],
+  "recommended": {
+   "A": 77,
+   "B": 76,
+   "C": 118
+  },
+  "folded_duplicates": 90,
+  "top_plan_fully_covered": 268,
+  "ms_total": 6719,
+  "ms_per_absence": 24.8,
+  "top_rank": {
+   "min": 48.5,
+   "median": 94.7,
+   "max": 98.95
+  }
+ },
+ "solver": {
+  "placed": 456,
+  "total": 456,
+  "backtracks": 0,
+  "conflicts": 7103,
+  "ms": 871,
+  "activity_slots": 167,
+  "capacity_relaxed": 40,
+  "events": {
+   "init": 1,
+   "phase": 4,
+   "staff": 40,
+   "pick": 456,
+   "place": 456,
+   "fail": 1269,
+   "swap": 101,
+   "done": 1
+  },
+  "rejections": {
+   "class": 1204,
+   "teacher": 54,
+   "unavail": 4,
+   "dayload": 1,
+   "room": 6
+  },
+  "seeds": [
+   {
+    "seed": 1,
+    "ms": 805,
+    "placed": 456,
+    "total": 456
+   },
+   {
+    "seed": 2,
+    "ms": 902,
+    "placed": 456,
+    "total": 456
+   },
+   {
+    "seed": 3,
+    "ms": 940,
+    "placed": 456,
+    "total": 456
+   },
+   {
+    "seed": 4,
+    "ms": 898,
+    "placed": 456,
+    "total": 456
+   },
+   {
+    "seed": 5,
+    "ms": 901,
+    "placed": 456,
+    "total": 456
+   },
+   {
+    "seed": 6,
+    "ms": 916,
+    "placed": 456,
+    "total": 456
+   },
+   {
+    "seed": 7,
+    "ms": 937,
+    "placed": 456,
+    "total": 456
+   },
+   {
+    "seed": 8,
+    "ms": 901,
+    "placed": 456,
+    "total": 456
+   },
+   {
+    "seed": 9,
+    "ms": 917,
+    "placed": 456,
+    "total": 456
+   },
+   {
+    "seed": 10,
+    "ms": 868,
+    "placed": 456,
+    "total": 456
+   }
+  ],
+  "scarcity": [
+   {
+    "lab_rooms": 6,
+    "placed": 456,
+    "total": 456,
+    "ms": 915,
+    "backtracks": 0
+   },
+   {
+    "lab_rooms": 5,
+    "placed": 456,
+    "total": 456,
+    "ms": 919,
+    "backtracks": 0
+   },
+   {
+    "lab_rooms": 4,
+    "placed": 452,
+    "total": 456,
+    "ms": 954,
+    "backtracks": 20
+   },
+   {
+    "lab_rooms": 3,
+    "placed": 446,
+    "total": 456,
+    "ms": 1024,
+    "backtracks": 30
+   },
+   {
+    "lab_rooms": 2,
+    "placed": 436,
+    "total": 456,
+    "ms": 1031,
+    "backtracks": 60
+   },
+   {
+    "lab_rooms": 1,
+    "placed": 425,
+    "total": 456,
+    "ms": 1158,
+    "backtracks": 88
+   }
+  ],
+  "lab_rooms_total": 15
+ },
+ "tools": {
+  "total": 59,
+  "gated": 20,
+  "by_module": {
+   "core (tools.py)": {
+    "reads": 18,
+    "gated_writes": 5
+   },
+   "campus.py": {
+    "reads": 14,
+    "gated_writes": 11
+   },
+   "portal.py": {
+    "reads": 6,
+    "gated_writes": 3
+   },
+   "academics.py": {
+    "reads": 1,
+    "gated_writes": 1
+   }
+  }
+ },
+ "router": {
+  "utterances": 40,
+  "offered": [
+   7,
+   5,
+   5,
+   5,
+   4,
+   4,
+   3,
+   3,
+   3,
+   4,
+   4,
+   4,
+   4,
+   4,
+   5,
+   5,
+   5,
+   8,
+   8,
+   5,
+   8,
+   8,
+   5,
+   7,
+   7,
+   8,
+   5,
+   5,
+   4,
+   4,
+   5,
+   5,
+   4,
+   7,
+   8,
+   7,
+   7,
+   5,
+   5,
+   7
+  ],
+  "full_schema_bytes": 18627,
+  "mean_offered_bytes": 1612,
+  "payload_saving_pct": 91.3
+ },
+ "data": {
+  "students_by_dept": {
+   "CSE": 350,
+   "ECE": 328,
+   "ISE": 177,
+   "CIVIL": 124,
+   "MECH": 116
+  },
+  "attendance": {
+   "n": 1095,
+   "mean": 79.7,
+   "below_75": 366
+  },
+  "periods_per_section_week": {
+   "3": {
+    "A": 11.4,
+    "L": 6.0,
+    "T": 21.6
+   },
+   "5": {
+    "A": 7.1,
+    "L": 6.0,
+    "T": 20.9
+   },
+   "7": {
+    "A": 6.0,
+    "L": 6.0,
+    "T": 16.0
+   }
+  },
+  "timetable_rows": 707,
+  "faculty_utilisation": {
+   "n": 53,
+   "mean": 51.9,
+   "max": 81.2
+  }
+ },
+ "tests": [
+  {
+   "suite": "mcp_parity",
+   "passed": 263,
+   "failed": 0,
+   "exit": 0,
+   "seconds": 2.0
+  },
+  {
+   "suite": "campus_test",
+   "passed": 122,
+   "failed": 0,
+   "exit": 0,
+   "seconds": 3.0
+  },
+  {
+   "suite": "auth_test",
+   "passed": 77,
+   "failed": 0,
+   "exit": 0,
+   "seconds": 2.3
+  },
+  {
+   "suite": "deploy_test",
+   "passed": 68,
+   "failed": 0,
+   "exit": 0,
+   "seconds": 1.4
+  },
+  {
+   "suite": "ranking_test",
+   "passed": 57,
+   "failed": 0,
+   "exit": 0,
+   "seconds": 1.2
+  },
+  {
+   "suite": "solver_test",
+   "passed": 44,
+   "failed": 0,
+   "exit": 0,
+   "seconds": 8.0
+  },
+  {
+   "suite": "makeup_test",
+   "passed": 30,
+   "failed": 0,
+   "exit": 0,
+   "seconds": 2.2
+  },
+  {
+   "suite": "mesh_test",
+   "passed": 25,
+   "failed": 0,
+   "exit": 0,
+   "seconds": 1.0
+  },
+  {
+   "suite": "academics_test",
+   "passed": 24,
+   "failed": 0,
+   "exit": 0,
+   "seconds": 0.9
+  },
+  {
+   "suite": "nlu_test",
+   "passed": 24,
+   "failed": 0,
+   "exit": 0,
+   "seconds": 0.1
+  }
+ ]
+}

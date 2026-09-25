@@ -60,8 +60,10 @@ the exception on the rule side: `orchestrator.h_campus` picks a tool with `campu
 runs it through `tools.execute`, so for them all three callers share one path. The parity that is
 actually enforced is between the **LLM agent and MCP** — both reach `tools.execute` and cannot
 differ, which is what `tests/mcp_parity.py` asserts.
-`tools.select_tools()` narrows 59 tools to ~4–9 per utterance (a non-admin is offered exactly their role's menu) (−64% payload) — free tiers are
-stingy and this is what keeps multi-hop turns inside the budget.
+`tools.select_tools()` narrows 59 tools to 3–8 per utterance (a non-admin is offered exactly their role's menu) —
+−91% tool-schema bytes on the README's 40 example requests (`docs/charts/results.json`; this replaces an
+older, unsourced −64%). Free tiers are stingy and this is what keeps multi-hop turns
+inside the budget.
 
 ---
 
@@ -293,7 +295,14 @@ python tests/deploy_test.py    # 68 assertions, no server, no API cost
 python tests/nlu_test.py       # 24 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
+python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)
 ```
+
+**The README's numbers come from `docs/charts/make_charts.py`** (stdlib only, works on a temp
+copy of the DB) and land in `docs/charts/results.json`. After changing anything it measures
+(ranking, solver, router, tool list, seed, a suite's assertion count) re-run it with `--tests`
+and commit the SVGs with the change; the charts must never disagree with the code. Screenshots in
+`docs/img/` were taken headlessly (see the README's "How the screenshots and charts were made").
 
 `ranking_test.py` is the one to run after touching `SubstitutionAgent`. Four of its assertions
 encode real defects and say so in their comments — leave them labelled: a swap must not change the
