@@ -441,7 +441,14 @@ check("10b every panel is a registered tool", app.PANELS <= set(tools.FUNCS), st
 html = open(os.path.join(HERE, "static", "index.html"), encoding="utf-8").read()
 check("10c the console still loads nothing external",
       not re.findall(r"""(?:src|href)\s*=\s*["']?(?:https?:)?//""", html) and "@import" not in html
-      and not re.search(r"fetch\(\s*['\"`]https?:", html))
+      and not re.search(r"\bfetch\(\s*['\"`]https?:", html))
+# #47: \b written through a shell heredoc became a literal U+0008 above, which
+# made the fetch half of 10c vacuous. No source file may carry one again.
+import glob                                                        # noqa: E402
+bs = [f for f in glob.glob(os.path.join(HERE, "**", "*.*"), recursive=True)
+      if f.endswith((".py", ".js", ".html", ".md")) and ".git" not in f
+      and "\x08" in open(f, encoding="utf-8", errors="ignore").read()]
+check("10f no source file contains a stray backspace character", not bs, str(bs))
 m = re.search(r"const APPROVING=/(.+?)/i;", html)
 check("10d the deep-link guard mirrors guard.APPROVAL_RX exactly",
       m and m.group(1) == tools.APPROVAL_RX.pattern, m and m.group(1)[:60])
