@@ -169,7 +169,10 @@ def resolve_pending(con, text, st, tr, actor):
         sub, notif = SubstitutionAgent(), NotifyAgent()
         tr.add("PolicyGuard", "write_authorisation", f"admin confirmed → committing plan {plan['code']}")
         applied = sub.apply_plan(con, plan, faculty, date, actor)
-        tr.add("SubstitutionAgent", "commit_overrides", f"{len(applied)} timetable override(s) written")
+        tr.add("SubstitutionAgent", "commit_overrides", f"{len(applied)} block(s) written")
+        # Reported on a re-read, never on the writer's own count (#51).
+        v = sub.verify_plan(con, plan["id"], p["date"], sub.last_commit)
+        tr.add("Auditor", "verify", sub.verify_line(v), status="ok" if v["ok"] else "error")
         msgs = notif.draft_absence(con, faculty, date, plan)
         notif.dispatch(con, msgs)
         tr.add("NotifyAgent", "dispatch", f"{len(msgs)} notification(s) queued (students, faculty, HOD)")
@@ -199,8 +202,14 @@ def resolve_pending(con, text, st, tr, actor):
                    f"**{date.strftime('%d %b %Y (%A)')}**."),
             tbl,
             B_notice(msgs),
-            B_text(f"Audit trail `#{plan['id']}` recorded against `{actor}`. "
-                   f"The published timetable for {date.strftime('%d %b')} now shows these overrides in amber. "
+            B_text((f"Checked after writing: {v['overrides']} override row(s) and {v['makeups']} "
+                    f"make-up booking(s) re-read, all present and clash-free. "
+                    if v["ok"] else
+                    f"**The re-read after writing found {len(v['problems'])} problem(s):** "
+                    + "; ".join(v["problems"][:5]) + ". The change is in place; say **undo** to roll "
+                    f"it back. ")
+                   + f"Audit trail `#{plan['id']}` recorded against `{actor}`. "
+                   f"The published timetable for {date.strftime('%d %b')} now marks these changes. "
                    f"Say **undo** if you want me to roll this back.")],
             "trace": tr.items, "agent": "SubstitutionAgent", "intent": "absence.cover",
             "confidence": 97, "refresh": True,

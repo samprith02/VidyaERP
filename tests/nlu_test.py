@@ -152,6 +152,21 @@ check("3h a label comes back with the date",
       "the console echoes this back, which is what catches a wrong week early")
 
 
+# --------------------------------------------------------- 4 · ISO dates (#55)
+print("\n4 · an ISO date is the date it says")
+print("-" * 78)
+FRI = dt.date(2026, 9, 4)
+iso = nlu.parse_date("F012 is absent on 2026-09-08, arrange coverage", FRI)[0]
+# Defect found 2026-09-25: the dd-mm pattern matched the "09-08" inside the ISO
+# date and returned 9 August - a Sunday - so the reply said no cover was needed.
+check("4a '2026-09-08' is Tue 8 September, not 9 August (a Sunday)", iso == dt.date(2026, 9, 8), str(iso))
+check("4b an unpadded ISO date works too", nlu.parse_date("2026-9-8", FRI)[0] == dt.date(2026, 9, 8))
+check("4c the Indian dd-mm and dd-mm-yyyy forms still read day first",
+      nlu.parse_date("8/9", FRI)[0] == dt.date(2026, 9, 8)
+      and nlu.parse_date("08-09-2026", FRI)[0] == dt.date(2026, 9, 8))
+check("4d an impossible ISO date gives no date, not a fragment of it",
+      nlu.parse_date("on 2026-02-30", FRI) == (None, None), str(nlu.parse_date("on 2026-02-30", FRI)))
+
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")
 for f in FAILED:

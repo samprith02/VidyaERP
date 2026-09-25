@@ -227,6 +227,13 @@ class SubstitutionAgent:
                               WHERE o.date=? AND t.period=? AND o.status='Applied' AND o.new_faculty IS NOT NULL""",
                       (date_iso, period)):
             b.add(r["f"])
+        # A booked make-up holds its teacher too (#54). Without this only other
+        # make-up searches saw the booking, and a substitute or swap partner
+        # could be handed a class at the hour they owe their own make-up.
+        ensure_makeups(con)
+        for r in rows(con, "SELECT faculty FROM makeup_sessions WHERE status='Scheduled' AND date=? AND period=?",
+                      (date_iso, period)):
+            b.add(r["faculty"])
         return b
 
     def on_leave(self, con, date_iso):
@@ -855,7 +862,90 @@ class SubstitutionAgent:
                         (date_iso, sid, action, new_fac, room, new_sub,
                          reason, "Applied", actor, now, plan["id"]))
         con.commit()
+        # What this commit MEANT to write, for verify_plan to hold the database
+        # to. Recorded, not re-derived: the check is against the intent, and
+        # the database is what gets re-read.
+        self.last_commit = {
+            "overrides": [(w[0], w[1], w[2], w[4]) for w in writes],
+            "makeups": [(l["makeup"]["date"], p, faculty["id"], l["makeup"]["room"])
+                        for l in plan["legs"]
+                        if l["action"] in ("SWAP", "MAKEUP") and l.get("makeup")
+                        for p in (l["makeup"].get("periods") or [l["makeup"]["period"]])]}
         return applied
+
+    # ---------------------------------------------------------- verify
+    def verify_plan(self, con, plan_ref, date_iso, expect):
+        """Re-read what a plan committed, instead of trusting the writer (#51).
+
+        Two questions, both answered from the database: are the rows this plan
+        meant to write there, exactly once and nothing else; and is the state
+        they produce sound, i.e. nobody the plan put in front of a class is
+        also somewhere else that hour, and no make-up shares its hour with the
+        same room, teacher or batch. Returns {"ok", "overrides", "makeups",
+        "problems"}; a problem is stated in words the Registrar can act on."""
+        from collections import Counter
+        ensure_makeups(con)
+        problems = []
+        ov = rows(con, """SELECT o.*, t.day tday, t.period tperiod FROM overrides o
+                          LEFT JOIN timetable t ON t.id=o.slot_id
+                          WHERE o.plan_ref=? AND o.date=? AND o.status='Applied'""", (plan_ref, date_iso))
+        got = Counter((r["slot_id"], r["action"], r["new_faculty"], r["new_subject"]) for r in ov)
+        want = Counter(expect["overrides"])
+        for k in want - got:
+            problems.append(f"override for slot {k[0]} ({k[1]}) is missing")
+        for k in got - want:
+            problems.append(f"slot {k[0]} carries an override ({k[1]}) the plan never made")
+        mks = rows(con, "SELECT * FROM makeup_sessions WHERE plan_ref=? AND status='Scheduled'", (plan_ref,))
+        mk_got = Counter((r["date"], r["period"], r["faculty"], r["room"]) for r in mks)
+        mk_want = Counter(expect["makeups"])
+        for k in mk_want - mk_got:
+            problems.append(f"make-up on {k[0]} P{k[1]} is not booked")
+        for k in mk_got - mk_want:
+            problems.append(f"make-up on {k[0]} P{k[1]} was booked but never promised")
+
+        # Nobody this plan put in front of a class is teaching elsewhere then.
+        # A released period (VACATED / MAKEUP) puts nobody in a room.
+        for r in ov:
+            if not r["new_faculty"] or r["action"] in ("VACATED", "MAKEUP") or r["tperiod"] is None:
+                continue
+            who = fac_name(con, r["new_faculty"])
+            for own in rows(con, "SELECT id FROM timetable WHERE faculty=? AND day=? AND period=? AND id<>?",
+                            (r["new_faculty"], r["tday"], r["tperiod"], r["slot_id"])):
+                if not one(con, "SELECT 1 FROM overrides WHERE slot_id=? AND date=? AND status='Applied'",
+                           (own["id"], date_iso)):
+                    problems.append(f"{who} is assigned P{r['tperiod']} but also teaches their own class then")
+            if one(con, """SELECT 1 FROM overrides o JOIN timetable t ON t.id=o.slot_id
+                           WHERE o.date=? AND o.status='Applied' AND o.new_faculty=? AND t.period=?
+                           AND o.slot_id<>? AND o.action NOT IN ('VACATED','MAKEUP')""",
+                   (date_iso, r["new_faculty"], r["tperiod"], r["slot_id"])):
+                problems.append(f"{who} is assigned two classes at P{r['tperiod']}")
+            if one(con, "SELECT 1 FROM makeup_sessions WHERE status='Scheduled' AND date=? AND period=? AND faculty=?",
+                   (date_iso, r["tperiod"], r["new_faculty"])):
+                problems.append(f"{who} is assigned P{r['tperiod']} but also holds a make-up then")
+
+        # No make-up shares its hour with the same room, teacher or batch.
+        for m in mks:
+            n = one(con, """SELECT COUNT(*) c FROM makeup_sessions WHERE status='Scheduled' AND date=? AND period=?
+                            AND (room=? OR faculty=? OR (dept=? AND sem=? AND section=?))""",
+                    (m["date"], m["period"], m["room"], m["faculty"], m["dept"], m["sem"], m["section"]))["c"]
+            if n > 1:
+                problems.append(f"make-up on {m['date']} P{m['period']} shares its room, teacher or batch "
+                                f"with another booking")
+            if one(con, """SELECT 1 FROM timetable WHERE day=? AND period=?
+                           AND (room=? OR faculty=? OR (dept=? AND sem=? AND section=?))""",
+                   (m["day"], m["period"], m["room"], m["faculty"], m["dept"], m["sem"], m["section"])):
+                problems.append(f"make-up on {m['date']} P{m['period']} collides with the weekly timetable")
+        return {"ok": not problems, "overrides": sum(got.values()), "makeups": sum(mk_got.values()),
+                "problems": problems}
+
+    @staticmethod
+    def verify_line(v):
+        """One sentence for the trace and the reply."""
+        if v["ok"]:
+            return (f"re-read {v['overrides']} override row(s) and {v['makeups']} make-up booking(s): "
+                    f"all present, no clashes")
+        return f"re-read found {len(v['problems'])} problem(s): " + "; ".join(v["problems"][:3])
+
 
 
 # ============================================================== Timetable
