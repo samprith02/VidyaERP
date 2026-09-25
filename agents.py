@@ -78,6 +78,13 @@ def B_cards(cards, title=None):   return {"type": "cards", "cards": cards, "titl
 def B_plans(plans):        return {"type": "plans", "plans": plans}
 def B_notice(items):       return {"type": "notice", "items": items}
 def B_grid(grid):          return {"type": "grid", **grid}
+# campus-services primitives: an agent-built action queue, a printable document,
+# a pass/fail checklist (one row per consulted agent) and labelled bars
+def B_actions(items, title=None):   return {"type": "actions", "items": items, "title": title}
+def B_document(doc):                return {"type": "document", **doc}
+def B_checklist(items, title=None): return {"type": "checklist", "items": items, "title": title}
+def B_bars(items, title=None, unit=""):
+    return {"type": "bars", "items": items, "title": title, "unit": unit}
 
 
 # ============================================================== PolicyGuard

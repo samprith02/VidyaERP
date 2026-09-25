@@ -71,6 +71,43 @@ INTENTS = {
                ("placement", 4), ("trend", 3), ("brief me", 5), ("status of college", 5),
                ("risk", 3), ("insight", 4)],
         "desc": "Institution analytics, NAAC/NBA metrics, risk radar"},
+    # ---- campus services (campus.py) ----
+    "ops.radar": {
+        "kw": [("autopilot", 8), ("needs my attention", 8), ("need my attention", 8),
+               ("action items", 8), ("what should i", 5), ("to-do", 5), ("todo", 5),
+               ("anything urgent", 6), ("ops radar", 8), ("what is pending", 4)],
+        "desc": "Ask every agent what needs a human decision today"},
+    "student.360": {
+        "kw": [("360", 8), ("everything about", 7), ("full profile", 5), ("complete profile", 5),
+               ("subject-wise attendance", 8), ("subject wise attendance", 8)],
+        "desc": "One student across every ledger"},
+    "library": {
+        "kw": [("library", 7), ("book", 5), ("books", 5), ("borrow", 5), ("overdue", 3),
+               ("catalogue", 6), ("textbook", 5), ("librarian", 6)],
+        "desc": "Catalogue, circulation, overdue fines"},
+    "hostel": {
+        "kw": [("hostel", 7), ("warden", 5), ("mess", 3), ("room allot", 6), ("waitlist", 4),
+               ("complaint", 3)],
+        "desc": "Occupancy, allotment, complaints"},
+    "transport": {
+        "kw": [("bus", 6), ("buses", 6), ("transport", 7), ("route", 2), ("driver", 4),
+               ("pickup", 4), ("broke down", 6), ("breakdown", 6)],
+        "desc": "Routes, loads, breakdowns"},
+    "gatepass": {
+        "kw": [("gate pass", 9), ("gatepass", 9), ("outing", 6), ("out pass", 7), ("home visit", 6)],
+        "desc": "Outing / home-visit passes screened against policy"},
+    "placement": {
+        "kw": [("placement", 6), ("drive", 4), ("recruit", 5), ("shortlist", 6), ("offer", 3),
+               ("ctc", 4), ("lpa", 3), ("eligible for", 3)],
+        "desc": "Drives, eligibility, shortlists"},
+    "document": {
+        "kw": [("certificate", 7), ("bonafide", 9), ("no dues", 9), ("no-dues", 9), ("noc", 7),
+               ("transfer certificate", 9), ("clearance", 5)],
+        "desc": "No-dues clearance and certificates"},
+    "leave.review": {
+        "kw": [("leave application", 8), ("leave applications", 8), ("pending leave", 8),
+               ("leave requests", 7)],
+        "desc": "Pending faculty leave priced against coverage"},
 }
 
 CONFIRM_YES = ["yes", "yeah", "yep", "ok", "okay", "approve", "apply", "confirm", "go ahead",
@@ -96,6 +133,25 @@ PRIORITY = [
      r"\btime ?table\b[^.?!]{0,25}\bfrom scratch\b", "timetable.generate", 16),
     (r"\btime ?table\b", "timetable.view", 8),
     (r"\battendance\b.*\b(?:defaulter|shortage|below|less than|<)\b", "student.query", 10),
+    # ---- campus services. Bonuses clear the generic verb rules above ("approve"
+    # +12 for request.manage), because "approve gate pass 12" is a gate pass.
+    (r"\bgate ?pass(?:es)?\b|\bout ?pass(?:es)?\b|\bouting\b|\bhome visit\b", "gatepass", 18),
+    (r"\bno[- ]?dues?\b|\bbona ?fide\b|\btransfer certificate\b|\bcertificates?\b|\bnoc\b",
+     "document", 18),
+    (r"\blibrary\b|\bbk\d{3,4}\b|\boverdue (?:books?|loans?)\b|\bbooks?\b.*\b(?:issue|return|lend)|"
+     r"\b(?:issue|return|lend)\b.*\bbooks?\b", "library", 16),
+    (r"\bhostels?\b|\bwarden\b|\broom allot", "hostel", 14),
+    (r"\bbus(?:es)?\b|\btransport\b|\broute\s*r?\d\b|\bbroke ?down\b|\bbreakdown\b", "transport", 16),
+    (r"\bplacements?\b|\b(?:recruitment|campus) drive\b|\bdrive\b.*\b(?:eligib|shortlist)|"
+     r"\bshortlist\b", "placement", 14),
+    (r"\bleave (?:application|request)s?\b|\bpending (?:faculty )?leaves?\b|"
+     r"\b(?:approve|reject|grant|sanction)\s+(?:all\s+)?(?:the\s+)?(?:pending\s+)?leaves?\b|"
+     r"\breview (?:the )?(?:pending )?leaves?\b|\b(?:approve|reject) leave\s*#?\d", "leave.review", 20),
+    (r"\bautopilot\b|\bneeds? (?:my )?attention\b|\baction items?\b|\bops radar\b|"
+     r"\bwhat should i (?:do|act on|focus on|look at)\b|\bto-?do list\b", "ops.radar", 18),
+    (r"(?:\b360\b|everything about|full profile|complete profile|subject[- ]wise attendance)"
+     r".*\b4vp\d{2}[a-z]{2}\d{3}\b|\b4vp\d{2}[a-z]{2}\d{3}\b.*"
+     r"(?:\b360\b|everything|full profile|complete profile|subject[- ]wise)", "student.360", 22),
 ]
 
 

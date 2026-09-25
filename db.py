@@ -198,6 +198,12 @@ DROP TABLE IF EXISTS subjects; DROP TABLE IF EXISTS rooms; DROP TABLE IF EXISTS 
 DROP TABLE IF EXISTS leaves; DROP TABLE IF EXISTS overrides; DROP TABLE IF EXISTS requests;
 DROP TABLE IF EXISTS notifications; DROP TABLE IF EXISTS audit; DROP TABLE IF EXISTS exams;
 DROP TABLE IF EXISTS attendance; DROP TABLE IF EXISTS placements;
+DROP TABLE IF EXISTS books; DROP TABLE IF EXISTS book_loans; DROP TABLE IF EXISTS hostel_rooms;
+DROP TABLE IF EXISTS hostel_allocations; DROP TABLE IF EXISTS hostel_complaints;
+DROP TABLE IF EXISTS bus_routes; DROP TABLE IF EXISTS bus_stops; DROP TABLE IF EXISTS transport_riders;
+DROP TABLE IF EXISTS gate_passes; DROP TABLE IF EXISTS placement_drives;
+DROP TABLE IF EXISTS student_offers; DROP TABLE IF EXISTS drive_registrations;
+DROP TABLE IF EXISTS certificates;
 
 CREATE TABLE departments(code TEXT PRIMARY KEY, name TEXT, hod TEXT, intake INT);
 CREATE TABLE faculty(
@@ -249,7 +255,14 @@ def _name(used):
 # ====================================================================== SEED
 def seed(force=False):
     if os.path.exists(DB_PATH) and not force:
+        _campus()                 # an older college.db picks the campus services up here
         return
+    # Re-pin the stream on EVERY seed, not just once at import. It used to be
+    # pinned only by the module-level random.seed(20), so the first seed in a
+    # process was reproducible and the second was not: /api/seed/reset on a
+    # running server rebuilt a DIFFERENT institution from the one it booted
+    # with. Measured by tests/campus_test.py:1b (two fresh seeds, one process).
+    random.seed(20)
     con = connect()
     cur = con.cursor()
     cur.executescript(SCHEMA)
@@ -522,6 +535,16 @@ def seed(force=False):
 
     con.commit()
     con.close()
+    _campus()
+
+
+def _campus():
+    """Library, hostel, transport, gate passes, placement drives, certificates
+    and per-subject attendance. Seeded AFTER the core institution and from its
+    own Random, so the core tables are byte-identical with or without it -
+    tests/campus_test.py pins that. Imported lazily: campus_data imports db."""
+    import campus_data
+    campus_data.ensure()
 
 
 # ====================================================================== check

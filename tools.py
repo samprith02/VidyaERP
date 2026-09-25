@@ -10,29 +10,25 @@ Write-tools are wrapped by PolicyGuard: they refuse to commit unless the admin
 gave explicit approval **in the current turn**. The model cannot talk its way past this.
 """
 import re, datetime as dt
-import nlu, db, solver, agents
+import nlu, db, solver, agents, campus
 from nlu import TODAY, day_of
 from agents import (rows, one, fac_name, subj_name, plabel, _span, PERIOD_SPAN,
                     SubstitutionAgent, TimetableAgent, FacultyAgent, StudentAgent,
                     FinanceAgent, ExamAgent, RequestAgent, NotifyAgent, AnalyticsAgent,
                     Auditor,
                     B_text, B_table, B_cards, B_plans, B_notice, B_grid)
-
-APPROVAL_RX = re.compile(
-    r"\b(yes|yeah|yep|ok|okay|sure|confirm|confirmed|approve[d]?|apply|applied|go ahead|do it|"
-    r"proceed|send it|publish|commit|accept|make it (?:so|happen)|plan\s*[abc])\b", re.I)
-
-
-def approved_this_turn(user_text):
-    return bool(APPROVAL_RX.search(user_text or ""))
+# The gate lives in guard.py so campus.py can call it without importing this
+# module; both names are re-exported here unchanged.
+from guard import APPROVAL_RX, approved_this_turn                  # noqa: F401
 
 
 # The tools that refuse to commit without explicit admin approval in the current
 # turn. Kept explicit so it can be read at a glance; tests/mcp_parity.py asserts
 # it still matches the set of tools that actually call approved_this_turn(), so
-# a new write tool cannot quietly land outside the gate.
+# a new write tool cannot quietly land outside the gate. The campus services
+# contribute theirs from campus.GATED_WRITES - listed there, next to the tools.
 GATED_WRITES = ("apply_coverage_plan", "apply_timetable_generation", "decide_request",
-                "create_request", "broadcast_notice")
+                "create_request", "broadcast_notice") + campus.GATED_WRITES
 
 
 def inr(n):
@@ -622,6 +618,10 @@ REGISTRY = [
      "Draft (send=false) or dispatch (send=true) a circular to students/faculty/parents.",
      _p({"audience": _S, "title": _S, "body": _S, "send": _B}, ["audience", "body"])),
 ]
+# Library, hostel, transport, gate passes, placement, certificates, leave review,
+# Student 360 and the Ops radar. Same registry, so the same execute(), the same
+# gate and the same MCP surface - there is no second way in for them either.
+REGISTRY += campus.REGISTRY
 
 FUNCS = {name: fn for fn, name, _d, _s in REGISTRY}
 SCHEMAS = [{"type": "function",
@@ -667,9 +667,11 @@ TOOL_GROUPS = {
     "exam.query":      ["exam_schedule", "exam_eligibility", "attendance_defaulters"],
     "request.manage":  ["list_requests", "decide_request", "create_request"],
     "notify.broadcast": ["broadcast_notice", "attendance_defaulters"],
-    "analytics.kpi":   ["institution_overview", "attendance_defaulters", "fee_summary", "list_requests"],
+    "analytics.kpi":   ["institution_overview", "attendance_defaulters", "fee_summary", "list_requests",
+                        "placement_overview"],
+    **campus.TOOL_GROUPS,
 }
-CORE = ["institution_overview", "get_timetable", "faculty_profile", "student_lookup",
+CORE = ["ops_radar", "institution_overview", "get_timetable", "faculty_profile", "student_lookup",
         "list_requests", "plan_absence_coverage"]
 def _allow_null(schemas):
     """Models routinely send {"dept": null} for an omitted optional arg, and strict
@@ -700,10 +702,11 @@ def select_tools(text, session=None, limit=9):
         picked = list(CORE)
     # a live proposal always keeps its commit/rollback verbs on the table
     if session and session.get("pending"):
-        commit = ("apply_timetable_generation"
-                  if session["pending"].get("kind") == "timetable_generation"
+        kind = session["pending"].get("kind")
+        commit = ("apply_timetable_generation" if kind == "timetable_generation"
+                  else session["pending"].get("tool") if kind == "tool_commit"
                   else "apply_coverage_plan")
-        for name in (commit, "undo_last_change"):
+        for name in ((commit,) if kind == "tool_commit" else (commit, "undo_last_change")):
             if name not in picked:
                 picked.insert(0, name)
     if "institution_overview" not in picked and len(picked) < limit:

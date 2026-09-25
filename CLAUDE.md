@@ -27,37 +27,45 @@ key into `.env` (gitignored) and the LLM agent takes over — same guardrails ei
 ## Architecture in one pass
 
 `app.py` routes → `orchestrator.py` (rule engine) **or** `llm_agent.py` (model plans and calls
-tools) → `tools.py` (22 tool schemas, PolicyGuard-wrapped) → `agents.py` (the specialists).
+tools) → `tools.py` (47 tool schemas, PolicyGuard-wrapped) → `agents.py` + `campus.py` (the specialists).
 
 | Piece | Where | Note |
 |---|---|---|
 | PolicyGuard | `agents.py:84` | RBAC, scope, rupee ceilings, HITL gate. **Outside the model** |
 | Substitution | `agents.py:103` | the flagship: absence → 3 ranked coverage plans |
 | Timetable / Faculty / Student / Finance / Exam / Request / Notify / Analytics | `agents.py:367+` | specialists, all return structured dicts |
-| Auditor | `agents.py:561` | immutable ledger of who asked, which agent acted, what changed |
+| Auditor | `agents.py` (`class Auditor`) | immutable ledger of who asked, which agent acted, what changed |
+| Campus services | `campus.py` | library, hostel, transport, gate pass, placement, documents, leave review, Student 360, Ops radar — tools + `rule_route` |
+| Campus data | `campus_data.py` | their tables + seed, own `Random`; `ensure()` is additive to an old DB |
+| Write gate | `guard.py` | `approved_this_turn` lives here so every tool module can import it; `tools` re-exports it |
 | MCP surface | `mcp_server.py` | stdio JSON-RPC; `call_as` delegates to `tools.execute`. No SDK |
 | Solver | `solver.py` | timetable generation from scratch (below) |
 | NLU | `nlu.py` | intent scoring + regex priority rules + Indian date parsing |
 
 **Two engines, one interface.** The rule engine is the default and costs nothing; the LLM agent
 is opt-in. The rule engine drives `agents.py` directly through its own HITL state machine
-(`orchestrator.resolve_pending`); the LLM agent goes through `tools.py`. The parity that is
+(`orchestrator.resolve_pending`); the LLM agent goes through `tools.py`. The campus services are
+the exception on the rule side: `orchestrator.h_campus` picks a tool with `campus.rule_route` and
+runs it through `tools.execute`, so for them all three callers share one path. The parity that is
 actually enforced is between the **LLM agent and MCP** — both reach `tools.execute` and cannot
 differ, which is what `tests/mcp_parity.py` asserts.
-`nlu.select_tools()` narrows 22 tools to ~4–8 per utterance (−64% payload) — free tiers are
+`tools.select_tools()` narrows 47 tools to ~4–9 per utterance (−64% payload) — free tiers are
 stingy and this is what keeps multi-hop turns inside the budget.
 
 ---
 
 ## Rules that matter here
 
-- **Writes are guarded, and the guard is in code, not in the prompt.** *Five* write tools —
-  `tools.GATED_WRITES`: `apply_coverage_plan`, `apply_timetable_generation`, `decide_request`,
-  `create_request`, `broadcast_notice` — refuse to commit without explicit admin approval *in the
-  current turn* (`tools.approved_this_turn`). `tests/mock_llm.py` has a rogue-agent endpoint that
-  tries to skip the gate and is blocked. **Never** add a write path that bypasses this, and never
-  move the check into a system prompt. Adding a sixth write tool means adding it to
-  `GATED_WRITES`; `mcp_parity.py:15c` fails if you forget.
+- **Writes are guarded, and the guard is in code, not in the prompt.** *Sixteen* write tools —
+  `tools.GATED_WRITES`: the five core ones (`apply_coverage_plan`, `apply_timetable_generation`,
+  `decide_request`, `create_request`, `broadcast_notice`) plus the eleven in `campus.GATED_WRITES`
+  — refuse to commit without explicit admin approval *in the current turn*
+  (`guard.approved_this_turn`, re-exported as `tools.approved_this_turn`). `tests/mock_llm.py` has a
+  rogue-agent endpoint that tries to skip the gate and is blocked. **Never** add a write path that
+  bypasses this, and never move the check into a system prompt. A new write tool must call
+  `approved_this_turn(U)` **directly in its own body** (15c derives the gated set from each tool's
+  bytecode — a helper that did the check would hide the tool) and be listed in `GATED_WRITES`;
+  a campus write also needs an entry in `mcp_parity.py`'s `CAMPUS_ARGS` (16a fails otherwise).
 - **`tools.execute` is the only dispatch point.** `llm_agent.py` and `mcp_server.call_as` both
   arrive there. A new caller that reaches `tools.FUNCS` directly re-creates the second path this
   design exists to prevent.
@@ -68,8 +76,18 @@ stingy and this is what keeps multi-hop turns inside the budget.
   six digits, 120 s, single use. **Never** widen this to read an approval string from `args` —
   that is the one change that makes the whole parity claim false, and `mcp_parity.py:02` is the
   mutation test that proves it.
-- **Propose, then commit.** Every write tool has a `plan_*` partner that writes nothing and
-  stashes into `S["pending"]`. Keep that shape for new write tools.
+- **Propose, then commit.** Two shapes, both write nothing until approved. The core writes have a
+  `plan_*` partner that stashes into `S["pending"]`. The campus writes are ONE tool each: called
+  without approval it computes the change and stages `{"kind": "tool_commit", "tool", "args"}`
+  (`campus._propose`); the same call with approval commits. The rule engine's `resolve_pending`
+  commits a `tool_commit` by calling `tools.execute` again with the admin's "yes" as `U` — the same
+  gate, never a shortcut. After committing, a campus tool re-reads what it wrote before reporting.
+- **Module pages are read-only by construction.** `/api/panel/{name}` serves only names in
+  `app.PANELS` (reads) and passes `U=""`. `campus_test.py:10a` fails if a gated write is ever listed.
+- **Radar commands must never contain approval words.** An Ops-radar button sends its sentence as
+  the admin's turn; if it said "approve", one click would commit. `campus_test.py:9e` checks every
+  one. Same reason `#ask=` deep links carrying approval words are only pre-filled (`10d` keeps the
+  page's copy of the regex identical to `guard.APPROVAL_RX`).
 - **Never report a write as clean on the writer's own word.** `apply_timetable_generation` calls
   `solver.verify()` — an independent re-read of the committed rows — before saying it worked.
 - **All data is synthetic and must stay that way.** No real institution, person, USN, email or
@@ -94,7 +112,10 @@ stingy and this is what keeps multi-hop turns inside the budget.
   (`tests/deploy_test.py:2a`). A deployment configures this app through environment variables and
   has no `.env` to edit.
 - **`static/index.html` loads nothing external** — no CDN, no fonts, no images. Keep it that way;
-  it is why the console works offline and on a locked-down college network.
+  it is why the console works offline and on a locked-down college network. The 3D agent mesh is
+  therefore a hand-rolled perspective projection on a 2D canvas, not three.js. Every packet it
+  draws is a real trace step — do not add decorative "ambient" traffic; the only non-trace motion
+  is the Supervisor breathing while a request is in flight.
 
 ---
 
@@ -156,12 +177,20 @@ ships a timetable back.
   then the `/health` check above. Verified working live on 2026-09-25: `short: fe6d846`,
   `source: platform`.
 - **Storage is ephemeral on a free host, and `/health` says so.** `db.seed()` rebuilds the whole
-  institution on a cold start (~0.07 s), so a restart silently discards every applied override.
+  institution on a cold start (~0.25 s with the campus services), so a restart silently discards
+  every applied override.
   `VIDYAERP_DB` points the database at a mounted disk; `/health` reports `persistent: false` when
   it is not set.
 - **MCP cannot reach a remote deployment.** `mcp_server.py` is stdio and opens the database beside
   it, so an approval code minted on the Render box is useless to an MCP client on a laptop. Do not
   describe the deployed console and the MCP surface as one system — they are two instances.
+- **`db.seed()` re-pins `random.seed(20)` on every seed — it used to only at import.** Found
+  2026-09-25 by `campus_test.py:1b`: the first seed in a process was reproducible and the second
+  was not, so `/api/seed/reset` on a running server rebuilt a *different* institution from the one
+  it booted with. The core tables are fingerprinted in `campus_test.py` (`CORE_BEFORE`, `1a`); if
+  you change the core generator on purpose, re-record them.
+- **Campus data draws from its own `Random`, after the core seed.** Never let `campus_data.py`
+  touch the global stream — `1a` is what notices if it does.
 - **`college.db` is gitignored on purpose.** `db.seed()` reproduces the seeded data exactly
   (verified table-by-table; `db.py` pins `random.seed(20)`), but the *file* is not byte-identical
   — SQLite page layout is not reproducible, and a tracked DB accumulates runtime rows. The copy
@@ -184,7 +213,8 @@ ships a timetable back.
 
 ```bash
 python tests/solver_test.py    # 44 assertions, no server, no API cost
-python tests/mcp_parity.py     # 155 assertions, no server, no API cost
+python tests/mcp_parity.py     # 240 assertions, no server, no API cost
+python tests/campus_test.py    # 121 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 64 assertions, no server, no API cost
 python tests/nlu_test.py       # 15 assertions, no server, no API cost
@@ -196,6 +226,13 @@ python tests/live_llm.py       # 6 real-model queries; costs tokens
 encode real defects and say so in their comments — leave them labelled: a swap must not change the
 partner's teaching hours, a swap must never split a lab block, `find_makeup` must be able to
 succeed at all, and the rank shown on the card must be the rank used to sort.
+
+`campus_test.py` is the one to run after touching `campus.py`, `campus_data.py` or the NLU. Its
+policy cases (gate passes, circulation, hostel, bus seats, eligibility, no-dues) are pinned one by
+one and were mutation-tested: each rule, broken, fails a named assertion. Two cases are
+*constructed* because the seed happens not to exercise them — `3b` (opens one bed in a batch-mate
+room) and `4f` (every other bus already over-full; a negative slice would once have moved riders
+onto them).
 
 `solver_test.py` is the one to run after any solver change. Two of its assertions encode real
 defects that were found by measurement, and their comments say so — leave them labelled:
@@ -270,9 +307,19 @@ and room scarcity must degrade rather than collapse.
 - **Attendance is a single independent draw per student** — `random.gauss(80, 12)` clamped to
   [46, 99] (`db.py`, students insert). It carries no correlation with CGPA, backlogs, subject or
   semester, so any "attendance risk" analytics are structurally shallow.
-- **The `attendance` table is created but never populated** (0 rows). Per-subject attendance does
-  not exist; `students.attendance` is the only figure in the system. Anything claiming
-  subject-level attendance would be reading an empty table.
+- **Per-subject attendance is derived, not observed.** Since 2026-09-25 `campus_data` fills the
+  `attendance` table, reconciled so each student's hours-weighted mean reproduces
+  `students.attendance` (±0.5, `campus_test.py:1f`). It refines the headline; it inherits its
+  weakness — one independent draw per student — and adds no signal of its own.
+- **Hostel gender is inferred from the synthetic first-name pools** (`campus_data.gender_of`).
+  Sound only because every name was generated from those pools; real data needs a real column.
+- **The gate-pass, circulation and placement rules are policy constants** (`CURFEW`,
+  `OUTING_CLASS_HOURS_BAR`, `LOAN_LIMIT`, `FINE_PER_DAY`, `DREAM_MULTIPLE`), stated in the console
+  and pinned by tests. They are one college's plausible policy, not findings.
+- **Campus notifications are recorded, not delivered.** Like every notice here, they land in the
+  `notifications` table; there is no SMS/email gateway.
+- **The fee-structure certificate uses synthetic fee heads** (`campus.FEE_HEADS`), and every
+  printed document carries a footer saying it is a specimen from synthetic data.
 
 ---
 

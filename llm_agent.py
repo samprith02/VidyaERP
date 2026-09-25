@@ -1,6 +1,6 @@
 """
 VidyaERP :: LLM agent loop
-The supervisor is now an actual language model with the nine specialists bolted on as tools.
+The supervisor is now an actual language model with the specialists bolted on as tools.
 
     user turn
        │
@@ -50,6 +50,10 @@ rank them, at 0.8/0.2 - a policy choice, so say so if asked. Coverage is a feasi
 ranking axis. Never call a plan with incomplete=true a full solution. If a card says another plan \
 would commit the same changes, say they are the same option rather than offering both.
 7. Ambiguous faculty name -> ask which, never guess. Tool error -> say so plainly.
+8. Campus services (library, hostel, bus, gate passes, placement, certificates, faculty leave) use \
+ONE tool per write: called before the admin approves, it returns BLOCKED with a proposal and writes \
+nothing - summarise the proposal and ask. When the admin says yes, call the SAME tool with the SAME \
+arguments. Never call a write tool twice in one turn. "What needs my attention" -> ops_radar.
 
 STYLE: brief, decisive, professional Indian English, like a chief of staff. Under 90 words normally, \
 130 for a coverage recommendation. **Bold** the key figure or name. No JSON. Do not say "tool", \
@@ -199,5 +203,5 @@ def _fallback_chips(used):
                 "Who else is on leave that day?"]
     if any("request" in u for u in used):
         return ["Approve the high-priority ones", "Show approved requests"]
-    return ["Brief me on today's institution status", "Pending approvals in my inbox",
-            "Attendance defaulters in CSE sem 5"]
+    return ["What needs my attention today?", "Brief me on today's institution status",
+            "Pending approvals in my inbox"]
