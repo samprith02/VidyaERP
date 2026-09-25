@@ -132,6 +132,8 @@ PRIORITY = [
      r"[^.?!]{0,40}\b(?:time ?table|schedule)\b|"
      r"\btime ?table\b[^.?!]{0,25}\bfrom scratch\b", "timetable.generate", 16),
     (r"\btime ?table\b", "timetable.view", 8),
+    (r"\bmake-?ups?\b.*\b(?:class|classes|session|schedule|booked)\b|\bbooked make-?ups?\b|\bextra class",
+     "timetable.view", 14),
     (r"\battendance\b.*\b(?:defaulter|shortage|below|less than|<)\b", "student.query", 10),
     # ---- campus services. Bonuses clear the generic verb rules above ("approve"
     # +12 for request.manage), because "approve gate pass 12" is a gate pass.

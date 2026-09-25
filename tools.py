@@ -403,10 +403,41 @@ def t_undo_last_change(con, S, U, **kw):
     last = one(con, "SELECT plan_ref FROM overrides WHERE status='Applied' ORDER BY id DESC LIMIT 1")
     if not last:
         return {"data": {"error": "No applied overrides to undo."}, "blocks": [], "trace": []}
-    con.execute("UPDATE overrides SET status='Reverted' WHERE plan_ref=?", (last["plan_ref"],))
-    con.commit()
-    return {"data": {"reverted_plan": last["plan_ref"]}, "blocks": [], "refresh": True,
-            "trace": [("SubstitutionAgent", "rollback", f"plan {last['plan_ref']} reverted")]}
+    n = SubstitutionAgent().revert(con, last["plan_ref"])
+    return {"data": {"reverted_plan": last["plan_ref"], "makeups_cancelled": n}, "blocks": [], "refresh": True,
+            "trace": [("SubstitutionAgent", "rollback", f"plan {last['plan_ref']} reverted · "
+                                                        f"{n} make-up period(s) released")]}
+
+
+def t_makeup_schedule(con, S, U, dept=None, sem=None, section=None, faculty=None, from_date=None, **kw):
+    """Booked make-up sessions from a date on (#18) - one row per session,
+    a lab block shown as its span."""
+    agents.ensure_makeups(con)
+    q = """SELECT m.*, s.name sname FROM makeup_sessions m LEFT JOIN subjects s ON s.code=m.subject
+           WHERE m.status='Scheduled' AND m.date>=?"""
+    a = [(_date(from_date) if from_date else TODAY).isoformat()]
+    for col, v in (("m.dept", dept and str(dept).upper()), ("m.sem", sem), ("m.section", section and str(section).upper()),
+                   ("m.faculty", faculty)):
+        if v not in (None, ""):
+            q += f" AND {col}=?"
+            a.append(v)
+    sess = {}
+    for m in rows(con, q + " ORDER BY m.date, m.dept, m.sem, m.section, m.period", tuple(a)):
+        k = (m["date"], m["dept"], m["sem"], m["section"], m["subject"], m["faculty"], m["room"], m["plan_ref"])
+        sess.setdefault(k, {**m, "periods": []})["periods"].append(m["period"])
+    out = list(sess.values())
+    span = lambda ps: f"P{ps[0]}" if len(ps) == 1 else f"P{ps[0]}-P{ps[-1]}"
+    return {"data": {"count": len(out),
+                     "sessions": [{"date": x["date"], "day": x["day"], "periods": x["periods"],
+                                   "class": f"{x['dept']}-{x['sem']}{x['section']}", "subject": x["subject"],
+                                   "teacher": fac_name(con, x["faculty"]), "room": x["room"]} for x in out]},
+            "blocks": [B_table(["Date", "Time", "Class", "Subject", "Teacher", "Room"],
+                               [[f"{x['date']} · {x['day']}", f"{span(x['periods'])} · {_span(x['periods'])}",
+                                 f"{x['dept']}-{x['sem']}{x['section']}", f"{x['subject']} · {x['sname'] or ''}",
+                                 fac_name(con, x["faculty"]), x["room"]] for x in out],
+                               title="Booked make-up classes", dense=True)
+                       if out else B_text("No make-up classes are booked from that date.")],
+            "trace": [("SubstitutionAgent", "makeup_schedule", f"{len(out)} session(s) held")]}
 
 
 def _gen_scope(scope, dept, sem, section):
@@ -601,7 +632,11 @@ REGISTRY = [
     (t_apply_coverage_plan, "apply_coverage_plan",
      "COMMIT a previously proposed coverage plan by its code (A/B/C). Only after the admin explicitly "
      "approves in the current message.", _p({"plan_code": _S}, ["plan_code"])),
-    (t_undo_last_change, "undo_last_change", "Roll back the most recent applied coverage plan.", _p({})),
+    (t_undo_last_change, "undo_last_change",
+     "Roll back the most recent applied coverage plan, releasing any make-up classes it booked.", _p({})),
+    (t_makeup_schedule, "makeup_schedule",
+     "Booked make-up classes (dated, with room) from a date on, optionally for a class or a teacher (faculty id).",
+     _p({"dept": _S, "sem": _I, "section": _S, "faculty": _S, "from_date": _S})),
     (t_plan_timetable_generation, "plan_timetable_generation",
      "PROPOSE a timetable built FROM SCRATCH by the constraint solver, for one section "
      "(scope='class' with dept/sem/section) or the whole college (scope='all'). Writes NOTHING - "
@@ -642,6 +677,7 @@ TOOL_AGENT = {
     "exam_schedule": "ExamAgent", "exam_eligibility": "ExamAgent", "list_requests": "RequestAgent",
     "list_leaves": "HRAgent", "plan_absence_coverage": "SubstitutionAgent",
     "apply_coverage_plan": "SubstitutionAgent", "undo_last_change": "SubstitutionAgent",
+    "makeup_schedule": "SubstitutionAgent",
     "plan_timetable_generation": "TimetableAgent", "apply_timetable_generation": "TimetableAgent",
     "decide_request": "RequestAgent", "create_request": "RequestAgent",
     "broadcast_notice": "NotifyAgent", **campus.AGENT_OF, **portal.AGENT_OF}
@@ -703,7 +739,7 @@ def execute(con, S, U, name, args=None):
 # that's most of the minute budget. So the rule-based NLU earns its keep a second time:
 # it pre-selects the handful of tools this utterance could plausibly need.
 TOOL_GROUPS = {
-    "absence.cover":   ["plan_absence_coverage", "apply_coverage_plan", "undo_last_change",
+    "absence.cover":   ["plan_absence_coverage", "apply_coverage_plan", "undo_last_change", "makeup_schedule",
                         "list_leaves", "find_free_faculty", "faculty_timetable"],
     "timetable.view":  ["get_timetable", "faculty_timetable", "find_free_faculty", "find_free_rooms"],
     "timetable.generate": ["plan_timetable_generation", "apply_timetable_generation",

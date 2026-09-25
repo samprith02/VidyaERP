@@ -85,6 +85,14 @@ def self_fac(con, P, a, key="name"):
     return a, None
 
 
+def own_teaching(con, P, a):
+    """A teacher's own make-up classes, whatever class they are for."""
+    if a.get("faculty") and str(a["faculty"]).upper() != P["fid"]:
+        return None, "You can only see the make-up classes you teach."
+    a["faculty"] = P["fid"]
+    return a, None
+
+
 def dept_fac(con, P, a, key="name"):
     """HOD: any colleague in the department, themselves by default."""
     if not a.get(key):
@@ -125,15 +133,18 @@ STUDENT = {
     "request_gate_pass": ALLOW, "request_certificate": ALLOW,
     "student_360": self_usn, "no_dues_status": self_usn,
     "get_timetable": own_class, "exam_schedule": own_dept_sem, "library_search": ALLOW,
+    "makeup_schedule": own_class,
 }
 FACULTY = {
     "my_home": ALLOW, "my_requests": ALLOW, "my_mentees": ALLOW, "my_leaves": ALLOW, "apply_leave": ALLOW,
     "faculty_timetable": self_fac, "faculty_profile": self_fac,
     "get_timetable": dept_class, "exam_schedule": ALLOW, "library_search": ALLOW, "find_free_rooms": ALLOW,
+    "makeup_schedule": own_teaching,
 }
 HOD = {
     **FACULTY,
     "dept_overview": ALLOW,
+    "makeup_schedule": lambda con, P, a: own_dept(con, P, a),
     "faculty_timetable": dept_fac, "faculty_profile": dept_fac,
     "faculty_workload": own_dept, "attendance_defaulters": own_dept, "exam_eligibility": own_dept,
     "find_free_faculty": own_dept,

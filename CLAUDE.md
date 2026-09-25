@@ -263,6 +263,7 @@ python tests/mcp_parity.py     # 254 assertions, no server, no API cost
 python tests/campus_test.py    # 122 assertions, no server, no API cost
 python tests/mesh_test.py      # 22 assertions, no server, no API cost
 python tests/auth_test.py      # 77 assertions, no server, no API cost
+python tests/makeup_test.py    # 19 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 68 assertions, no server, no API cost
 python tests/nlu_test.py       # 15 assertions, no server, no API cost
@@ -347,9 +348,18 @@ and room scarcity must degrade rather than collapse.
   or which sits in a contiguous same-subject block (`in_multi_period_block`). Labs run three
   consecutive periods; CIVIL-3A Mon P5-P7 is the live example. Removing that guard makes
   `ranking_test.py:4b` name the blocks it split.
-- **Make-ups are advisory, not scheduled.** Both Plan B and Plan C record a make-up slot in the
-  leg and the override reason, but nothing inserts a `timetable` row for it. The slot is verified
-  free for both the batch and the teacher at proposal time; it is not held.
+- ~~**Make-ups are advisory, not scheduled.**~~ **Booked since 2026-09-25 (#18).** Applying a plan
+  inserts dated rows into `makeup_sessions` (a make-up is a one-off on a date, so it is NOT a
+  `timetable` row — that table is the weekly pattern). `find_makeup` treats bookings as occupied,
+  searches for the whole block (a missed 3-period lab needs 3 consecutive periods), finds a room,
+  skips the teacher's approved leave, and `held` stops one plan promising the same hour to two of
+  its own legs. `apply_plan` re-checks each slot against EVERY booking — excluding the plan's own
+  earlier legs is exactly how one room was booked twice (`makeup_test.py:3a`, found by the re-read,
+  mutation-checked). `SubstitutionAgent.revert` is the one undo path and releases the bookings.
+  **Labs are made up on Saturday afternoon** (`MAKEUP_WINDOWS`): every batch fills its day solidly
+  from P1, so no in-week lab window is ever free for a whole batch — measured, plan C found a slot
+  for 0 of the lab blocks before. A teacher missing two labs gets the second one honestly marked
+  "NOT yet scheduled" rather than the same hour twice.
 - Teacher unavailability is honoured by the solver as an input but nothing populates it yet —
   approved leave drives the *rescheduling* path, not generation.
 - **Attendance is a single independent draw per student** — `random.gauss(80, 12)` clamped to

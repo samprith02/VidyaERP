@@ -172,6 +172,38 @@ AUTHENTICITY = {"own": 1.00,              # the batch's own teacher for this sub
                 "none": 0.00}             # nobody is delivering it
 
 
+MAKEUP_DDL = """
+CREATE TABLE IF NOT EXISTS makeup_sessions(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, day TEXT, period INT, dept TEXT, sem INT, section TEXT,
+  subject TEXT, faculty TEXT, room TEXT, plan_ref TEXT, status TEXT, created_at TEXT, created_by TEXT,
+  reason TEXT)"""
+
+
+# Where a missed multi-period block (a 3-period lab) can be made up. Every batch
+# fills its day solidly from P1 (db.verify asserts it), so no lab window INSIDE
+# the working week is ever free for a whole batch. Saturday afternoon is: no
+# batch is timetabled after P4 on Saturday. That is also where colleges really
+# hold make-up labs. Measured on the seed before this existed: plan C found a
+# slot for 0 of the lab blocks put to it.
+MAKEUP_WINDOWS = {**db.LAB_WINDOWS, "Sat": [(1, 3), (5, 7)]}
+
+
+def mk_label(mk):
+    """'2026-09-07 (Mon) P6 in MB-101' - or a span for a lab block."""
+    if not mk:
+        return "NOT yet scheduled"
+    ps = mk.get("periods") or [mk["period"]]
+    span = f"P{ps[0]}" if len(ps) == 1 else f"P{ps[0]}-P{ps[-1]}"
+    return f"{mk['date']} ({mk['day']}) {span}" + (f" in {mk['room']}" if mk.get("room") else "")
+
+
+def ensure_makeups(con):
+    """A make-up is a one-off on a DATE; the timetable table is a weekly
+    pattern, so a make-up cannot be a timetable row without changing every
+    week. Created on demand so an existing college.db needs no migration."""
+    con.execute(MAKEUP_DDL)
+
+
 def timing_intact(slip_days):
     """How intact a session's timing is after slipping `slip_days` days.
 
@@ -335,9 +367,17 @@ class SubstitutionAgent:
             return c
         return None
 
-    def find_makeup(self, con, slot, after_date):
-        """Earliest slot in the next week where the batch AND the returning
-        faculty are both free.
+    def find_makeup(self, con, slot, after_date, exclude_ref=None, held=None):
+        """Earliest slot in the next week where the batch, the returning
+        faculty AND a room are all free - for the whole block (a missed
+        3-period lab needs 3 consecutive periods inside one session, not one).
+
+        Booked make-ups count as occupied (#18): before they were booked,
+        two plans could promise the same hour to the same class or teacher.
+        `held` is what earlier legs of the SAME plan were already promised -
+        a teacher missing two classes must not be offered one hour for both,
+        and that hour is in nobody's booking yet. `exclude_ref` ignores one
+        plan's existing bookings.
 
         The search runs to the last period of the college day, not to the end of
         this batch's day. That matters: `db.verify()` asserts every batch fills
@@ -351,22 +391,110 @@ class SubstitutionAgent:
         actually does for a make-up, so the honest search and the realistic one
         are the same search.
         """
+        ensure_makeups(con)
         last = max(PERIOD_SPAN)
+        n = len(slot.get("periods") or [slot["period"]])
+        lab = n > 1 or (slot.get("kind") or "T") in ("L", "P")
+        ex = exclude_ref or "\x00"
         for k in range(1, 8):
             d = after_date + dt.timedelta(days=k)
-            dy = day_of(d)
+            dy, di = day_of(d), d.isoformat()
             if dy == "Sun":
                 continue
-            for p in range(1, last + 1):
-                cls = one(con, """SELECT 1 FROM timetable WHERE dept=? AND sem=? AND section=?
-                                  AND day=? AND period=?""",
-                          (slot["dept"], slot["sem"], slot["section"], dy, p))
-                fac = one(con, "SELECT 1 FROM timetable WHERE faculty=? AND day=? AND period=?",
-                          (slot["faculty"], dy, p))
-                if not cls and not fac:
-                    return {"date": d.isoformat(), "day": dy, "period": p,
-                            "extra_hour": p > db.day_periods(slot["sem"], dy)}
+            if one(con, "SELECT 1 FROM leaves WHERE faculty=? AND status='Approved' AND from_date<=? "
+                        "AND to_date>=?", (slot["faculty"], di, di)):
+                continue                           # the teacher is away that day too
+            if n == 1:
+                starts = [(p,) for p in range(1, last + 1)]
+            else:                                  # a block stays inside one session window
+                starts = [tuple(range(a, a + n)) for a, b in MAKEUP_WINDOWS.get(dy, []) if b - a + 1 >= n]
+            cls = (slot["dept"], slot["sem"], slot["section"])
+            for ps in starts:
+                if any(self._busy_at(con, slot, dy, di, p, ex) for p in ps):
+                    continue
+                if any(h["date"] == di and h["period"] in ps and (h["cls"] == cls or h["faculty"] == slot["faculty"])
+                       for h in held or []):
+                    continue
+                taken_rooms = {h["room"] for h in held or [] if h["date"] == di and h["period"] in ps}
+                room = self.free_room_for(con, dy, di, ps, lab, prefer=slot.get("room"), exclude_ref=ex,
+                                          avoid=taken_rooms)
+                if not room:
+                    continue
+                if held is not None:
+                    held += [{"date": di, "period": p, "cls": cls, "faculty": slot["faculty"], "room": room}
+                             for p in ps]
+                return {"date": di, "day": dy, "period": ps[0], "periods": list(ps), "room": room,
+                        "extra_hour": ps[-1] > db.day_periods(slot["sem"], dy)}
         return None
+
+    def _busy_at(self, con, slot, dy, di, p, ex):
+        """Is the batch or the teacher already occupied at (date, period)?"""
+        return bool(
+            one(con, "SELECT 1 FROM timetable WHERE dept=? AND sem=? AND section=? AND day=? AND period=?",
+                (slot["dept"], slot["sem"], slot["section"], dy, p))
+            or one(con, "SELECT 1 FROM timetable WHERE faculty=? AND day=? AND period=?", (slot["faculty"], dy, p))
+            or one(con, """SELECT 1 FROM makeup_sessions WHERE status='Scheduled' AND date=? AND period=?
+                           AND plan_ref<>? AND ((dept=? AND sem=? AND section=?) OR faculty=?)""",
+                   (di, p, ex, slot["dept"], slot["sem"], slot["section"], slot["faculty"])))
+
+    def free_room_for(self, con, dy, di, ps, lab, prefer=None, exclude_ref="\x00", avoid=()):
+        """A room free for every period in `ps` on that date: nothing in the
+        weekly timetable and no booked make-up. The batch's own room first."""
+        kind = "Lab" if lab else "Classroom"
+        cands = ([prefer] if prefer else []) + [r["id"] for r in rows(
+            con, "SELECT id FROM rooms WHERE kind=? ORDER BY id", (kind,))]
+        for r in cands:
+            if r in avoid:
+                continue
+            if all(not one(con, "SELECT 1 FROM timetable WHERE room=? AND day=? AND period=?", (r, dy, p))
+                   and not one(con, """SELECT 1 FROM makeup_sessions WHERE status='Scheduled' AND room=?
+                                      AND date=? AND period=? AND plan_ref<>?""", (r, di, p, exclude_ref))
+                   for p in ps):
+                return r
+        return None
+
+    def revert(self, con, plan_ref):
+        """Undo one applied plan: its overrides AND the make-ups it booked. The
+        one place both undo paths (rule engine, tool) go through, so a
+        cancelled plan can never leave a held room and hour behind (#18)."""
+        ensure_makeups(con)
+        con.execute("UPDATE overrides SET status='Reverted' WHERE plan_ref=?", (plan_ref,))
+        n = con.execute("UPDATE makeup_sessions SET status='Cancelled' WHERE plan_ref=? AND status='Scheduled'",
+                        (plan_ref,)).rowcount
+        con.commit()
+        return n
+
+    def book_makeups(self, con, plan_ref, leg, faculty_id, actor, now):
+        """Hold the make-up slot a leg promised (#18). Re-checked at apply time:
+        if another plan took it in the meantime, the next free slot is found and
+        the leg is updated, so the notice the class receives is the real one."""
+        ensure_makeups(con)
+        mk = leg.get("makeup")
+        if not mk:
+            return None
+        slot = {"dept": leg["dept"], "sem": leg["sem"], "section": leg["class"].split("-")[1][-1],
+                "faculty": faculty_id, "period": leg["period"], "periods": leg.get("periods") or [leg["period"]],
+                "room": leg.get("room"), "kind": "L" if len(leg.get("periods") or [1]) > 1 else "T"}
+        ps = mk.get("periods") or list(range(mk["period"], mk["period"] + len(slot["periods"])))
+        # Checked against EVERY booking, this plan's earlier legs included: they
+        # were inserted a moment ago, and excluding them is exactly how one room
+        # (or one teacher) got booked twice for the same hour.
+        taken = any(self._busy_at(con, slot, mk["day"], mk["date"], p, "\x00") for p in ps) or not mk.get("room") \
+            or not self.free_room_for(con, mk["day"], mk["date"], ps, slot["kind"] == "L",
+                                      prefer=mk["room"]) == mk["room"]
+        if taken:
+            mk = self.find_makeup(con, slot, dt.date.fromisoformat(mk["date"]) - dt.timedelta(days=1))
+            if not mk:
+                return None
+            leg["makeup"] = mk
+            ps = mk["periods"]
+        for p in ps:
+            con.execute("""INSERT INTO makeup_sessions(date,day,period,dept,sem,section,subject,faculty,room,
+                           plan_ref,status,created_at,created_by,reason) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (mk["date"], mk["day"], p, slot["dept"], slot["sem"], slot["section"], leg["subject"],
+                         faculty_id, mk["room"], plan_ref, "Scheduled", now, actor,
+                         f"Make-up for {leg['subject']} missed on {leg['day']} P{leg['period']}"))
+        return mk
 
     # ---------------------------------------------------------- measurement
     @staticmethod
@@ -524,12 +652,12 @@ class SubstitutionAgent:
         # A's, which scored B's fallback substitutes as if A had already been
         # applied (-9 per assignment) — but the plans are alternatives and only
         # one is ever committed, so that understated B's confidence against A's.
-        legs_b, swaps, used_b = [], 0, {}
+        legs_b, swaps, used_b, held_b = [], 0, {}, []
         for s in affected:
             sw = self.find_swap(con, s, date_iso)
             if sw:
                 swaps += 1
-                mk = self.find_makeup(con, s, date)
+                mk = self.find_makeup(con, s, date, held=held_b)
                 legs_b.append({
                     "slot_id": s["id"], "slot_ids": s["slot_ids"], "periods": s["periods"],
                     "period": s["period"], "time": _span(s["periods"]),
@@ -542,7 +670,7 @@ class SubstitutionAgent:
                     "swap_room": sw["room"], "room": s["room"], "makeup": mk,
                     "why": (f"{sw['subject']} moves P{sw['period']}→P{s['period']} with its own "
                             f"teacher; P{sw['period']} is released and {s['subject']} is made up "
-                            + (f"on {mk['date']} ({mk['day']}) P{mk['period']}" if mk
+                            + (f"on {mk_label(mk)}" if mk
                                else "— NO free common slot in 7 days, needs manual scheduling")),
                     "alts": [], "authenticity": AUTHENTICITY["own"], "score": 0})
             else:
@@ -564,9 +692,9 @@ class SubstitutionAgent:
                     "score": top["score"] if top else 0})
 
         # ---------------- Plan C : compact + makeup
-        legs_c = []
+        legs_c, held_c = [], []
         for s in affected:
-            mk = self.find_makeup(con, s, date)
+            mk = self.find_makeup(con, s, date, held=held_c)
             legs_c.append({
                 "slot_id": s["id"], "slot_ids": s["slot_ids"], "periods": s["periods"],
                 "period": s["period"], "time": _span(s["periods"]),
@@ -576,7 +704,7 @@ class SubstitutionAgent:
                 "action": "MAKEUP", "to": faculty["name"], "to_id": faculty["id"],
                 "makeup": mk,
                 "why": (f"slot released today (supervised study in Central Library); "
-                        f"makeup by same faculty on {mk['date']} {mk['day']} P{mk['period']}")
+                        f"make-up by the same teacher on {mk_label(mk)}")
                 if mk else "no common free slot in next 7 days – needs manual scheduling",
                 "alts": [], "authenticity": AUTHENTICITY["own"], "score": 0})
 
@@ -688,6 +816,11 @@ class SubstitutionAgent:
         now = dt.datetime.now().isoformat(timespec="seconds")
         applied = []
         writes = []          # (slot_id, action, new_faculty, new_room, new_subject, reason)
+        # Hold every promised make-up FIRST (#18), so the override reasons and
+        # the notices below describe the slot that was actually booked.
+        for leg in plan["legs"]:
+            if leg["action"] in ("SWAP", "MAKEUP") and leg.get("makeup"):
+                leg["makeup"] = self.book_makeups(con, plan["id"], leg, faculty["id"], actor, now)
         for leg in plan["legs"]:
             slots = leg.get("slot_ids") or [leg["slot_id"]]
             if leg["action"] == "SWAP":
@@ -703,15 +836,11 @@ class SubstitutionAgent:
                 # (2) the partner's own period is released; the absent teacher's
                 #     subject is what is owed there, and is made up later.
                 writes.append((leg["swap_with"], "VACATED", None, leg.get("swap_room"), None,
-                               f"Released — {leg['subject']} deferred; make-up "
-                               + (f"{mk['date']} ({mk['day']}) P{mk['period']}" if mk
-                                  else "NOT yet scheduled")))
+                               f"Released — {leg['subject']} deferred; make-up " + mk_label(leg.get("makeup"))))
             elif leg["action"] == "MAKEUP":
-                mk = leg.get("makeup") or {}
                 for sid in slots:
                     writes.append((sid, "MAKEUP", leg["to_id"], "Central Library", None,
-                                   f"Released; make-up on {mk.get('date','TBD')} "
-                                   f"P{mk.get('period','-')}"))
+                                   "Released; make-up " + mk_label(leg.get("makeup"))))
             elif leg["to_id"]:
                 for sid in slots:
                     writes.append((sid, leg["action"], leg["to_id"], leg.get("room"), None,
@@ -760,6 +889,22 @@ class TimetableAgent:
                               "released": o["action"] in ("VACATED", "MAKEUP"),
                               "was": r["subject"] if o["new_subject"] else None,
                               "reason": o["reason"]} if o else None)}
+        # The week's booked make-ups (#18). They are dated, so they appear only
+        # in the week that holds them - usually after the batch's normal day
+        # ends, which is exactly where a real extra hour goes.
+        if date:
+            ensure_makeups(con)
+            d0 = dt.date.fromisoformat(date)
+            mon = d0 - dt.timedelta(days=d0.weekday())
+            for m in rows(con, """SELECT m.*, s.name sname FROM makeup_sessions m LEFT JOIN subjects s
+                                  ON s.code=m.subject WHERE m.status='Scheduled' AND m.dept=? AND m.sem=?
+                                  AND m.section=? AND m.date BETWEEN ? AND ?""",
+                          (dept, sem, sec, mon.isoformat(), (mon + dt.timedelta(days=5)).isoformat())):
+                cells[f"{m['day']}-{m['period']}"] = {
+                    "subject": m["subject"], "sname": m["sname"], "room": m["room"], "kind": "M",
+                    "faculty": fac_name(con, m["faculty"]), "makeup": {"date": m["date"], "reason": m["reason"]},
+                    "override": None}
+                maxp = max(maxp, m["period"])
         return {"type": "grid", "title": f"{dept} · Sem {sem} · Sec {sec}",
                 "days": DAYS, "periods": {p: t for p, t in PERIOD_SPAN.items() if p <= maxp},
                 "breaks": BREAK_AFTER, "cells": cells,
@@ -885,10 +1030,10 @@ class NotifyAgent:
                 if l["action"] == "SUBSTITUTE":
                     lines.append(f"P{l['period']} {l['subject']} → handled by {l['to']}")
                 elif l["action"] == "SWAP":
-                    lines.append(f"P{l['period']} re-sequenced ({l['to']})")
+                    lines.append(f"P{l['period']} re-sequenced ({l['to']}); {l['subject']} made up "
+                                 + mk_label(l.get("makeup")))
                 else:
-                    mk = l.get("makeup") or {}
-                    lines.append(f"P{l['period']} released; make-up {mk.get('date','TBD')} P{mk.get('period','-')}")
+                    lines.append(f"P{l['period']} released; make-up " + mk_label(l.get("makeup")))
             msgs.append({"audience": f"Students · {c}", "channel": "App push + class WhatsApp",
                          "title": f"Timetable update — {d}",
                          "body": f"{faculty['name']} is unavailable on {d}. " + "; ".join(lines) +

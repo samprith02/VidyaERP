@@ -390,11 +390,11 @@ def h_absence(con, text, ent, st, tr, actor):
         if not last:
             return {"blocks": [B_text("Nothing to undo — there are no applied overrides.")],
                     "agent": "SubstitutionAgent"}
-        con.execute("UPDATE overrides SET status='Reverted' WHERE plan_ref=?", (last["plan_ref"],))
-        con.commit()
-        tr.add("SubstitutionAgent", "rollback", f"plan {last['plan_ref']} reverted")
-        return {"blocks": [B_text(f"↩ Rolled back plan `{last['plan_ref']}`. The original timetable is "
-                                  f"restored and a correction notice has been queued.")],
+        n = SubstitutionAgent().revert(con, last["plan_ref"])
+        tr.add("SubstitutionAgent", "rollback", f"plan {last['plan_ref']} reverted · {n} make-up period(s) released")
+        return {"blocks": [B_text(f"Rolled back plan `{last['plan_ref']}`. The original timetable is restored"
+                                  + (f" and {n} booked make-up period(s) are released" if n else "")
+                                  + ". A correction notice has been queued.")],
                 "agent": "SubstitutionAgent", "refresh": True}
 
     f = ent["faculty"]
@@ -507,6 +507,15 @@ def h_timetable(con, text, ent, st, tr, actor):
             re.search(r"updated|override|revised|new timetable|after the change|affected", t):
         d0, rest = st["ctx"]["last_class"].split("-")
         ent["dept"], ent["sem"], ent["section"] = d0, int(rest[:-1]), rest[-1]
+    if re.search(r"make-?ups?|extra class", t):                    # booked make-ups (#18)
+        args = {k: v for k, v in (("dept", ent["dept"]), ("sem", ent["sem"]), ("section", ent["section"]))
+                if v}
+        if ent["faculty"] and not args:
+            args["faculty"] = ent["faculty"]["id"]
+        res = tools.execute(con, st, text, "makeup_schedule", args)
+        _relay(tr, res, "makeup_schedule")
+        return {"blocks": res["blocks"], "agent": "SubstitutionAgent",
+                "chips": ["Show CSE 5th sem A timetable", "Undo the last change"]}
     date = ent["date"] or TODAY
     day = day_of(date)
     if day == "Sun":

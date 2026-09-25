@@ -16,7 +16,7 @@ import re, datetime as dt
 import db, nlu, campus_data as cd
 from nlu import TODAY, day_of
 from guard import approved_this_turn
-from agents import (rows, one, fac_name, subj_name, NotifyAgent, Auditor,
+from agents import (rows, one, fac_name, subj_name, NotifyAgent, Auditor, ensure_makeups,
                     B_text, B_table, B_cards, B_checklist, B_bars)
 from campus import (_propose, _done, _err, _stu, _cls, _when, inr, GatePassAgent, DocumentAgent,
                     LeaveAgent, PlacementAgent, LibraryAgent, VERDICT_MD, CERT_KINDS, cert_kind, NOW)
@@ -78,6 +78,20 @@ def _when_parse(text, default_hm, base=None):
 
 
 # ================================================================= home
+def _makeups_block(con, where, args, teacher=True):
+    """Upcoming booked make-up classes (#18), for a class or for a teacher."""
+    ensure_makeups(con)
+    ms = rows(con, f"""SELECT m.*, sb.name sname FROM makeup_sessions m LEFT JOIN subjects sb ON sb.code=m.subject
+                      WHERE m.status='Scheduled' AND m.date>=? AND m.{where.replace(' AND ', ' AND m.')}
+                      ORDER BY m.date, m.period""", (TODAY.isoformat(), *args))
+    if not ms:
+        return []
+    return [B_table(["When", "Subject", "Class" if not teacher else "Teacher", "Room"],
+                    [[f"{m['date']} · {m['day']} P{m['period']}", f"{m['subject']} · {m['sname'] or ''}",
+                      fac_name(con, m["faculty"]) if teacher else f"{m['dept']}-{m['sem']}{m['section']}", m["room"]]
+                     for m in ms], title="Make-up classes booked", dense=True)]
+
+
 def t_my_home(con, S, U, **kw):
     P = (S or {}).get("user")
     if not P or P.get("role") == "admin":
@@ -113,6 +127,7 @@ def t_my_home(con, S, U, **kw):
                           + ([B_table(["Book", "Due", "Late by"], [[l["title"], l["due_on"], f"{LibraryAgent.days_over(l)} d"]
                                                                    for l in loans], title="Library books with you", dense=True)]
                              if loans else [])
+                          + _makeups_block(con, "dept=? AND sem=? AND section=?", (s["dept"], s["sem"], s["section"]))
                           + ([B_text(f"🛂 {len(passes)} gate pass request(s) waiting for the warden.")] if passes else []),
                 "trace": [("StudentAgent", "home", s["usn"]), ("AttendanceAgent", "subject_rollup", f"{len(short)} below 75%"),
                           ("TimetableAgent", "today", f"{len(today)} periods"), ("LibraryAgent", "member_loans", str(len(loans)))],
@@ -141,6 +156,7 @@ def t_my_home(con, S, U, **kw):
                             f"{r['subject']} · {r['sname'] or ''}", r["room"]] for r in today],
                           title=f"Today · {TODAY.strftime('%A %d %b')}", dense=True) if today
                   else B_text(f"No classes on {TODAY.strftime('%A')}."))
+    blocks += _makeups_block(con, "faculty=?", (f["id"],), teacher=False)
     if risk:
         blocks.append(B_table(["USN", "Name", "Class", "Attendance", "Backlogs"],
                               [[m["usn"], m["name"], _cls(m), f"{m['attendance']}%", m["backlogs"]] for m in risk[:8]],
@@ -465,6 +481,8 @@ def route(con, text, P, ent):
     usn = ent.get("usn")
     if re.search(r"\b(?:my day|home|dashboard|overview of me|good morning)\b", t) and "department" not in t:
         return "my_home", {}
+    if re.search(r"make-?up|extra class|extra hour|rescheduled class", t):
+        return "makeup_schedule", {}
     if role == "student":
         if re.search(r"gate ?pass|outing|out ?pass|home visit|go home|leave (?:the )?campus", t):
             k = ("Home visit" if re.search(r"home", t) else "Medical" if re.search(r"medical|doctor|hospital", t) else
