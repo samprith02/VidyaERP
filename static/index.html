@@ -254,6 +254,8 @@ textarea::placeholder{color:#98a2b3}
 .ti{position:relative;padding:0 0 16px}
 .ti:before{content:"";position:absolute;left:-17px;top:5px;width:9px;height:9px;border:2px solid #f8fafc;border-radius:50%;background:#5974ca;box-shadow:0 0 0 1px #c4cff2}
 .ti.warn:before{background:#c77820;box-shadow:0 0 0 1px #e9c79f}
+.ti.err:before{background:var(--bad);box-shadow:0 0 0 3px rgba(196,50,71,.2)}
+.ti.err .ag,.ti.err .ac{color:var(--bad)}
 .ti .ag{padding-right:42px;color:#344054;font-size:10.5px;font-weight:650}
 .ti .ac{margin-top:1px;color:#526cb9;font:9.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-word}
 .ti .de{margin-top:3px;color:#7f8998;font-size:10px;line-height:1.45}
@@ -434,35 +436,114 @@ select:focus,input[type=text]:focus{border-color:#8fa4e5;box-shadow:0 0 0 3px rg
 @media(max-width:1280px){.campus-kpis{grid-template-columns:repeat(3,minmax(120px,1fr))}}
 @media(max-width:560px){.campus-kpis{grid-template-columns:1fr 1fr}.brow{grid-template-columns:minmax(80px,40%) minmax(0,1fr) 64px}.doc{padding:18px 16px}}
 
-/* ---------- 3D agent mesh ---------- */
-.mesh-mini{position:relative;height:236px;margin:-4px 0 14px;border-radius:10px;overflow:hidden;background:#0b1220;box-shadow:inset 0 0 0 1px #1c2740}
-.mesh-mini canvas,.mesh-big canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab}
-.mesh-mini canvas:active,.mesh-big canvas:active{cursor:grabbing}
-.mesh-cap{position:absolute;left:10px;top:8px;right:10px;display:flex;justify-content:space-between;pointer-events:none;font-size:9px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#7f8ba3}
-.mesh-cap b{color:#c7d3f5;font-weight:700}
-.mesh-tip{position:absolute;pointer-events:none;padding:6px 8px;border-radius:6px;background:rgba(15,23,42,.94);border:1px solid #2b3a5a;color:#dbe4ff;font-size:10.5px;line-height:1.4;white-space:nowrap;transform:translate(-50%,-120%);display:none;z-index:3}
-.mesh-tip small{display:block;color:#8e9bb8}
-.meshv{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;height:100%}
-.mesh-big{position:relative;min-height:520px;border-radius:12px;overflow:hidden;background:radial-gradient(ellipse at 50% 42%,#15213a 0%,#0b1220 62%,#070c16 100%);box-shadow:var(--shadow-md)}
-.mesh-legend{position:absolute;left:14px;bottom:12px;display:flex;flex-wrap:wrap;gap:10px;pointer-events:none;font-size:10px;color:#9aa7c2}
-.mesh-legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:-1px}
-.mesh-hud{position:absolute;left:14px;top:12px;right:14px;display:flex;justify-content:space-between;gap:10px;pointer-events:none}
-.mesh-hud .t{color:#e5ecff;font-size:13px;font-weight:650;letter-spacing:-.01em}
-.mesh-hud .s{color:#8190ad;font-size:10.5px;margin-top:2px}
-.mesh-cmd{position:absolute;left:14px;right:14px;bottom:40px;display:flex;gap:8px}
-.mesh-cmd input{flex:1;height:36px!important;background:rgba(15,23,42,.82)!important;border:1px solid #2b3a5a!important;color:#e5ecff!important;box-shadow:none!important}
-.mesh-cmd input::placeholder{color:#6f7d99}
-.mesh-side{display:flex;flex-direction:column;gap:14px;min-height:0}
-.mesh-side .pnl{overflow:auto}
-.feed{font:10.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;max-height:330px;overflow:auto}
-.feed div{padding:4px 0;border-bottom:1px solid #f0f2f5;color:var(--mut)}
-.feed b{color:#1d2939;font-weight:650}
-.feed .w{color:var(--amber)}.feed .r{color:var(--bad)}.feed .g{color:var(--good)}
-.ctr{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.ctr>div{padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
-.ctr .l{font-size:9px;color:var(--dim);font-weight:700;letter-spacing:.07em;text-transform:uppercase}
-.ctr .v{font-size:18px;font-weight:670;color:#101828;font-variant-numeric:tabular-nums}
-@media(max-width:1060px){.meshv{grid-template-columns:1fr}.mesh-big{min-height:420px}}
+/* ---------- 3D agent mesh (static/mesh.js) ---------- */
+.mesh-mini{position:relative;height:250px;margin:-4px 0 14px;border-radius:12px;overflow:hidden;background:#070c16;box-shadow:inset 0 0 0 1px #1c2740;cursor:zoom-in}
+.mesh-mini canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.mesh-cap{position:absolute;left:10px;top:8px;right:10px;display:flex;justify-content:space-between;gap:8px;pointer-events:none;font-size:9px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#7f8ba3}
+.mesh-cap b{color:#c7d3f5}
+.mini-foot{position:absolute;left:10px;right:10px;bottom:8px;display:flex;justify-content:space-between;align-items:center;pointer-events:none;font-size:9.5px;color:#7f8ba3}
+.mini-foot .fault{display:none;padding:2px 7px;border-radius:999px;background:rgba(255,77,94,.16);color:#ff8a96;font-weight:700;animation:blink 1s steps(2) infinite}
+.mesh-mini.has-fault{box-shadow:inset 0 0 0 1px #ff4d5e,0 0 18px rgba(255,77,94,.25)}
+.mesh-mini.has-fault .fault{display:inline-block}
+@keyframes blink{50%{opacity:.35}}
+#v-mesh{padding:14px 16px}
+.stage{position:relative;height:calc(100vh - 74px - 28px);min-height:560px;border-radius:14px;overflow:hidden;background:#070c16;box-shadow:var(--shadow-md);outline:0;color:#dbe4ff;font-size:11.5px}
+.stage:fullscreen{height:100vh;border-radius:0}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab}
+.stage canvas.dragging{cursor:grabbing}
+.stage canvas.pointing{cursor:pointer}
+.glass{background:rgba(12,19,34,.78);border:1px solid rgba(120,150,230,.16);border-radius:12px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.st-top{position:absolute;left:14px;right:14px;top:12px;display:flex;gap:12px;align-items:flex-start;pointer-events:none}
+.st-top>*{pointer-events:auto}
+.st-title{padding:10px 14px;min-width:0;flex:1;max-width:560px}
+.st-title .h{display:flex;align-items:center;gap:10px;font-size:13.5px;font-weight:650;color:#f0f4ff;letter-spacing:-.01em}
+.st-title .h .live{padding:2px 7px;border-radius:999px;background:rgba(79,224,160,.12);color:#6ff0b7;font-size:9px;font-weight:750;letter-spacing:.08em}
+.st-title .h .live.busy{background:rgba(157,183,255,.14);color:#aec4ff;animation:blink 1s steps(2) infinite}
+.st-title .h .live.fault{background:rgba(255,77,94,.18);color:#ff8a96;animation:blink 1s steps(2) infinite}
+.st-cap{margin-top:5px;color:#9aa8c7;font:10.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st-cap b{color:#e5ecff;font-weight:650}
+.st-cap .e{color:#ff7a88}.st-cap .w{color:#ffc46b}.st-cap .g{color:#6ff0b7}.st-cap .h{color:#c9a4ff}
+.st-tools{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;padding:8px;margin-left:auto;max-width:62%}
+.tb{appearance:none;height:30px;padding:0 10px;border:1px solid rgba(140,165,235,.22);border-radius:8px;background:rgba(255,255,255,.03);color:#c7d3f5;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.tb:hover{background:rgba(140,165,235,.12);border-color:rgba(140,165,235,.4)}
+.tb.on{background:rgba(111,137,221,.28);border-color:#7d97ec;color:#fff}
+.tb.red{border-color:rgba(255,77,94,.5);color:#ffb0b8}
+.tb:disabled{opacity:.45;cursor:default}
+.tb kbd{font:9px ui-monospace,monospace;color:#7f8ba3;background:none;border:0;padding:0}
+.st-tools input,.st-tools select,.st-cmd input,.st-play select{height:30px!important;padding:0 9px;border:1px solid rgba(140,165,235,.22)!important;border-radius:8px!important;background:rgba(5,10,20,.6)!important;color:#e5ecff!important;font-size:11px!important;box-shadow:none!important;outline:0}
+.st-tools input{width:130px}
+.st-tools input::placeholder,.st-cmd input::placeholder{color:#6f7d99}
+.st-left,.st-right{position:absolute;top:96px;bottom:128px;width:272px;display:flex;flex-direction:column;gap:10px;overflow:auto;scrollbar-width:thin}
+.st-left{left:14px}.st-right{right:14px}
+.st-left .glass,.st-right .glass{padding:12px 13px}
+.ph{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;color:#8c9ab8;font-size:9px;font-weight:750;letter-spacing:.1em;text-transform:uppercase}
+.ph button{appearance:none;border:0;background:none;color:#9db7ff;font-size:10px;cursor:pointer;padding:0;text-transform:none;letter-spacing:0}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.kv>div{padding:7px 8px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(140,165,235,.1)}
+.kv .l{font-size:8.5px;color:#7f8ba3;letter-spacing:.07em;text-transform:uppercase;font-weight:700}
+.kv .v{font-size:17px;font-weight:680;color:#f0f4ff;font-variant-numeric:tabular-nums}
+.kv .v.r{color:#ff7a88}.kv .v.a{color:#ffc46b}.kv .v.g{color:#6ff0b7}.kv .v.p{color:#c9a4ff}
+.inc{padding:7px 8px;margin-top:6px;border-radius:8px;background:rgba(255,77,94,.08);border:1px solid rgba(255,77,94,.3);cursor:pointer}
+.inc:hover{background:rgba(255,77,94,.15)}
+.inc b{color:#ffb0b8;font-weight:650}.inc small{display:block;color:#9aa8c7;margin-top:2px;word-break:break-word}
+.inc.warn{background:rgba(255,196,107,.06);border-color:rgba(255,196,107,.28)}.inc.warn b{color:#ffd28a}
+.inc.ack{opacity:.45;background:rgba(255,255,255,.02);border-color:rgba(140,165,235,.1)}
+.inc.ack b{color:#c7d3f5}
+.empty{color:#6f7d99;font-size:10.5px;line-height:1.5}
+.ag-h{display:flex;align-items:center;gap:9px}
+.ag-h i{width:12px;height:12px;border-radius:50%;flex:0 0 12px}
+.ag-h b{font-size:14px;color:#f0f4ff;font-weight:680}
+.ag-h button{margin-left:auto;appearance:none;border:0;background:none;color:#7f8ba3;cursor:pointer;font-size:14px}
+.ag-g{margin-top:2px;color:#7f8ba3;font-size:10px}
+.ag-role{margin:9px 0;color:#b8c4de;line-height:1.5}
+.health{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;font-size:10px;font-weight:700;margin-bottom:9px}
+.health.ok{background:rgba(79,224,160,.12);color:#6ff0b7}.health.warn{background:rgba(255,196,107,.12);color:#ffc46b}
+.health.err{background:rgba(255,77,94,.16);color:#ff8a96;animation:blink 1s steps(2) infinite}
+.health.idle{background:rgba(140,165,235,.1);color:#9aa8c7}
+.sub-h{margin:11px 0 5px;color:#8c9ab8;font-size:9px;font-weight:750;letter-spacing:.1em;text-transform:uppercase}
+.acts-l div{padding:5px 0;border-bottom:1px solid rgba(140,165,235,.08);font:10px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#9aa8c7;word-break:break-word}
+.acts-l div b{color:#dbe4ff;font-weight:600}
+.acts-l .e b{color:#ff8a96}.acts-l .w b{color:#ffc46b}.acts-l .h b{color:#c9a4ff}.acts-l .g b{color:#6ff0b7}
+.chipz{display:flex;flex-wrap:wrap;gap:5px}
+.chipz button{appearance:none;border:1px solid rgba(140,165,235,.2);background:rgba(255,255,255,.03);color:#c7d3f5;border-radius:999px;padding:3px 8px;font-size:10px;cursor:pointer}
+.chipz button:hover{border-color:#7d97ec;color:#fff}
+.bar2{display:grid;grid-template-columns:108px 1fr 26px;gap:7px;align-items:center;margin:4px 0;cursor:pointer;font-size:10.5px;color:#b8c4de}
+.bar2 span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar2 .t{height:6px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden}.bar2 .t i{display:block;height:100%;border-radius:4px}
+.bar2 span:last-child{text-align:right;color:#7f8ba3;font-variant-numeric:tabular-nums}
+.bar2:hover span:first-child{color:#fff}
+.st-bottom{position:absolute;left:14px;right:14px;bottom:12px;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.st-bottom>*{pointer-events:auto}
+.st-legend{display:flex;flex-wrap:wrap;gap:4px;align-self:flex-start;padding:5px 7px}
+.st-legend button{appearance:none;border:0;background:none;color:#9aa8c7;font-size:10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;padding:3px 6px;border-radius:6px}
+.st-legend button i{width:8px;height:8px;border-radius:50%}
+.st-legend button.off{opacity:.35;text-decoration:line-through}
+.st-legend button:hover{background:rgba(255,255,255,.05)}
+.st-legend .sep{width:1px;background:rgba(140,165,235,.18);margin:2px 4px}
+.st-legend .k{display:inline-flex;align-items:center;gap:5px;color:#7f8ba3;font-size:10px;padding:3px 5px}
+.st-legend .k i{width:8px;height:8px;border-radius:50%}
+.st-dock{display:flex;gap:10px;align-items:center;padding:8px 10px}
+.st-play{display:flex;gap:5px;align-items:center}
+.st-prog{flex:0 0 120px;height:5px;border-radius:4px;background:rgba(255,255,255,.07);overflow:hidden}
+.st-prog i{display:block;height:100%;width:0;background:linear-gradient(90deg,#6f89dd,#9db7ff)}
+.runs{display:flex;gap:6px;overflow-x:auto;flex:1;min-width:0;scrollbar-width:none}
+.runs::-webkit-scrollbar{display:none}
+.run{flex:0 0 auto;max-width:220px;padding:5px 9px;border-radius:8px;border:1px solid rgba(140,165,235,.16);background:rgba(255,255,255,.03);color:#b8c4de;font-size:10px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.run:hover{border-color:#7d97ec}.run.on{border-color:#9db7ff;background:rgba(111,137,221,.22);color:#fff}
+.run .d{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;background:#6ff0b7;vertical-align:1px}
+.run .d.e{background:#ff4d5e}.run .d.w{background:#ffc46b}
+.runs .empty{align-self:center}
+.st-cmd{display:flex;gap:8px;flex:0 0 360px}
+.st-cmd input{flex:1;min-width:0}
+.st-toast{position:absolute;left:50%;top:96px;transform:translateX(-50%);width:min(560px,calc(100% - 600px));min-width:280px;padding:11px 14px;display:none;color:#dbe4ff;line-height:1.5;z-index:3;cursor:pointer}
+.st-toast.show{display:block;animation:toast-in .2s ease-out}
+@keyframes toast-in{from{opacity:0;transform:translate(-50%,-4px)}to{opacity:1;transform:translate(-50%,0)}}
+.st-toast b{color:#fff}.st-toast small{display:block;margin-top:4px;color:#7f8ba3}
+.stage .mesh-tip{position:absolute;pointer-events:none;padding:7px 9px;border-radius:8px;background:rgba(8,13,26,.95);border:1px solid #2b3a5a;color:#dbe4ff;font-size:10.5px;line-height:1.45;white-space:nowrap;transform:translate(-50%,-130%);display:none;z-index:4}
+.stage .mesh-tip small{display:block;color:#8e9bb8}
+.stage .mesh-tip .e{color:#ff8a96}
+@media(max-width:1180px){.st-left{display:none}.st-cmd{flex-basis:240px}.st-toast{width:min(520px,calc(100% - 330px))}}
+@media(max-width:860px){.st-right{top:auto;bottom:128px;height:38%;left:14px;right:14px;width:auto}.st-cmd{display:none}.st-tools{max-width:100%}.st-tools input{width:90px}.st-toast{width:calc(100% - 28px)}}
 </style>
 </head>
 <body>
@@ -597,9 +678,10 @@ select:focus,input[type=text]:focus{border-color:#8fa4e5;box-shadow:0 0 0 3px rg
         </div>
       </div>
       <aside class="trace" id="trace" aria-label="Agent execution log">
-        <div class="mesh-mini" id="meshMini" title="Drag to rotate · scroll to zoom">
-          <canvas></canvas><div class="mesh-tip"></div>
+        <div class="mesh-mini" id="meshMini" title="Click to open the agent mesh full screen · drag to rotate">
+          <canvas></canvas>
           <div class="mesh-cap"><span>Agent mesh · <b>live</b></span><span id="meshMiniStat">idle</span></div>
+          <div class="mini-foot"><span>⤢ click to expand</span><span class="fault" id="meshMiniFault">● fault</span></div>
         </div>
         <div id="traceLog">
           <div class="trace-head"><h5>Execution log</h5></div>
@@ -615,22 +697,43 @@ select:focus,input[type=text]:focus{border-color:#8fa4e5;box-shadow:0 0 0 3px rg
 
     <section class="view hidden" id="v-radar"></section>
     <section class="view hidden" id="v-mesh">
-      <div class="meshv">
-        <div class="mesh-big" id="meshBig">
-          <canvas></canvas><div class="mesh-tip"></div>
-          <div class="mesh-hud"><div><div class="t">Agent mesh — every hop of every turn, in 3D</div>
-            <div class="s">Each packet is one recorded step of the execution trace, replayed in order. Nothing here is decorative traffic.</div></div>
-            <div style="text-align:right"><div class="t" id="meshBigStat">idle</div><div class="s">drag to rotate · scroll to zoom</div></div></div>
-          <div class="mesh-cmd"><input type="text" id="meshInput" placeholder="Give the agents a job and watch it travel — e.g. “What needs my attention today?”"/>
-            <button class="btn" id="meshGo" type="button">Run</button>
-            <button class="btn ghost" id="meshReplay" type="button" style="background:rgba(15,23,42,.8);border-color:#2b3a5a;color:#c7d3f5">Replay</button></div>
-          <div class="mesh-legend" id="meshLegend"></div>
+      <div class="stage" id="meshStage" tabindex="0" aria-label="Agent mesh: live 3D view of the agents">
+        <canvas id="meshCanvas"></canvas><div class="mesh-tip"></div>
+        <div class="st-top">
+          <div class="st-title glass"><div class="h">Agent mesh <span class="live" id="mLive">READY</span>
+            <span style="margin-left:auto;color:#7f8ba3;font-size:10.5px;font-weight:500" id="mStat">idle</span></div>
+            <div class="st-cap" id="mCaption">Every packet is one real step of a request's execution trace, replayed in order.</div></div>
+          <div class="st-tools glass">
+            <input type="text" id="mSearch" placeholder="Find an agent…" aria-label="Find an agent"/>
+            <select id="mLayout" aria-label="Layout"><option value="sphere">Sphere</option><option value="rings">Rings</option>
+              <option value="flow">Flow</option><option value="clusters">Clusters</option></select>
+            <button class="tb" data-m="heat" title="Size and colour by activity (H)">Heat</button>
+            <button class="tb on" data-m="labels" title="Show labels">Labels</button>
+            <button class="tb on" data-m="orbit" title="Slow auto-rotation">Orbit</button>
+            <button class="tb" data-m="reset" title="Reset the camera (R)">Reset</button>
+            <button class="tb" data-m="probe" title="3 real read-only requests; the last is designed to fail">Run probe</button>
+            <button class="tb" data-m="shot" title="Save the view as PNG">PNG</button>
+            <button class="tb" data-m="full" title="Full screen (F)">Full screen <kbd>F</kbd></button>
+          </div>
         </div>
-        <div class="mesh-side">
-          <div class="pnl"><h3>Session counters</h3><div class="cap">measured from the traces this browser received</div>
-            <div class="ctr" id="meshCtr"></div></div>
-          <div class="pnl"><h3>Most active agents</h3><div class="cap">activations this session</div><div id="meshTop"></div></div>
-          <div class="pnl" style="flex:1"><h3>Live activity</h3><div class="cap">newest first</div><div class="feed" id="meshFeed"></div></div>
+        <div class="st-left" id="mLeft"></div>
+        <div class="st-right" id="mRight"></div>
+        <div class="st-toast glass" id="mToast"></div>
+        <div class="st-bottom">
+          <div class="st-legend glass" id="mLegend"></div>
+          <div class="st-dock glass">
+            <div class="st-play">
+              <button class="tb" data-m="restart" title="Replay the current run">⏮</button>
+              <button class="tb" data-m="play" id="mPlay" title="Play / pause (Space)">❚❚</button>
+              <button class="tb" data-m="step" title="Single step (N)">⏭</button>
+              <select id="mSpeed" aria-label="Replay speed"><option value="0.25">¼×</option><option value="0.5">½×</option>
+                <option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select>
+            </div>
+            <div class="st-prog"><i id="mProg"></i></div>
+            <div class="runs" id="mRuns"></div>
+            <div class="st-cmd"><input type="text" id="mCmd" placeholder="Give the agents a job — e.g. “Rebalance bus routes”"/>
+              <button class="btn" id="mGo" type="button">Run</button></div>
+          </div>
         </div>
       </div>
     </section>
@@ -651,6 +754,7 @@ select:focus,input[type=text]:focus{border-color:#8fa4e5;box-shadow:0 0 0 3px rg
   </main>
 </div>
 
+<script src="/static/mesh.js"></script>
 <script>
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const SID='sess-'+Math.random().toString(36).slice(2,8);
@@ -674,7 +778,7 @@ $$('#nav button').forEach(b=>b.onclick=()=>{
   $$('.view').forEach(v=>v.classList.add('hidden'));
   const v=b.dataset.v; $('#v-'+v).classList.remove('hidden');
   $('#vtitle').textContent=VT[v][0]; $('#vsub').textContent=VT[v][1];
-  if(v==='mesh'){MESH_BIG&&MESH_BIG.fit();meshSide();return;}
+  if(v==='mesh'){AgentMesh.show();$('#meshStage').focus({preventScroll:true});return;}
   if(v!=='chat') render(v);
 });
 // one delegated handler for every "ask the agent" button, action card and print
@@ -849,7 +953,7 @@ function setTrace(t,intent,conf){
   $('#traceLog').innerHTML=`<div class="trace-head"><h5>Execution log</h5></div>
     <div class="meta">Intent <b style="color:#526cb9">${esc(intent||'Unclassified')}</b> · ${conf||0}% routing confidence<br>
       ${t.length} execution step${t.length===1?'':'s'} · ${t.length?t[t.length-1].ms:0} ms reported</div>
-    <div class="tl">${t.map(i=>`<div class="ti ${i.status==='warn'?'warn':''}">
+    <div class="tl">${t.map(i=>`<div class="ti ${i.status==='warn'?'warn':i.status==='error'?'err':''}">
       <span class="ms">${i.ms} ms</span><div class="ag">${esc(i.agent)}</div>
       <div class="ac">${esc(i.action)}</div><div class="de">${esc(i.detail)}</div></div>`).join('')}</div>`;
 }
@@ -862,7 +966,7 @@ async function say(text){
   try{
     const r=await api('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({text,session:SID})});
-    MESH.inflight(false); MESH.play(r.trace||[],text);
+    MESH.inflight(false); MESH.play(r.trace||[],text,r);
     const tag = r.engine && r.engine.startsWith('llm')
       ? `<div class="engtag">Processed by ${esc(r.model||'language model')}${r.tokens?' · '+(r.tokens.in+r.tokens.out).toLocaleString('en-IN')+' tokens':''}</div>`
       : `<div class="engtag rule">Processed by the deterministic continuity engine</div>`;
@@ -1276,6 +1380,8 @@ async function loadBadges(){
   // (Mirrors guard.APPROVAL_RX - tests/campus_test.py keeps the two in step.)
   const h=new URLSearchParams(location.hash.slice(1));
   if(h.get('view'))goView(h.get('view'));
+  if(h.get('layout')){goView('mesh');AgentMesh.layout(h.get('layout'));}
+  if(h.get('agent')){goView('mesh');setTimeout(()=>AgentMesh.select(h.get('agent')),400);}
   const APPROVING=/\b(yes|yeah|yep|ok|okay|sure|confirm|confirmed|approve[d]?|apply|applied|go ahead|do it|proceed|send it|publish|commit|accept|make it (?:so|happen)|plan\s*[abc])\b/i;
   if(h.get('ask')){if(APPROVING.test(h.get('ask'))){$('#ta').value=h.get('ask');$('#ta').focus();}else say(h.get('ask'));}
 })();
@@ -1398,180 +1504,10 @@ async function renderDocs(el){
   $('#dissue').onclick=()=>u()&&goChat(`Prepare the ${$('#dkind').value} certificate for ${u()}`);
 }
 
-/* ---------------- 3D agent mesh ----------------
-   A hand-rolled perspective projection on a plain 2D canvas: no three.js, no
-   CDN, because this console loads nothing external and has to keep working on
-   a locked-down college LAN. Every packet is one step of a REAL execution
-   trace returned by the server, replayed in order; the only motion that is not
-   a trace step is the Supervisor breathing while a request is in flight. */
-const GROUPS={
-  core:{c:'#9db7ff',label:'Supervisor & routing',a:['Supervisor','Router','ToolRouter','EntityResolver','LLM Planner','ToolBus','MCP']},
-  gov:{c:'#ff7a8a',label:'Guard & audit',a:['PolicyGuard','Auditor']},
-  acad:{c:'#bda2ff',label:'Academic',a:['TimetableAgent','SubstitutionAgent','WorkloadBalancer','PlanRanker','FacultyAgent','ExamAgent','HRAgent']},
-  stud:{c:'#5fd4a6',label:'Students & finance',a:['StudentAgent','AttendanceAgent','RiskAgent','FinanceAgent']},
-  camp:{c:'#ffc46b',label:'Campus services',a:['LibraryAgent','HostelAgent','TransportAgent','GatePassAgent','PlacementAgent','DocumentAgent']},
-  ops:{c:'#6fd3ff',label:'Ops & comms',a:['RequestAgent','SLAMonitor','NotifyAgent','AnalyticsAgent','OpsRadar']},
-};
-const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
-const MeshModel={
-  nodes:{},edges:{},packets:[],pulses:[],feed:[],busy:0,flight:false,last:null,
-  ctr:{turns:0,hops:0,tools:0,committed:0,blocked:0,verified:0,notified:0},
-  init(){
-    const inner=[...GROUPS.core.a.slice(1),...GROUPS.gov.a];
-    const outer=[...GROUPS.acad.a,...GROUPS.stud.a,...GROUPS.camp.a,...GROUPS.ops.a];
-    this.add('Supervisor','core',[0,0,0]);
-    inner.forEach((n,i)=>{const a=i/inner.length*Math.PI*2;
-      this.add(n,GROUPS.gov.a.includes(n)?'gov':'core',[Math.cos(a)*.46,Math.sin(a*2)*.08,Math.sin(a)*.46]);});
-    const N=outer.length,g=Math.PI*(3-Math.sqrt(5));
-    outer.forEach((n,i)=>{const y=1-(i+.5)/N*2,r=Math.sqrt(1-y*y),t=g*i;
-      this.add(n,Object.keys(GROUPS).find(k=>GROUPS[k].a.includes(n)),[Math.cos(t)*r,y*.92,Math.sin(t)*r]);});
-  },
-  add(name,group,p){
-    if(this.nodes[name])return this.nodes[name];
-    if(!p){let h=0;for(const ch of name)h=(h*31+ch.charCodeAt(0))>>>0;
-      const y=((h%1000)/1000)*1.6-.8,t=(h>>10)%628/100,r=Math.sqrt(1-y*y);p=[Math.cos(t)*r,y,Math.sin(t)*r];}
-    return this.nodes[name]={name,group:group||'ops',p,heat:0,tAct:-1e9,last:'',col:null};
-  },
-  color(n){return (GROUPS[n.group]||GROUPS.ops).c},
-  inflight(v){this.flight=v;},
-  play(trace,label){
-    if(!trace||!trace.length)return;
-    this.last={trace,label};
-    const now=performance.now(),start=Math.max(now,this.busy);
-    const gap=Math.max(95,Math.min(300,2600/trace.length)),dur=gap*1.7;
-    this.ctr.turns++;
-    let prev='Supervisor';
-    trace.forEach((it,i)=>{
-      const to=this.add(it.agent,null,null),from=this.add(prev,null,null);
-      const a=(it.action||'')+'';
-      const col=a.includes('write_blocked')?'#ff5d73':(a.includes('write_authorisation')||a==='verify'||a.includes('commit'))?'#4fe0a0':
-        it.status==='warn'?'#ffb45c':this.color(to);
-      const t0=start+i*gap;
-      if(from!==to){this.packets.push({a:from,b:to,t0,dur,col});
-        const k=[from.name,to.name].sort().join('|');this.edges[k]=(this.edges[k]||0)+1;}
-      const arrive=t0+(from!==to?dur:0);
-      setTimeout(()=>{to.tAct=performance.now();to.heat++;to.last=a;to.col=col;
-        this.pulses.push({n:to,t0:performance.now(),col});
-        this.ctr.hops++;
-        if(to.name==='ToolBus'||(to.name==='ToolRouter'&&a==='select'))this.ctr.tools++;
-        if(a.includes('write_authorisation'))this.ctr.committed++;
-        if(a.includes('write_blocked'))this.ctr.blocked++;
-        if(a==='verify'||a.includes('verif'))this.ctr.verified++;
-        if(to.name==='NotifyAgent'&&a.includes('dispatch'))this.ctr.notified++;
-        this.feed.unshift({agent:it.agent,action:a,detail:it.detail||'',col});
-        if(this.feed.length>80)this.feed.pop();
-        meshStat();if(!$('#v-mesh').classList.contains('hidden'))meshSide();
-      },Math.max(0,arrive-now));
-      prev=it.agent;
-    });
-    this.busy=start+trace.length*gap+dur;
-  }
-};
-MeshModel.init();
-class MeshView{
-  constructor(box,big){
-    this.box=box;this.big=big;this.cv=box.querySelector('canvas');this.ctx=this.cv.getContext('2d');
-    this.tip=box.querySelector('.mesh-tip');this.yaw=.6;this.pitch=-.32;this.zoom=1;this.drag=null;this.idle=0;this.proj={};
-    this.stars=Array.from({length:big?140:60},(_,i)=>{const y=Math.random()*2-1,t=Math.random()*6.283,r=Math.sqrt(1-y*y);
-      return [Math.cos(t)*r*2.4,y*2.4,Math.sin(t)*r*2.4]});
-    this.cv.addEventListener('pointerdown',e=>{this.drag=[e.clientX,e.clientY];this.cv.setPointerCapture(e.pointerId)});
-    this.cv.addEventListener('pointerup',()=>{this.drag=null;this.idle=performance.now()});
-    this.cv.addEventListener('pointermove',e=>{
-      if(this.drag){this.yaw+=(e.clientX-this.drag[0])*.008;this.pitch=Math.max(-1.3,Math.min(1.3,this.pitch+(e.clientY-this.drag[1])*.006));
-        this.drag=[e.clientX,e.clientY];}
-      this.hover(e);});
-    this.cv.addEventListener('pointerleave',()=>{this.tip.style.display='none'});
-    this.cv.addEventListener('wheel',e=>{e.preventDefault();this.zoom=Math.max(.6,Math.min(1.9,this.zoom*(1-e.deltaY*.001)))},{passive:false});
-    new ResizeObserver(()=>this.fit()).observe(box);this.fit();
-  }
-  fit(){const d=devicePixelRatio||1,w=this.box.clientWidth,h=this.box.clientHeight;if(!w||!h)return;
-    this.cv.width=w*d;this.cv.height=h*d;this.W=w;this.H=h;this.ctx.setTransform(d,0,0,d,0,0);}
-  project(p){
-    const cy=Math.cos(this.yaw),sy=Math.sin(this.yaw),cp=Math.cos(this.pitch),sp=Math.sin(this.pitch);
-    const x1=p[0]*cy+p[2]*sy,z1=-p[0]*sy+p[2]*cy,y2=p[1]*cp-z1*sp,z2=p[1]*sp+z1*cp;
-    const F=3.2,s=F/(F+z2),R=Math.min(this.W,this.H)*(this.big?.36:.34)*this.zoom;
-    return {x:this.W/2+x1*R*s,y:this.H/2+(this.big?-10:12)-y2*R*s,s,z:z2};
-  }
-  hover(e){
-    const r=this.cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;let best=null,bd=14;
-    for(const n of Object.values(MeshModel.nodes)){const q=this.proj[n.name];if(!q)continue;
-      const d=Math.hypot(q.x-mx,q.y-my);if(d<bd){bd=d;best=n;}}
-    if(!best){this.tip.style.display='none';return;}
-    this.tip.style.display='block';this.tip.style.left=mx+'px';this.tip.style.top=my+'px';
-    this.tip.innerHTML=`<b>${esc(best.name)}</b><small>${esc((GROUPS[best.group]||GROUPS.ops).label)} · ${best.heat} activation${best.heat===1?'':'s'}${best.last?' · last: '+esc(best.last):''}</small>`;
-  }
-  draw(now){
-    if(!this.W||this.box.offsetParent===null)return;
-    const c=this.ctx,M=MeshModel;c.clearRect(0,0,this.W,this.H);
-    if(!this.drag&&!RM&&now-this.idle>1800)this.yaw+=M.flight?.006:.0022;
-    for(const s of this.stars){const q=this.project(s);c.fillStyle=`rgba(170,190,255,${.12+.25*(1-q.z/2.4)/2})`;c.fillRect(q.x,q.y,1.2,1.2);}
-    c.lineWidth=1;
-    for(const y of [-.55,0,.55]){const r=Math.sqrt(1-y*y);c.beginPath();
-      for(let i=0;i<=64;i++){const a=i/64*6.2832,q=this.project([Math.cos(a)*r,y*.92,Math.sin(a)*r]);i?c.lineTo(q.x,q.y):c.moveTo(q.x,q.y);}
-      c.strokeStyle='rgba(120,150,230,.07)';c.stroke();}
-    const P={};for(const n of Object.values(M.nodes))P[n.name]=this.project(n.p);this.proj=P;
-    const sup=P.Supervisor;
-    for(const n of Object.values(M.nodes)){if(n.name==='Supervisor')continue;const q=P[n.name];
-      c.strokeStyle='rgba(140,165,235,.06)';c.beginPath();c.moveTo(sup.x,sup.y);c.lineTo(q.x,q.y);c.stroke();}
-    for(const [k,w] of Object.entries(M.edges)){const [a,b]=k.split('|');if(!P[a]||!P[b])continue;
-      c.strokeStyle=`rgba(157,183,255,${Math.min(.5,.08+w*.03)})`;c.lineWidth=Math.min(2.5,.6+w*.12);
-      c.beginPath();c.moveTo(P[a].x,P[a].y);c.lineTo(P[b].x,P[b].y);c.stroke();}
-    c.lineWidth=1;
-    const pt=(A,B,u)=>{const m=[(A[0]+B[0])/2,(A[1]+B[1])/2+.18,(A[2]+B[2])/2],L=Math.hypot(...m)||1,k=Math.max(1,.62/L);
-      const C=m.map(v=>v*k*1.15),w=1-u;return [0,1,2].map(i=>w*w*A[i]+2*w*u*C[i]+u*u*B[i]);};
-    M.packets=M.packets.filter(p=>now<p.t0+p.dur+60);
-    for(const p of M.packets){if(now<p.t0)continue;const u=Math.min(1,(now-p.t0)/p.dur),e=u<.5?2*u*u:1-Math.pow(-2*u+2,2)/2;
-      for(let j=10;j>=0;j--){const uu=Math.max(0,e-j*.035),q=this.project(pt(p.a.p,p.b.p,uu));
-        c.globalAlpha=(1-j/11)*.85;c.fillStyle=p.col;c.beginPath();c.arc(q.x,q.y,(j?1.6:3.2)*q.s,0,6.2832);c.fill();}
-      c.globalAlpha=1;}
-    M.pulses=M.pulses.filter(p=>now-p.t0<900);
-    const order=Object.values(M.nodes).sort((a,b)=>P[b.name].z-P[a.name].z);
-    for(const n of order){const q=P[n.name],col=this.color(n,now);
-      const flash=Math.max(0,1-(now-n.tAct)/1100);
-      const breathe=n.name==='Supervisor'?(M.flight?.5+.5*Math.sin(now/140):.15+.1*Math.sin(now/900)):0;
-      const r=(n.name==='Supervisor'?7.5:4.2+Math.min(5,n.heat*.45))*q.s*(this.big?1.25:.9);
-      const g=c.createRadialGradient(q.x,q.y,0,q.x,q.y,r*(3.2+flash*2.5));
-      g.addColorStop(0,col+'cc');g.addColorStop(1,col+'00');
-      c.globalAlpha=.25+.5*flash+breathe*.6;c.fillStyle=g;c.beginPath();c.arc(q.x,q.y,r*(3.2+flash*2.5),0,6.2832);c.fill();
-      c.globalAlpha=.55+.45*Math.max(flash,(1-q.z)/2);c.fillStyle=col;c.beginPath();c.arc(q.x,q.y,r,0,6.2832);c.fill();
-      c.globalAlpha=1;
-      const show=this.big?(q.s>.93||flash>.05||n.heat>0||n.name==='Supervisor'):(flash>.05||n.name==='Supervisor');
-      if(show){c.font=`${this.big?11:9.5}px Inter,ui-sans-serif,sans-serif`;c.fillStyle=`rgba(225,233,255,${.45+.55*Math.max(flash,.3)})`;
-        c.fillText(n.name,q.x+r+4,q.y+3);}}
-    for(const p of M.pulses){const q=P[p.n.name],u=(now-p.t0)/900;
-      c.strokeStyle=p.col;c.globalAlpha=1-u;c.lineWidth=1.5;c.beginPath();c.arc(q.x,q.y,(6+u*26)*q.s,0,6.2832);c.stroke();}
-    c.globalAlpha=1;c.lineWidth=1;
-  }
-  color(n,now){return now-n.tAct<1100&&n.col?n.col:MeshModel.color(n)}
-}
-let MESH_MINI=null,MESH_BIG=null;
-const MESH={inflight:v=>{MeshModel.inflight(v);meshStat(v?'thinking…':null)},play:(t,l)=>MeshModel.play(t,l)};
-function meshStat(txt){
-  const c=MeshModel.ctr,s=txt||(c.hops?`${c.turns} run${c.turns===1?'':'s'} · ${c.hops} hops · ${Object.values(MeshModel.nodes).filter(n=>n.heat).length} agents`:'idle');
-  const a=$('#meshMiniStat'),b=$('#meshBigStat');if(a)a.textContent=s;if(b)b.textContent=s;
-}
-function meshSide(){
-  const c=MeshModel.ctr;
-  $('#meshCtr').innerHTML=[['Runs',c.turns],['Agent hops',c.hops],['Tool calls',c.tools],['Writes committed',c.committed],
-    ['Writes held for approval',c.blocked],['Post-write verifications',c.verified]].map(([l,v])=>`<div><div class="l">${l}</div><div class="v">${v}</div></div>`).join('');
-  const top=Object.values(MeshModel.nodes).filter(n=>n.heat).sort((a,b)=>b.heat-a.heat).slice(0,8);
-  const mx=top.length?top[0].heat:1;
-  $('#meshTop').innerHTML=top.length?`<div class="bars" style="border:0;box-shadow:none;padding:0">${top.map(n=>`<div class="brow" style="grid-template-columns:120px minmax(0,1fr) 34px">
-    <div class="bl">${esc(n.name)}</div><div class="bt"><i style="width:${100*n.heat/mx}%;background:${MeshModel.color(n)}"></i></div><div class="bv">${n.heat}</div></div>`).join('')}</div>`
-    :'<div style="color:var(--dim)">No activity yet — run a command.</div>';
-  $('#meshFeed').innerHTML=MeshModel.feed.map(f=>`<div><b style="color:${f.col}">●</b> <b>${esc(f.agent)}</b> ${esc(f.action)}<br>${esc(f.detail).slice(0,110)}</div>`).join('')||'<div>Waiting for the first request.</div>';
-}
-(function meshBoot(){
-  MESH_MINI=new MeshView($('#meshMini'),false);
-  MESH_BIG=new MeshView($('#meshBig'),true);
-  $('#meshLegend').innerHTML=Object.values(GROUPS).map(g=>`<span><i style="background:${g.c}"></i>${g.label}</span>`).join('')+
-    '<span><i style="background:#4fe0a0"></i>write approved / verified</span><span><i style="background:#ff5d73"></i>write held by PolicyGuard</span>';
-  const go=()=>{const v=$('#meshInput').value.trim();if(!v)return;$('#meshInput').value='';say(v);};
-  $('#meshGo').onclick=go;$('#meshInput').onkeydown=e=>{if(e.key==='Enter')go();};
-  $('#meshReplay').onclick=()=>{const l=MeshModel.last;if(l){MeshModel.ctr.turns--;MeshModel.play(l.trace,l.label);}};
-  const loop=now=>{MESH_MINI.draw(now);MESH_BIG.draw(now);requestAnimationFrame(loop)};requestAnimationFrame(loop);
-  meshSide();
-})();
+/* ---------------- agent mesh (static/mesh.js) ---------------- */
+const MESH={inflight:v=>AgentMesh.inflight(v),
+  play:(trace,label,resp)=>AgentMesh.ingest(trace,label,resp?AgentMesh.summarise(resp):'')};
+AgentMesh.init({ask:text=>say(text),show:()=>goView('mesh')});
 </script>
 </body>
 </html>

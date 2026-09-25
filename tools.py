@@ -499,6 +499,8 @@ def t_apply_timetable_generation(con, S, U, **kw):
             "refresh": True,
             "trace": [("PolicyGuard", "write_authorisation", "admin approved timetable rebuild"),
                       ("TimetableAgent", "commit", f"{len(res['bookings'])} periods written"),
+                      ("TimetableAgent", "verify", "clean" if not problems else f"{len(problems)} problem(s)",
+                       "ok" if not problems else "error"),
                       ("Auditor", "log", "timetable.generate recorded in the ledger")]}
 
 
@@ -624,6 +626,35 @@ REGISTRY = [
 REGISTRY += campus.REGISTRY
 
 FUNCS = {name: fn for fn, name, _d, _s in REGISTRY}
+
+# Which agent owns each tool - so a failed call can be pinned on the agent that
+# failed, rather than on the bus that carried it. The console's agent mesh
+# draws exactly these names; tests/campus_test.py checks it knows all of them.
+TOOL_AGENT = {
+    "institution_overview": "AnalyticsAgent", "get_timetable": "TimetableAgent",
+    "faculty_timetable": "TimetableAgent", "find_free_faculty": "TimetableAgent",
+    "find_free_rooms": "TimetableAgent", "faculty_profile": "FacultyAgent",
+    "faculty_workload": "FacultyAgent", "student_lookup": "StudentAgent",
+    "attendance_defaulters": "StudentAgent", "fee_summary": "FinanceAgent",
+    "exam_schedule": "ExamAgent", "exam_eligibility": "ExamAgent", "list_requests": "RequestAgent",
+    "list_leaves": "HRAgent", "plan_absence_coverage": "SubstitutionAgent",
+    "apply_coverage_plan": "SubstitutionAgent", "undo_last_change": "SubstitutionAgent",
+    "plan_timetable_generation": "TimetableAgent", "apply_timetable_generation": "TimetableAgent",
+    "decide_request": "RequestAgent", "create_request": "RequestAgent",
+    "broadcast_notice": "NotifyAgent", **campus.AGENT_OF}
+
+
+def agent_of(name):
+    return TOOL_AGENT.get(name, "ToolBus")
+
+
+def failure_of(result):
+    """The error a tool reported, or None. A BLOCKED write is NOT a failure -
+    it is the guard doing its job - and neither is an ambiguity question."""
+    d = (result or {}).get("data")
+    if isinstance(d, dict) and d.get("error"):
+        return str(d["error"])
+    return None
 SCHEMAS = [{"type": "function",
             "function": {"name": name, "description": desc, "parameters": schema}}
            for _fn, name, desc, schema in REGISTRY]

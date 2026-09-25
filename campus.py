@@ -317,7 +317,9 @@ def t_issue_book(con, S, U, book="", member="", **kw):
     if left < 0:
         con.execute("DELETE FROM book_loans WHERE id=(SELECT MAX(id) FROM book_loans)")
         con.commit()
-        return _err("Issue rolled back: the shelf count went negative on re-read.")
+        out = _err("Issue rolled back: the shelf count went negative on re-read.")
+        out["trace"] = [("LibraryAgent", "verify", "shelf count negative on re-read - rolled back", "error")]
+        return out
     Auditor().log(con, ACTOR, "LibraryAgent", "library.issue", args, "Applied")
     _done(S, "issue_book")
     return {"data": {"issued": True, "book": b["id"], "member": m["id"], "due": due.isoformat(),
@@ -328,7 +330,7 @@ def t_issue_book(con, S, U, book="", member="", **kw):
             "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
                            ("LibraryAgent", "issue", f"{b['id']} → {m['id']}"),
-                           ("LibraryAgent", "verify", f"shelf count re-read: {left}"),
+                           ("LibraryAgent", "verify", f"shelf count re-read: {left}", "ok"),
                            ("Auditor", "ledger_write", "library.issue")]}
 
 
@@ -366,7 +368,8 @@ def t_return_book(con, S, U, member="", book=None, **kw):
                                       else " — no fine due."))],
             "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
-                           ("LibraryAgent", "verify", f"{len(still)} of those still on loan after re-read"),
+                           ("LibraryAgent", "verify", f"{len(still)} of those still on loan after re-read",
+                            "error" if still else "ok"),
                            ("Auditor", "ledger_write", "library.return")]}
 
 
@@ -563,7 +566,8 @@ def t_allocate_hostel_room(con, S, U, usn=None, **kw):
                                    f"after the write: {len(bad)} room(s) over capacity, {len(wrong)} "
                                    f"gender mismatches.")], "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
-                           ("HostelAgent", "verify", f"capacity breaches {len(bad)} · gender mismatches {len(wrong)}"),
+                           ("HostelAgent", "verify", f"capacity breaches {len(bad)} · gender mismatches {len(wrong)}",
+                            "error" if bad or wrong else "ok"),
                            ("NotifyAgent", "dispatch", f"{len(plan)} allotment letters")]}
 
 
@@ -594,6 +598,7 @@ def t_dispatch_hostel_complaints(con, S, U, **kw):
             "blocks": [tbl, B_text(f"🔧 **{len(c)} complaint(s) dispatched** to {len(crews)} crew(s); "
                                    f"{left} still open after re-read.")], "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
+                           ("HostelAgent", "verify", f"{left} still open after re-read", "error" if left else "ok"),
                            ("NotifyAgent", "dispatch", f"{len(crews)} crew notices")]}
 
 
@@ -747,7 +752,8 @@ def t_rebalance_bus_routes(con, S, U, **kw):
                                          f"write: {len(broke)} route(s) pushed over capacity by the move.")],
             "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
-                           ("TransportAgent", "verify", f"routes newly over capacity: {len(broke)}"),
+                           ("TransportAgent", "verify", f"routes newly over capacity: {len(broke)}",
+                            "error" if broke else "ok"),
                            ("NotifyAgent", "dispatch", f"{len(moves)} rider notices")]}
 
 
@@ -808,7 +814,7 @@ def t_handle_bus_breakdown(con, S, U, route="", **kw):
                                                     f"**{'yes' if seated else 'NO'}**.")],
             "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
-                           ("TransportAgent", "verify", f"seated={seated}"),
+                           ("TransportAgent", "verify", f"seated={seated}", "ok" if seated else "error"),
                            ("NotifyAgent", "dispatch", "riders + driver")]}
 
 
@@ -975,7 +981,8 @@ def t_decide_gate_passes(con, S, U, ids=None, decision=None, **kw):
             "blocks": [tbl, B_text(f"🛂 **{done} pass(es) decided** and students, parents and wardens "
                                    f"notified. {left} left for a human.")], "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
-                           ("GatePassAgent", "verify", f"{done}/{len(plan)} no longer pending"),
+                           ("GatePassAgent", "verify", f"{done}/{len(plan)} no longer pending",
+                            "ok" if done == len(plan) else "error"),
                            ("NotifyAgent", "dispatch", f"{len(msgs)} notices")]}
 
 
@@ -1130,7 +1137,8 @@ def t_publish_drive_shortlist(con, S, U, drive="", **kw):
             "blocks": [B_text(f"🎯 **{n} students shortlisted** for {d['company']} and notified.")],
             "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
-                           ("PlacementAgent", "verify", f"{n} registrations on re-read"),
+                           ("PlacementAgent", "verify", f"{n} registrations on re-read",
+                            "ok" if n >= len(new) else "error"),
                            ("NotifyAgent", "dispatch", msg["audience"])]}
 
 
@@ -1295,7 +1303,7 @@ def t_issue_certificate(con, S, U, usn="", kind="Bonafide", purpose="", **kw):
             "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
                            ("DocumentAgent", "register", serial),
-                           ("DocumentAgent", "verify", "serial present on re-read" if ok else "MISSING"),
+                           ("DocumentAgent", "verify", "serial present on re-read" if ok else "MISSING", "ok" if ok else "error"),
                            ("NotifyAgent", "dispatch", s["usn"])]}
 
 
@@ -1431,7 +1439,8 @@ def t_decide_leave(con, S, U, leave_id=None, decision="approve", **kw):
             "chips": [f"Arrange coverage for {f['name']} on {_date_words(dt.date.fromisoformat(d['date']))}"
                       for f, d in follow][:3],
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
-                           ("HRAgent", "verify", f"{done}/{len(todo)} status re-read")]}
+                           ("HRAgent", "verify", f"{done}/{len(todo)} status re-read",
+                            "ok" if done == len(todo) else "error")]}
 
 
 # =================================================================== STUDENT 360

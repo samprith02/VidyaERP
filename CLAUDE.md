@@ -113,9 +113,19 @@ stingy and this is what keeps multi-hop turns inside the budget.
   has no `.env` to edit.
 - **`static/index.html` loads nothing external** — no CDN, no fonts, no images. Keep it that way;
   it is why the console works offline and on a locked-down college network. The 3D agent mesh is
-  therefore a hand-rolled perspective projection on a 2D canvas, not three.js. Every packet it
-  draws is a real trace step — do not add decorative "ambient" traffic; the only non-trace motion
-  is the Supervisor breathing while a request is in flight.
+  therefore a hand-rolled perspective projection on a 2D canvas (`static/mesh.js`, served locally),
+  not three.js. Every packet it draws is a real trace step — do not add decorative "ambient"
+  traffic; the only non-trace motion is the Supervisor breathing while a request is in flight.
+- **The mesh blinks red only because the server said so.** A failed tool call must reach the trace
+  as `status: "error"` on the agent that OWNS the tool: `tools.failure_of(result)` +
+  `tools.agent_of(name)`, applied by `llm_agent`'s loop and the rule engine's `orchestrator._relay`.
+  A BLOCKED write is not a failure (`failure_of` returns None) and must never be drawn as one.
+  Every campus `verify` step states `"ok"`/`"error"` explicitly. A new tool needs an entry in
+  `tools.TOOL_AGENT` (or `campus.AGENT_OF`), and a new agent name needs an entry in `mesh.js`'s
+  `CATALOG` — `tests/mesh_test.py` 1b–1d fail otherwise.
+- **The mesh's clock has one time source.** `step()` runs off `performance.now()` whether driven by
+  `requestAnimationFrame` or the stall-fallback timer, and `dt` is clamped at 0. Mixing a rAF
+  timestamp with `performance.now()` once ran the playback clock backwards until it froze.
 
 ---
 
@@ -215,6 +225,7 @@ ships a timetable back.
 python tests/solver_test.py    # 44 assertions, no server, no API cost
 python tests/mcp_parity.py     # 240 assertions, no server, no API cost
 python tests/campus_test.py    # 121 assertions, no server, no API cost
+python tests/mesh_test.py      # 22 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 64 assertions, no server, no API cost
 python tests/nlu_test.py       # 15 assertions, no server, no API cost

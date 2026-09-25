@@ -141,7 +141,10 @@ def handle_llm(con, text, sid="default", role="admin", actor="admin@vidyatech"):
                     f"args={json.dumps(args, default=str)[:70]} · {int((time.time()-t0)*1000)}ms")
                 used_tools.append(name)
                 for tr in result.get("trace", []):
-                    add(tr[0], tr[1], tr[2] if len(tr) > 2 else "")
+                    add(tr[0], tr[1], tr[2] if len(tr) > 2 else "", tr[3] if len(tr) > 3 else "ok")
+                failed = tools.failure_of(result)
+                if failed:                      # pinned on the agent that owns the tool
+                    add(tools.agent_of(name), "tool_error", failed[:160], "error")
                 blocks += result.get("blocks", [])
                 refresh = refresh or result.get("refresh", False)
                 work.append({"role": "tool", "tool_call_id": call["id"], "name": name,
@@ -154,7 +157,7 @@ def handle_llm(con, text, sid="default", role="admin", actor="admin@vidyatech"):
                 "chips": _fallback_chips(used_tools), "refresh": refresh, "engine": "llm"}
 
     except llm.LLMError as e:
-        add("LLM Planner", "transport_error", str(e)[:160], "warn")
+        add("LLM Planner", "transport_error", str(e)[:160], "error")
         add("Supervisor", "failover", "switching to the deterministic rule engine", "warn")
         out = orchestrator.handle(con, text, sid, role, actor)
         out["trace"] = trace + out.get("trace", [])
