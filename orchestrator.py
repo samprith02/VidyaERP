@@ -3,10 +3,13 @@ VidyaERP :: Orchestrator (Supervisor agent)
 Routes an utterance through the agent mesh and composes the response payload.
 """
 import re, json, datetime as dt
-import nlu
+import nlu, campus, tools
 from nlu import TODAY, day_of
 from agents import *
 from agents import _span, plabel
+
+CAMPUS_INTENTS = {"ops.radar", "student.360", "library", "hostel", "transport", "gatepass",
+                  "placement", "document", "leave.review"}
 
 SESS = {}   # session_id -> {"pending": {...}, "history": [...]}
 
@@ -23,11 +26,11 @@ def inr(n):
 
 
 CHIPS_DEFAULT = [
+    "What needs my attention today?",
     "Handle a faculty absence for tomorrow",
     "Show CSE 5th sem A timetable",
-    "Attendance defaulters in ECE sem 5",
     "Pending approvals in my inbox",
-    "Faculty workload above 90%",
+    "Decide pending gate passes by policy",
     "Brief me on today's institution status",
 ]
 
@@ -72,7 +75,14 @@ def handle(con, text, sid="default", role="admin", actor="admin@vidyatech"):
         "absence.cover": h_absence, "timetable.view": h_timetable, "faculty.query": h_faculty,
         "student.query": h_student, "finance.query": h_finance, "exam.query": h_exam,
         "request.manage": h_request, "notify.broadcast": h_notify, "analytics.kpi": h_analytics,
+        "timetable.generate": h_generate,
     }.get(intent, h_fallback)
+    if intent in CAMPUS_INTENTS:
+        fn = lambda c, x, e, s, t, a: h_campus(c, x, e, s, t, a, intent)
+    # "full profile of Dr ..." scores for student.360 on wording alone; without a
+    # USN it was never about a student
+    if intent == "student.360" and not ent["usn"]:
+        fn = h_faculty if ent["faculty"] else h_student
 
     out = fn(con, text, ent, st, tr, actor)
     out.setdefault("chips", CHIPS_DEFAULT[:4])
@@ -220,8 +230,82 @@ def resolve_pending(con, text, st, tr, actor):
                     "confidence": 95, "refresh": True}
         return None
 
+    # A write staged by a tool (campus services, timetable generation). The
+    # commit goes back through tools.execute with the admin's reply as U - the
+    # SAME gate the LLM agent and MCP hit, never a shortcut past it.
+    if kind in ("tool_commit", "timetable_generation"):
+        tool = p["tool"] if kind == "tool_commit" else "apply_timetable_generation"
+        args = p.get("args", {}) if kind == "tool_commit" else {}
+        if nlu.is_no(text) and not nlu.is_yes(text):
+            st["pending"] = None
+            tr.add("Supervisor", "hitl", f"admin declined {tool} — nothing written")
+            return {"blocks": [B_text("Discarded — nothing was written.")], "trace": tr.items,
+                    "agent": "Supervisor", "intent": "hitl", "confidence": 95, "chips": CHIPS_DEFAULT[:4]}
+        if not nlu.is_yes(text):
+            return None
+        tr.add("PolicyGuard", "write_authorisation", f"admin confirmed → {tool}")
+        res = tools.execute(con, st, text, tool, args)
+        for t in res.get("trace", []):
+            tr.add(t[0], t[1], t[2] if len(t) > 2 else "")
+        if st.get("pending") is p:
+            st["pending"] = None            # a refused commit must not stay armed either
+        Auditor().log(con, actor, campus.AGENT_OF.get(tool, "Supervisor"), tool, args,
+                      "error" if (res.get("data") or {}).get("error") else "committed")
+        return {"blocks": res.get("blocks") or [B_text(_data_text(res.get("data")))],
+                "trace": tr.items, "agent": campus.AGENT_OF.get(tool, "TimetableAgent"),
+                "intent": "hitl", "confidence": 97, "refresh": res.get("refresh", False),
+                "chips": res.get("chips") or ["What needs my attention today?"]}
+
     # undo
     return None
+
+
+def _data_text(d):
+    d = d or {}
+    return ("⚠ " + str(d["error"])) if d.get("error") else (d.get("note") or "Done.")
+
+
+# =====================================================================
+def h_campus(con, text, ent, st, tr, actor, intent):
+    """Campus services on the rule engine: the NLU picks the tool and its
+    arguments, and tools.execute runs it - the same dispatch point the LLM agent
+    and MCP use, so a write here meets exactly the gate it meets there."""
+    tool, args = campus.rule_route(con, intent, text, ent)
+    tr.add("ToolRouter", "select", (f"{tool}(" + ", ".join(f"{k}={v!r}" for k, v in args.items()
+                                                          if v not in (None, "", [])))[:90] + ")")
+    res = tools.execute(con, st, text, tool, args)
+    for t in res.get("trace", []):
+        tr.add(t[0], t[1], t[2] if len(t) > 2 else "")
+    d = res.get("data") or {}
+    blocks = res.get("blocks") or []
+    if d.get("ambiguous") and not blocks:
+        blocks = [B_text("Which one did you mean?"),
+                  B_table(["ID", "Title / name"], [[c.get("id"), c.get("title") or c.get("name")]
+                                                   for c in d.get("candidates", [])])]
+    if not blocks:
+        blocks = [B_text(_data_text(d))]
+    return {"blocks": blocks, "agent": campus.AGENT_OF.get(tool, "Supervisor"),
+            "refresh": res.get("refresh", False),
+            "chips": res.get("chips") or CHIPS_DEFAULT[:4]}
+
+
+def h_generate(con, text, ent, st, tr, actor):
+    """Timetable generation on the rule engine, via the same tool pair the LLM uses."""
+    whole = bool(re.search(r"\b(?:whole|entire|every|full)\b|\ball (?:sections|classes)\b|\bcollege\b",
+                           text.lower()))
+    args = ({"scope": "all"} if whole or not ent["dept"] else
+            {"scope": "class", "dept": ent["dept"], "sem": ent["sem"] or 5, "section": ent["section"] or "A"})
+    res = tools.execute(con, st, text, "plan_timetable_generation", args)
+    for t in res.get("trace", []):
+        tr.add(t[0], t[1], t[2] if len(t) > 2 else "")
+    if (res.get("data") or {}).get("error"):
+        return {"blocks": [B_text(_data_text(res["data"]))], "agent": "TimetableAgent"}
+    return {"blocks": res["blocks"] + [B_text("Nothing is written yet. Say **yes** to replace the current "
+                                              "timetable for this scope — it is verified independently "
+                                              "after the write — or **no** to discard. The Master "
+                                              "Timetable view lets you watch the solver place every "
+                                              "period live.")],
+            "agent": "TimetableAgent", "chips": ["Yes, apply it", "No, discard it"]}
 
 
 # =====================================================================
@@ -797,10 +881,21 @@ def h_fallback(con, text, ent, st, tr, actor):
             ["Exams", "“SEE eligibility check for MECH” · “Draft invigilation roster”"],
             ["Approvals", "“Pending approvals” · “Approve 3” · “Raise a purchase request for ₹1,20,000”"],
             ["Broadcast", "“Notify all CSE students that lab exams are postponed”"],
-            ["Analytics", "“Brief me on today's institution status”"]]
+            ["Analytics", "“Brief me on today's institution status”"],
+            ["Autopilot", "“What needs my attention today?”"],
+            ["Timetable generation", "“Rebuild the timetable for CSE sem 5 A”"],
+            ["Library", "“Overdue library books” · “Issue BK0012 to 4VP24CS017”"],
+            ["Hostel", "“Hostel status” · “Allocate hostel rooms to the waitlist”"],
+            ["Transport", "“Rebalance bus routes” · “Bus on route 4 broke down”"],
+            ["Gate passes", "“Decide pending gate passes by policy”"],
+            ["Placement", "“Who is eligible for the Nethra Robotics drive?”"],
+            ["Documents", "“No dues status of 4VP23CS042” · “Issue a bonafide certificate for …”"],
+            ["Faculty leave", "“Review pending leave applications”"],
+            ["Student 360", "“Everything about 4VP24CS017”"]]
     return {"blocks": [
-        B_text("I'm the **VidyaERP copilot** — a supervisor agent with nine specialists behind it "
-               "(timetable, substitution, faculty, student, finance, exam, approvals, notifications, analytics). "
+        B_text("I'm the **VidyaERP copilot** — a supervisor agent with sixteen specialists behind it "
+               "(timetable, substitution, faculty, student, finance, exam, approvals, notifications, analytics, "
+               "library, hostel, transport, gate pass, placement, documents, HR). "
                "I didn't catch a clear intent in that. Here's what I can do:"),
         B_table(["Domain", "Try saying"], caps)],
         "agent": "Supervisor", "chips": CHIPS_DEFAULT}

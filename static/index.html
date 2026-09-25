@@ -385,6 +385,84 @@ select:focus,input[type=text]:focus{border-color:#8fa4e5;box-shadow:0 0 0 3px rg
 .swarn{padding:9px 14px;border-top:1px solid #f3dcc0;background:#fffaf2;color:#8a5200;font-size:11px}
 .swarn b{color:#6d4100}
 @media(max-width:900px){.sbody{grid-template-columns:minmax(0,1fr)}.slog{border-left:0;border-top:1px solid var(--line);max-height:170px}}
+
+/* ---------- campus services: action queue, checklist, bars, documents ---------- */
+.acts{display:grid;gap:8px;margin:8px 0}
+.act{display:grid;grid-template-columns:4px minmax(0,1fr) auto;gap:0 12px;align-items:center;padding:11px 12px 11px 0;border:1px solid var(--line);border-radius:9px;background:#fff;box-shadow:var(--shadow-xs)}
+.act .sev{align-self:stretch;border-radius:9px 0 0 9px;background:#a8b0bd}
+.act.high .sev{background:var(--bad)}.act.medium .sev{background:var(--amber)}.act.low .sev{background:#6f89dd}
+.act .dom{font-size:9px;font-weight:750;letter-spacing:.07em;text-transform:uppercase;color:var(--dim)}
+.act .dom b{color:#526cb9;font-weight:750}
+.act .ttl{margin-top:2px;color:#1d2939;font-size:12.5px;font-weight:650}
+.act .det{margin-top:1px;color:var(--mut);font-size:11px}
+.act .cmd{margin-top:5px;color:#98a2b3;font-size:10px;font-style:italic}
+.act.done{opacity:.55}
+.ck{margin:8px 0;border:1px solid var(--line);border-radius:9px;background:#fff;overflow:hidden;box-shadow:var(--shadow-xs)}
+.ck .row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid #edf0f4;font-size:12px}
+.ck .row:last-child{border-bottom:0}
+.ck .ic{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:800;color:#fff;background:var(--good)}
+.ck .row.no .ic{background:var(--bad)}
+.ck .who{font-size:9.5px;color:var(--dim);letter-spacing:.04em}
+.ck .dt{color:var(--mut);font-size:11px;text-align:right}
+.bars{display:grid;gap:7px;margin:8px 0;padding:12px 14px;border:1px solid var(--line);border-radius:9px;background:#fff;box-shadow:var(--shadow-xs)}
+.brow{display:grid;grid-template-columns:minmax(120px,38%) minmax(0,1fr) 88px;gap:10px;align-items:center;font-size:11.5px}
+.brow .bl{color:#344054;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brow .bt{position:relative;height:9px;border-radius:5px;background:#eef1f5;overflow:hidden}
+.brow .bt i{position:absolute;left:0;top:0;bottom:0;border-radius:5px;background:linear-gradient(90deg,#6f89dd,#3157d5);transition:width .5s ease}
+.brow .bt i.over{background:linear-gradient(90deg,#e58a96,#c43247)}
+.brow .bt i.low{background:linear-gradient(90deg,#e7b26b,#c96a0a)}
+.brow .bv{color:var(--mut);font-variant-numeric:tabular-nums;text-align:right;font-size:11px}
+.doc{position:relative;margin:10px 0;padding:26px 30px 22px;border:1px solid #d9dee7;border-radius:6px;background:#fffdf8;box-shadow:var(--shadow-sm);font-family:Georgia,"Times New Roman",serif;color:#1d2433}
+.doc .lh{display:flex;align-items:center;gap:12px;padding-bottom:12px;margin-bottom:14px;border-bottom:2px double #c9ced8}
+.doc .seal{width:42px;height:42px;border-radius:50%;border:2px solid #1d2433;display:grid;place-items:center;font-weight:700;font-size:14px}
+.doc .inst{font-size:16px;font-weight:700;letter-spacing:.02em}
+.doc .inst small{display:block;font-size:10.5px;font-weight:400;color:#5b6475;letter-spacing:.04em}
+.doc .meta{display:flex;justify-content:space-between;font-size:11.5px;color:#465063;margin-bottom:12px}
+.doc h3{margin:6px 0 14px;text-align:center;font-size:15px;letter-spacing:.14em;text-transform:uppercase}
+.doc .bd{font-size:13px;line-height:1.75;text-align:justify}
+.doc .sig{margin-top:26px;text-align:right;font-size:12px}
+.doc .spec{margin-top:16px;padding-top:8px;border-top:1px dashed #cfd5df;color:#98a2b3;font:10px/1.4 Inter,ui-sans-serif,sans-serif;text-align:center}
+.doc .wm{position:absolute;top:44%;left:0;right:0;text-align:center;font:800 64px/1 Inter,sans-serif;color:rgba(196,50,71,.08);transform:rotate(-14deg);pointer-events:none;letter-spacing:.2em}
+.doc-actions{display:flex;gap:8px;margin:-2px 0 10px}
+@media print{body *{visibility:hidden}.doc.printing,.doc.printing *{visibility:visible}.doc.printing{position:absolute;left:0;top:0;width:100%;border:0;box-shadow:none}}
+
+/* ---------- module views ---------- */
+.modhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:13px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;box-shadow:var(--shadow-xs)}
+.modhead .lbl{color:var(--dim);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-right:4px}
+.modbody .pnl{margin-bottom:14px}
+.campus-kpis{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;margin-bottom:14px}
+@media(max-width:1280px){.campus-kpis{grid-template-columns:repeat(3,minmax(120px,1fr))}}
+@media(max-width:560px){.campus-kpis{grid-template-columns:1fr 1fr}.brow{grid-template-columns:minmax(80px,40%) minmax(0,1fr) 64px}.doc{padding:18px 16px}}
+
+/* ---------- 3D agent mesh ---------- */
+.mesh-mini{position:relative;height:236px;margin:-4px 0 14px;border-radius:10px;overflow:hidden;background:#0b1220;box-shadow:inset 0 0 0 1px #1c2740}
+.mesh-mini canvas,.mesh-big canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab}
+.mesh-mini canvas:active,.mesh-big canvas:active{cursor:grabbing}
+.mesh-cap{position:absolute;left:10px;top:8px;right:10px;display:flex;justify-content:space-between;pointer-events:none;font-size:9px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#7f8ba3}
+.mesh-cap b{color:#c7d3f5;font-weight:700}
+.mesh-tip{position:absolute;pointer-events:none;padding:6px 8px;border-radius:6px;background:rgba(15,23,42,.94);border:1px solid #2b3a5a;color:#dbe4ff;font-size:10.5px;line-height:1.4;white-space:nowrap;transform:translate(-50%,-120%);display:none;z-index:3}
+.mesh-tip small{display:block;color:#8e9bb8}
+.meshv{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;height:100%}
+.mesh-big{position:relative;min-height:520px;border-radius:12px;overflow:hidden;background:radial-gradient(ellipse at 50% 42%,#15213a 0%,#0b1220 62%,#070c16 100%);box-shadow:var(--shadow-md)}
+.mesh-legend{position:absolute;left:14px;bottom:12px;display:flex;flex-wrap:wrap;gap:10px;pointer-events:none;font-size:10px;color:#9aa7c2}
+.mesh-legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.mesh-hud{position:absolute;left:14px;top:12px;right:14px;display:flex;justify-content:space-between;gap:10px;pointer-events:none}
+.mesh-hud .t{color:#e5ecff;font-size:13px;font-weight:650;letter-spacing:-.01em}
+.mesh-hud .s{color:#8190ad;font-size:10.5px;margin-top:2px}
+.mesh-cmd{position:absolute;left:14px;right:14px;bottom:40px;display:flex;gap:8px}
+.mesh-cmd input{flex:1;height:36px!important;background:rgba(15,23,42,.82)!important;border:1px solid #2b3a5a!important;color:#e5ecff!important;box-shadow:none!important}
+.mesh-cmd input::placeholder{color:#6f7d99}
+.mesh-side{display:flex;flex-direction:column;gap:14px;min-height:0}
+.mesh-side .pnl{overflow:auto}
+.feed{font:10.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;max-height:330px;overflow:auto}
+.feed div{padding:4px 0;border-bottom:1px solid #f0f2f5;color:var(--mut)}
+.feed b{color:#1d2939;font-weight:650}
+.feed .w{color:var(--amber)}.feed .r{color:var(--bad)}.feed .g{color:var(--good)}
+.ctr{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ctr>div{padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+.ctr .l{font-size:9px;color:var(--dim);font-weight:700;letter-spacing:.07em;text-transform:uppercase}
+.ctr .v{font-size:18px;font-weight:670;color:#101828;font-variant-numeric:tabular-nums}
+@media(max-width:1060px){.meshv{grid-template-columns:1fr}.mesh-big{min-height:420px}}
 </style>
 </head>
 <body>
@@ -399,6 +477,14 @@ select:focus,input[type=text]:focus{border-color:#8fa4e5;box-shadow:0 0 0 3px rg
       <button data-v="chat" class="on" title="Operations Assistant">
         <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8l-4.5 3v-3H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z"/><path d="M8 10h8M8 13h5"/></svg></span>
         <span class="nav-label">Operations Assistant</span><span class="badge">Live</span>
+      </button>
+      <button data-v="radar" title="Autopilot">
+        <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12 18 6"/><circle cx="12" cy="12" r="1"/></svg></span>
+        <span class="nav-label">Autopilot</span><span class="badge hot" id="radarBadge">–</span>
+      </button>
+      <button data-v="mesh" title="Agent Mesh 3D">
+        <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2"/><circle cx="5" cy="6" r="1.6"/><circle cx="19" cy="6" r="1.6"/><circle cx="5" cy="18" r="1.6"/><circle cx="19" cy="18" r="1.6"/><path d="M6.3 7l4 3.6M17.7 7l-4 3.6M6.3 17l4-3.6M17.7 17l-4-3.6"/></svg></span>
+        <span class="nav-label">Agent Mesh · 3D</span>
       </button>
       <button data-v="dash" title="Institution Overview">
         <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
@@ -417,6 +503,37 @@ select:focus,input[type=text]:focus{border-color:#8fa4e5;box-shadow:0 0 0 3px rg
       <button data-v="stu" title="Students">
         <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="m3 9 9-5 9 5-9 5-9-5Z"/><path d="M7 12v5c2.8 2 7.2 2 10 0v-5M21 9v6"/></svg></span>
         <span class="nav-label">Students</span>
+      </button>
+
+      <button data-v="leave" title="Faculty Leave">
+        <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M9 15l2 2 4-4"/></svg></span>
+        <span class="nav-label">Faculty Leave</span><span class="badge" id="leaveBadge">–</span>
+      </button>
+
+      <div class="nav-section">Campus services</div>
+      <button data-v="lib" title="Library">
+        <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 0 1 2-2h4v18H6a2 2 0 0 1-2-2ZM10 3h4v18h-4M14 4l4-1 3 17-4 1"/></svg></span>
+        <span class="nav-label">Library</span><span class="badge" id="libBadge">–</span>
+      </button>
+      <button data-v="hostel" title="Hostels">
+        <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 21V9l9-6 9 6v12"/><path d="M9 21v-6h6v6M3 21h18"/></svg></span>
+        <span class="nav-label">Hostels</span><span class="badge" id="hostelBadge">–</span>
+      </button>
+      <button data-v="bus" title="Transport">
+        <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="15" rx="3"/><path d="M4 11h16M8 18v3M16 18v3"/><circle cx="8" cy="14.5" r="1"/><circle cx="16" cy="14.5" r="1"/></svg></span>
+        <span class="nav-label">Transport</span>
+      </button>
+      <button data-v="gate" title="Gate Passes">
+        <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 21V4h16v17"/><path d="M4 21h16M12 4v17M9 12h1M14 12h1"/></svg></span>
+        <span class="nav-label">Gate Passes</span><span class="badge hot" id="gateBadge">–</span>
+      </button>
+      <button data-v="plc" title="Placements">
+        <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/></svg></span>
+        <span class="nav-label">Placements</span>
+      </button>
+      <button data-v="docs" title="Documents">
+        <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg></span>
+        <span class="nav-label">Documents</span>
       </button>
 
       <div class="nav-section">Administration</div>
@@ -480,17 +597,51 @@ select:focus,input[type=text]:focus{border-color:#8fa4e5;box-shadow:0 0 0 3px rg
         </div>
       </div>
       <aside class="trace" id="trace" aria-label="Agent execution log">
-        <div class="trace-head"><h5>Execution log</h5></div>
-        <div class="meta">Routing and policy decisions appear here.</div>
-        <div class="trace-empty">
-          <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="12" r="2"/><circle cx="6" cy="18" r="2"/><path d="M8 6h3a3 3 0 0 1 3 3v0a3 3 0 0 0 3 3M8 18h3a3 3 0 0 0 3-3v0a3 3 0 0 1 3-3"/></svg>
-          <strong>No activity in this session</strong>
-          <span>Send a request to inspect tool routing, policy checks, and execution timing.</span>
+        <div class="mesh-mini" id="meshMini" title="Drag to rotate · scroll to zoom">
+          <canvas></canvas><div class="mesh-tip"></div>
+          <div class="mesh-cap"><span>Agent mesh · <b>live</b></span><span id="meshMiniStat">idle</span></div>
+        </div>
+        <div id="traceLog">
+          <div class="trace-head"><h5>Execution log</h5></div>
+          <div class="meta">Routing and policy decisions appear here.</div>
+          <div class="trace-empty">
+            <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="12" r="2"/><circle cx="6" cy="18" r="2"/><path d="M8 6h3a3 3 0 0 1 3 3v0a3 3 0 0 0 3 3M8 18h3a3 3 0 0 0 3-3v0a3 3 0 0 1 3-3"/></svg>
+            <strong>No activity in this session</strong>
+            <span>Send a request to watch it travel through the agent mesh above, with every routing, policy and write decision logged here.</span>
+          </div>
         </div>
       </aside>
     </section>
 
+    <section class="view hidden" id="v-radar"></section>
+    <section class="view hidden" id="v-mesh">
+      <div class="meshv">
+        <div class="mesh-big" id="meshBig">
+          <canvas></canvas><div class="mesh-tip"></div>
+          <div class="mesh-hud"><div><div class="t">Agent mesh — every hop of every turn, in 3D</div>
+            <div class="s">Each packet is one recorded step of the execution trace, replayed in order. Nothing here is decorative traffic.</div></div>
+            <div style="text-align:right"><div class="t" id="meshBigStat">idle</div><div class="s">drag to rotate · scroll to zoom</div></div></div>
+          <div class="mesh-cmd"><input type="text" id="meshInput" placeholder="Give the agents a job and watch it travel — e.g. “What needs my attention today?”"/>
+            <button class="btn" id="meshGo" type="button">Run</button>
+            <button class="btn ghost" id="meshReplay" type="button" style="background:rgba(15,23,42,.8);border-color:#2b3a5a;color:#c7d3f5">Replay</button></div>
+          <div class="mesh-legend" id="meshLegend"></div>
+        </div>
+        <div class="mesh-side">
+          <div class="pnl"><h3>Session counters</h3><div class="cap">measured from the traces this browser received</div>
+            <div class="ctr" id="meshCtr"></div></div>
+          <div class="pnl"><h3>Most active agents</h3><div class="cap">activations this session</div><div id="meshTop"></div></div>
+          <div class="pnl" style="flex:1"><h3>Live activity</h3><div class="cap">newest first</div><div class="feed" id="meshFeed"></div></div>
+        </div>
+      </div>
+    </section>
     <section class="view hidden" id="v-dash"></section>
+    <section class="view hidden" id="v-leave"></section>
+    <section class="view hidden" id="v-lib"></section>
+    <section class="view hidden" id="v-hostel"></section>
+    <section class="view hidden" id="v-bus"></section>
+    <section class="view hidden" id="v-gate"></section>
+    <section class="view hidden" id="v-plc"></section>
+    <section class="view hidden" id="v-docs"></section>
     <section class="view hidden" id="v-tt"></section>
     <section class="view hidden" id="v-fac"></section>
     <section class="view hidden" id="v-stu"></section>
@@ -510,7 +661,12 @@ const api=(u,o)=>fetch(u,o).then(r=>r.json());
 const VT={chat:['Operations Assistant','Institution-wide queries and controlled actions'],dash:['Institution Overview','Operational and academic health'],
   tt:['Master Timetable','Class schedules, teaching blocks, and approved changes'],fac:['Faculty','Directory, workload, availability, and leave'],
   stu:['Students','Academic records, attendance, and risk'],req:['Approval Inbox','Administrative requests ordered by service level'],
-  ovr:['Schedule Changes','Approved substitutions and timetable amendments'],log:['Audit Ledger','Immutable record of agent-assisted activity']};
+  ovr:['Schedule Changes','Approved substitutions and timetable amendments'],log:['Audit Ledger','Immutable record of agent-assisted activity'],
+  radar:['Autopilot','Every agent, asked what needs a human decision today'],mesh:['Agent Mesh','Live 3D view of the agents working each request'],
+  leave:['Faculty Leave','Pending leave, priced against the real timetable'],lib:['Library','Catalogue, circulation and overdue fines'],
+  hostel:['Hostels','Occupancy, allotment and maintenance'],bus:['Transport','Routes, seat loads and breakdown cover'],
+  gate:['Gate Passes','Outing and home-visit passes screened against policy'],plc:['Placements','Drives, eligibility and shortlists'],
+  docs:['Documents','No-dues clearance, certificates and Student 360']};
 
 /* ---------------- nav ---------------- */
 $$('#nav button').forEach(b=>b.onclick=()=>{
@@ -518,7 +674,17 @@ $$('#nav button').forEach(b=>b.onclick=()=>{
   $$('.view').forEach(v=>v.classList.add('hidden'));
   const v=b.dataset.v; $('#v-'+v).classList.remove('hidden');
   $('#vtitle').textContent=VT[v][0]; $('#vsub').textContent=VT[v][1];
+  if(v==='mesh'){MESH_BIG&&MESH_BIG.fit();meshSide();return;}
   if(v!=='chat') render(v);
+});
+// one delegated handler for every "ask the agent" button, action card and print
+// button, so rendered blocks never need inline JS built from data
+document.addEventListener('click',e=>{
+  const a=e.target.closest('[data-ask]');
+  if(a){e.preventDefault();const card=a.closest('.act');if(card)card.classList.add('done');goChat(a.dataset.ask);return;}
+  const p=e.target.closest('[data-print]');
+  if(p){const d=document.getElementById(p.dataset.print);if(!d)return;d.classList.add('printing');window.print();
+    setTimeout(()=>d.classList.remove('printing'),300);}
 });
 
 /* ---------------- block renderers ---------------- */
@@ -618,6 +784,42 @@ function rGrid(b){
     h+='</tr>'});
   return (b.title?`<h4 class="blk">${esc(b.title)}</h4>`:'')+h+'</tbody></table></div>';
 }
+const attr=s=>esc(s).replace(/"/g,'&quot;');
+function rActions(b){
+  return (b.title?`<h4 class="blk">${esc(b.title)}</h4>`:'')+'<div class="acts">'+b.items.map(i=>`
+    <div class="act ${i.severity}"><div class="sev"></div>
+      <div><div class="dom">${esc(i.severity)} · ${esc(i.domain)} · <b>${esc(i.agent)}</b></div>
+        <div class="ttl">${esc(i.title)}</div><div class="det">${esc(i.detail)}</div>
+        <div class="cmd">“${esc(i.command)}”</div></div>
+      <button class="btn sm" data-ask="${attr(i.command)}">Hand to agent</button></div>`).join('')+'</div>';
+}
+function rChecklist(b){
+  return (b.title?`<h4 class="blk">${esc(b.title)}</h4>`:'')+'<div class="ck">'+b.items.map(i=>`
+    <div class="row ${i.ok?'':'no'}"><div class="ic">${i.ok?'✓':'✕'}</div>
+      <div><div>${esc(i.label)}</div><div class="who">${esc(i.agent||'')}</div></div>
+      <div class="dt">${esc(i.detail)}</div></div>`).join('')+'</div>';
+}
+function rBars(b){
+  return (b.title?`<h4 class="blk">${esc(b.title)}</h4>`:'')+'<div class="bars">'+b.items.map(i=>{
+    const pct=i.max?Math.round(100*i.value/i.max):0, w=Math.min(100,pct);
+    const cls=i.value>i.max?'over':(b.unit==='hrs'&&pct<75)?'low':'';
+    return `<div class="brow"><div class="bl" title="${attr(i.label)}">${esc(i.label)}</div>
+      <div class="bt"><i class="${cls}" style="width:${w}%"></i></div>
+      <div class="bv">${i.value}/${i.max} · ${pct}%</div></div>`}).join('')+'</div>';
+}
+let DOCN=0;
+function rDocument(b){
+  const id='doc'+(++DOCN), draft=b.status!=='issued';
+  const body=esc(b.body).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>');
+  return `<div class="doc" id="${id}">${draft?'<div class="wm">DRAFT</div>':''}
+    <div class="lh"><div class="seal">VI</div><div class="inst">${esc(b.institute)}
+      <small>Autonomous · coastal Karnataka · Office of the Registrar</small></div></div>
+    <div class="meta"><span>No. ${esc(b.serial)}</span><span>Date: ${esc(b.date)}</span></div>
+    <h3>${esc(b.title)}</h3><div class="bd">${body}</div>
+    <div class="sig">${draft?'<em>awaiting approval</em>':'Sd/-'}<br><b>${esc(b.signatory)}</b></div>
+    <div class="spec">Specimen generated from VidyaERP's synthetic demo data — not a document of any real institution.</div></div>
+    ${draft?'':`<div class="doc-actions"><button class="btn sm ghost" data-print="${id}">Print certificate</button></div>`}`;
+}
 function rBlock(b){
   if(b.type==='text')   return `<p>${md(b.md)}</p>`;
   if(b.type==='table')  return rTable(b);
@@ -625,6 +827,10 @@ function rBlock(b){
   if(b.type==='plans')  return rPlans(b);
   if(b.type==='notice') return rNotice(b);
   if(b.type==='grid')   return rGrid(b);
+  if(b.type==='actions')   return rActions(b);
+  if(b.type==='checklist') return rChecklist(b);
+  if(b.type==='bars')      return rBars(b);
+  if(b.type==='document')  return rDocument(b);
   return '';
 }
 
@@ -640,7 +846,7 @@ function setChips(list){
   $$('#chips .chip').forEach(b=>b.onclick=()=>say(b.textContent));
 }
 function setTrace(t,intent,conf){
-  $('#trace').innerHTML=`<div class="trace-head"><h5>Execution log</h5></div>
+  $('#traceLog').innerHTML=`<div class="trace-head"><h5>Execution log</h5></div>
     <div class="meta">Intent <b style="color:#526cb9">${esc(intent||'Unclassified')}</b> · ${conf||0}% routing confidence<br>
       ${t.length} execution step${t.length===1?'':'s'} · ${t.length?t[t.length-1].ms:0} ms reported</div>
     <div class="tl">${t.map(i=>`<div class="ti ${i.status==='warn'?'warn':''}">
@@ -652,9 +858,11 @@ async function say(text){
   push('user',`<p>${md(text)}</p>`);
   $('#ta').value='';
   const t=push('bot','<div class="typing"><i></i><i></i><i></i></div>');
+  MESH.inflight(true);
   try{
     const r=await api('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({text,session:SID})});
+    MESH.inflight(false); MESH.play(r.trace||[],text);
     const tag = r.engine && r.engine.startsWith('llm')
       ? `<div class="engtag">Processed by ${esc(r.model||'language model')}${r.tokens?' · '+(r.tokens.in+r.tokens.out).toLocaleString('en-IN')+' tokens':''}</div>`
       : `<div class="engtag rule">Processed by the deterministic continuity engine</div>`;
@@ -662,7 +870,7 @@ async function say(text){
     setTrace(r.trace||[],r.intent,r.confidence);
     setChips(r.chips);
     if(r.refresh){loadBadges();}
-  }catch(e){t.querySelector('.bubble').innerHTML='<div class="notice"><div class="a">Connection issue</div><div class="t">The administration service is unavailable</div><div class="b">Please retry in a moment. No action was recorded.</div></div>';}
+  }catch(e){MESH.inflight(false);t.querySelector('.bubble').innerHTML='<div class="notice"><div class="a">Connection issue</div><div class="t">The administration service is unavailable</div><div class="b">Please retry in a moment. No action was recorded.</div></div>';}
   $('#stream').scrollTop=1e9;
 }
 $('#send').onclick=()=>say($('#ta').value);
@@ -679,6 +887,14 @@ async function render(v){
   if(v==='req')return renderReq(el);
   if(v==='ovr')return renderOvr(el);
   if(v==='log')return renderLog(el);
+  if(v==='radar')return renderRadar(el);
+  if(v==='leave')return renderLeave(el);
+  if(v==='lib')return renderLib(el);
+  if(v==='hostel')return renderHostel(el);
+  if(v==='bus')return renderBus(el);
+  if(v==='gate')return renderGate(el);
+  if(v==='plc')return renderPlc(el);
+  if(v==='docs')return renderDocs(el);
 }
 const inr=n=>n>=1e7?'₹'+(n/1e7).toFixed(2)+' Cr':n>=1e5?'₹'+(n/1e5).toFixed(2)+' L':'₹'+(n||0).toLocaleString('en-IN');
 
@@ -689,8 +905,21 @@ async function renderDash(el){
     ['Fee outstanding',inr(k.dues),'current receivables'],['Attendance risk',k.shortage,'below 75%'],
     ['Open approvals',k.pending,'awaiting decision'],['Faculty utilisation',k.util+'%','of sanctioned load'],
     ['Live overrides',k.overrides,'approved schedule changes'],['Placement offers',k.offers,'average ₹'+k.avg_ctc+' LPA']];
+  const c=k.campus||{};
+  const ck=[['Library overdue',c.library_overdue,inr(c.library_fines)+' fines accrued','lib'],
+    ['Hostel occupancy',c.hostel_occupancy+'%',c.hostel_waitlist+' on waitlist','hostel'],
+    ['Bus seat load',c.bus_utilisation+'%',c.routes_over+' route(s) over capacity','bus'],
+    ['Gate passes',c.gatepass_pending,'awaiting a decision','gate'],
+    ['Final-year placed',c.placement_pct+'%',c.drives_upcoming+' drives upcoming','plc'],
+    ['Leave pending',c.leaves_pending,'faculty applications','leave']];
   el.innerHTML=`<div class="kpis">${kp.map(x=>`<div class="kpi"><div class="l">${x[0]}</div>
     <div class="v">${x[1]}</div><div class="s">${x[2]}</div></div>`).join('')}</div>
+    <h4 class="blk" style="margin-top:4px">Campus services</h4>
+    <div class="campus-kpis">${ck.map(x=>`<div class="kpi" style="cursor:pointer" onclick="goView('${x[3]}')"><div class="l">${x[0]}</div>
+      <div class="v">${x[1]}</div><div class="s">${x[2]}</div></div>`).join('')}</div>
+    <div class="pnl" style="margin-bottom:14px"><h3>Autopilot — what needs you today</h3>
+      <div class="cap">Every agent was asked the same question; each item hands the job back to the agent that owns it</div>
+      <div id="dashRadar"><div class="loading-state">Asking the agents</div></div></div>
     <div class="grid2">
       <div class="pnl"><h3>Department scorecard</h3><div class="cap">attendance & academic risk</div>
         <table><thead><tr><th>Dept</th><th>Students</th><th>Avg att.</th><th>&lt;75%</th></tr></thead><tbody>
@@ -705,8 +934,13 @@ async function renderDash(el){
         <div style="margin-top:12px"><button class="btn sm" onclick="goChat('Brief me on today\\'s institution status')">Open the daily operations brief</button></div>
       </div>
     </div>`;
+  const r=await api('/api/panel/ops_radar');
+  const acts=(r.blocks||[]).find(b=>b.type==='actions');
+  $('#dashRadar').innerHTML=acts?rActions({...acts,title:null,items:acts.items.slice(0,5)})+
+    `<button class="btn sm ghost" onclick="goView('radar')">See all ${acts.items.length}</button>`:'Nothing needs you today.';
 }
 function goChat(q){$$('#nav button')[0].click();say(q)}
+function goView(v){const b=$(`#nav button[data-v="${v}"]`);if(b)b.click();}
 
 async function renderTT(el){
   const cls=await api('/api/classes');
@@ -999,8 +1233,15 @@ async function renderLog(el){
 }
 
 async function loadBadges(){
-  const r=await api('/api/requests?status=Pending');
-  $('#reqBadge').textContent=r.length;
+  try{
+    const b=await api('/api/badges');
+    $('#reqBadge').textContent=b.requests; $('#gateBadge').textContent=b.gatepasses;
+    $('#leaveBadge').textContent=b.leaves; $('#libBadge').textContent=b.overdue;
+    $('#hostelBadge').textContent=b.complaints;
+    const r=await api('/api/panel/ops_radar');
+    const a=(r.data&&r.data.actions)||[];
+    $('#radarBadge').textContent=a.filter(x=>x.severity==='high').length||a.length;
+  }catch(e){}
 }
 
 /* ---------------- boot ---------------- */
@@ -1018,15 +1259,25 @@ async function loadBadges(){
   push('bot',`<div class="assistant-intro">
     <div class="eyebrow">Institution operations</div>
     <h2>Good morning, Registrar.</h2>
-    <p>I am connected to the live timetable, ${k.students.toLocaleString('en-IN')} student records, ${k.faculty} faculty profiles, attendance, finance, examinations, leave, and the approval inbox.</p>
-    <p>Ask for an operational brief or assign a task. I will inspect the relevant records and prepare a controlled course of action. <strong>No institutional record is changed until you explicitly approve it.</strong></p>
-    <div class="assistant-scope"><span>Academic operations</span><span>Faculty coverage</span><span>Student risk</span><span>Finance</span><span>Approvals</span></div>
+    <p>Sixteen specialist agents are connected to the live timetable, ${k.students.toLocaleString('en-IN')} student records, ${k.faculty} faculty profiles, attendance, finance, examinations, leave, the approval inbox — and now the library, hostels, college buses, gate passes, placements and the certificate register.</p>
+    <p>Ask <strong>“What needs my attention today?”</strong> and every agent reports what it would do; hand any of it back in one sentence. Each agent prepares the change and shows you exactly what it would write. <strong>No institutional record is changed until you explicitly approve it.</strong> Watch every hop in the 3D mesh on the right.</p>
+    <div class="assistant-scope"><span>Autopilot</span><span>Faculty coverage</span><span>Timetable solver</span><span>Library</span><span>Hostels</span><span>Transport</span><span>Gate passes</span><span>Placements</span><span>Certificates</span><span>Student 360</span></div>
   </div>`);
-  setChips([`${nm} is absent next Monday, arrange coverage`,"Brief me on today's institution status",
-    "Attendance defaulters in CSE sem 5","Pending approvals in my inbox","Show CSE 5th sem A timetable",
-    "Which faculty are free on Monday period 4?"]);
+  setChips(["What needs my attention today?",`${nm} is absent next Monday, arrange coverage`,
+    "Decide pending gate passes by policy","Issue a bonafide certificate for 4VP24CS017 for passport",
+    "Rebalance bus routes","Who is eligible for the Nethra Robotics drive?","Everything about 4VP24CS017",
+    "Brief me on today's institution status"]);
   $('#ta').placeholder = `Try: “${nm} is absent next Monday, arrange coverage”`;
   loadBadges(); refreshMode();
+  // deep links: #view=radar opens a module, #ask=... runs a command - a
+  // bookmark for a routine check. The link text becomes the admin's turn, so a
+  // link carrying approval words ("approve 3") would commit on a click someone
+  // else crafted. Those are only PRE-FILLED; the admin has to press Send.
+  // (Mirrors guard.APPROVAL_RX - tests/campus_test.py keeps the two in step.)
+  const h=new URLSearchParams(location.hash.slice(1));
+  if(h.get('view'))goView(h.get('view'));
+  const APPROVING=/\b(yes|yeah|yep|ok|okay|sure|confirm|confirmed|approve[d]?|apply|applied|go ahead|do it|proceed|send it|publish|commit|accept|make it (?:so|happen)|plan\s*[abc])\b/i;
+  if(h.get('ask')){if(APPROVING.test(h.get('ask'))){$('#ta').value=h.get('ask');$('#ta').focus();}else say(h.get('ask'));}
 })();
 
 async function refreshMode(){
@@ -1059,6 +1310,268 @@ $('#enginePill').onclick=async()=>{
   }
   setTimeout(refreshMode,4000);
 };
+
+/* ---------------- campus-service views ----------------
+   Every module view renders what the owning agent's READ tool returns (via
+   /api/panel, which only exposes reads) and offers the sentences that hand the
+   work back to that agent in the chat, where writes are proposed and approved. */
+const blocksHTML=bs=>(bs||[]).map(rBlock).join('');
+async function panel(name,params){
+  const q=new URLSearchParams(Object.entries(params||{}).filter(([,v])=>v)).toString();
+  const r=await api(`/api/panel/${name}${q?'?'+q:''}`);
+  if(r.trace&&r.trace.length)MESH.play(r.trace,`panel · ${name}`);
+  return r;
+}
+function head(btns,extra=''){
+  return `<div class="modhead"><span class="lbl">Hand to agent</span>${btns.map(([t,q,c])=>
+    `<button class="btn sm ${c||'ghost'}" data-ask="${attr(q)}">${esc(t)}</button>`).join('')}${extra}</div>`;
+}
+async function renderRadar(el){
+  const r=await panel('ops_radar');
+  el.innerHTML=head([['Run the full brief',"What needs my attention today?",'']])+
+    `<div class="pnl">${blocksHTML(r.blocks)}</div>`;
+}
+async function renderLeave(el){
+  const [r,lv]=await Promise.all([panel('review_pending_leaves'),api('/api/leaves')]);
+  el.innerHTML=head([['Approve every fully-coverable leave','Approve all pending leaves with coverage','ok'],
+      ['Who is on leave this week?','Who is on leave this week?']])+
+    `<div class="pnl">${blocksHTML(r.blocks)}</div>
+    <div class="pnl"><h3>Leave ledger</h3><div class="cap">${lv.length} records</div>
+    <table><thead><tr><th>ID</th><th>Faculty</th><th>Dept</th><th>From</th><th>To</th><th>Type</th><th>Reason</th><th>Status</th></tr></thead>
+    <tbody>${lv.map(l=>`<tr><td>${l.id}</td><td><b>${esc(l.name)}</b></td><td>${l.dept}</td><td>${l.from_date}</td><td>${l.to_date}</td>
+      <td>${esc(l.kind)}</td><td style="color:var(--mut)">${esc(l.reason)}</td><td><span class="st ${l.status}">${l.status}</span></td></tr>`).join('')}</tbody></table></div>`;
+}
+async function renderLib(el){
+  const [o,d]=await Promise.all([panel('library_overview'),panel('library_overdue')]);
+  el.innerHTML=head([['Send overdue reminders','Send overdue library reminders','']],
+      `<span class="spacer" style="flex:1"></span><input type="text" id="libq" placeholder="Search title, subject, author or BK id" style="width:280px"/>`)+
+    `<div id="libres"></div><div class="pnl">${blocksHTML(o.blocks)}</div><div class="pnl">${blocksHTML(d.blocks)}</div>`;
+  $('#libq').onkeydown=async e=>{if(e.key!=='Enter')return;
+    const r=await panel('library_search',{query:e.target.value});$('#libres').innerHTML=`<div class="pnl">${blocksHTML(r.blocks)}</div>`;};
+}
+async function renderHostel(el){
+  const [s,c]=await Promise.all([panel('hostel_status'),panel('hostel_complaints',{status:'Open'})]);
+  el.innerHTML=head([['Allot the waitlist','Allocate hostel rooms to the waitlist',''],
+      ['Dispatch open complaints','Dispatch open hostel complaints','']])+
+    `<div class="pnl">${blocksHTML(s.blocks)}</div><div class="pnl">${blocksHTML(c.blocks)}</div>`;
+}
+async function renderBus(el){
+  const s=await panel('transport_status');
+  const routes=((s.data&&s.data.routes)||[]).filter(r=>r.id.startsWith('R'));
+  el.innerHTML=head([['Rebalance over-full routes','Rebalance bus routes','']],
+      `<span class="spacer" style="flex:1"></span><select id="busr">${routes.map(r=>`<option>${r.id}</option>`).join('')}</select>
+       <button class="btn sm ghost" id="busgo" type="button">Show stops</button>
+       <button class="btn sm no" id="busbrk" type="button">Report breakdown</button>`)+
+    `<div class="pnl" id="busbox">${blocksHTML(s.blocks)}</div>`;
+  $('#busgo').onclick=async()=>{const r=await panel('transport_status',{route:$('#busr').value});$('#busbox').innerHTML=blocksHTML(r.blocks);};
+  $('#busbrk').onclick=()=>goChat(`Bus on route ${$('#busr').value} broke down`);
+}
+async function renderGate(el){
+  const r=await panel('gate_pass_queue');
+  el.innerHTML=head([['Decide everything the policy is sure of','Decide pending gate passes by policy','ok'],
+      ['Approve only the compliant ones','Approve the compliant gate passes','']])+
+    `<div class="pnl">${blocksHTML(r.blocks)}
+     <div class="cap" style="margin-top:10px">Policy: emergencies and medical passes clear on policy · outings must be outside class hours and back by 20:00 ·
+     a class-hour outing needs 85% attendance just to be reviewable · home visits that miss class days need 75% and at most 2 days · no parent consent means the warden calls first.</div></div>`;
+}
+async function renderPlc(el){
+  const r=await panel('placement_overview');
+  const up=(r.data&&r.data.upcoming)||[];
+  el.innerHTML=head(up.slice(0,2).map(d=>[`Shortlist for ${d.company}`,`Prepare the shortlist for the ${d.company} drive`,'']),
+      `<span class="spacer" style="flex:1"></span><select id="drv">${up.map(d=>`<option value="${d.id}">${esc(d.company)} · ${d.date}</option>`).join('')}</select>
+       <button class="btn sm ghost" id="drvgo" type="button">Who is eligible?</button>`)+
+    `<div id="drvbox"></div><div class="pnl">${blocksHTML(r.blocks)}</div>`;
+  $('#drvgo').onclick=async()=>{const x=await panel('drive_eligibility',{drive:$('#drv').value});$('#drvbox').innerHTML=`<div class="pnl">${blocksHTML(x.blocks)}</div>`;};
+}
+async function renderDocs(el){
+  const r=await panel('certificate_register');
+  el.innerHTML=head([],`<input type="text" id="dusn" placeholder="USN, e.g. 4VP23CS042" style="width:200px"/>
+      <button class="btn sm ghost" id="dnd" type="button">No-dues check</button>
+      <button class="btn sm ghost" id="d360" type="button">Student 360</button>
+      <select id="dkind"><option>Bonafide</option><option>Conduct</option><option>Fee Structure</option>
+        <option>No Dues</option><option>Transfer Certificate</option><option>Internship NOC</option></select>
+      <button class="btn sm" id="dissue" type="button">Prepare certificate</button>`)+
+    `<div id="dres"></div><div class="pnl">${blocksHTML(r.blocks)}</div>`;
+  const u=()=>$('#dusn').value.trim().toUpperCase();
+  $('#dnd').onclick=async()=>{const x=await panel('no_dues_status',{usn:u()});$('#dres').innerHTML=`<div class="pnl">${blocksHTML(x.blocks)||'No such student.'}</div>`;};
+  $('#d360').onclick=async()=>{const x=await panel('student_360',{usn:u()});$('#dres').innerHTML=`<div class="pnl">${blocksHTML(x.blocks)||'No such student.'}</div>`;};
+  $('#dissue').onclick=()=>u()&&goChat(`Prepare the ${$('#dkind').value} certificate for ${u()}`);
+}
+
+/* ---------------- 3D agent mesh ----------------
+   A hand-rolled perspective projection on a plain 2D canvas: no three.js, no
+   CDN, because this console loads nothing external and has to keep working on
+   a locked-down college LAN. Every packet is one step of a REAL execution
+   trace returned by the server, replayed in order; the only motion that is not
+   a trace step is the Supervisor breathing while a request is in flight. */
+const GROUPS={
+  core:{c:'#9db7ff',label:'Supervisor & routing',a:['Supervisor','Router','ToolRouter','EntityResolver','LLM Planner','ToolBus','MCP']},
+  gov:{c:'#ff7a8a',label:'Guard & audit',a:['PolicyGuard','Auditor']},
+  acad:{c:'#bda2ff',label:'Academic',a:['TimetableAgent','SubstitutionAgent','WorkloadBalancer','PlanRanker','FacultyAgent','ExamAgent','HRAgent']},
+  stud:{c:'#5fd4a6',label:'Students & finance',a:['StudentAgent','AttendanceAgent','RiskAgent','FinanceAgent']},
+  camp:{c:'#ffc46b',label:'Campus services',a:['LibraryAgent','HostelAgent','TransportAgent','GatePassAgent','PlacementAgent','DocumentAgent']},
+  ops:{c:'#6fd3ff',label:'Ops & comms',a:['RequestAgent','SLAMonitor','NotifyAgent','AnalyticsAgent','OpsRadar']},
+};
+const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const MeshModel={
+  nodes:{},edges:{},packets:[],pulses:[],feed:[],busy:0,flight:false,last:null,
+  ctr:{turns:0,hops:0,tools:0,committed:0,blocked:0,verified:0,notified:0},
+  init(){
+    const inner=[...GROUPS.core.a.slice(1),...GROUPS.gov.a];
+    const outer=[...GROUPS.acad.a,...GROUPS.stud.a,...GROUPS.camp.a,...GROUPS.ops.a];
+    this.add('Supervisor','core',[0,0,0]);
+    inner.forEach((n,i)=>{const a=i/inner.length*Math.PI*2;
+      this.add(n,GROUPS.gov.a.includes(n)?'gov':'core',[Math.cos(a)*.46,Math.sin(a*2)*.08,Math.sin(a)*.46]);});
+    const N=outer.length,g=Math.PI*(3-Math.sqrt(5));
+    outer.forEach((n,i)=>{const y=1-(i+.5)/N*2,r=Math.sqrt(1-y*y),t=g*i;
+      this.add(n,Object.keys(GROUPS).find(k=>GROUPS[k].a.includes(n)),[Math.cos(t)*r,y*.92,Math.sin(t)*r]);});
+  },
+  add(name,group,p){
+    if(this.nodes[name])return this.nodes[name];
+    if(!p){let h=0;for(const ch of name)h=(h*31+ch.charCodeAt(0))>>>0;
+      const y=((h%1000)/1000)*1.6-.8,t=(h>>10)%628/100,r=Math.sqrt(1-y*y);p=[Math.cos(t)*r,y,Math.sin(t)*r];}
+    return this.nodes[name]={name,group:group||'ops',p,heat:0,tAct:-1e9,last:'',col:null};
+  },
+  color(n){return (GROUPS[n.group]||GROUPS.ops).c},
+  inflight(v){this.flight=v;},
+  play(trace,label){
+    if(!trace||!trace.length)return;
+    this.last={trace,label};
+    const now=performance.now(),start=Math.max(now,this.busy);
+    const gap=Math.max(95,Math.min(300,2600/trace.length)),dur=gap*1.7;
+    this.ctr.turns++;
+    let prev='Supervisor';
+    trace.forEach((it,i)=>{
+      const to=this.add(it.agent,null,null),from=this.add(prev,null,null);
+      const a=(it.action||'')+'';
+      const col=a.includes('write_blocked')?'#ff5d73':(a.includes('write_authorisation')||a==='verify'||a.includes('commit'))?'#4fe0a0':
+        it.status==='warn'?'#ffb45c':this.color(to);
+      const t0=start+i*gap;
+      if(from!==to){this.packets.push({a:from,b:to,t0,dur,col});
+        const k=[from.name,to.name].sort().join('|');this.edges[k]=(this.edges[k]||0)+1;}
+      const arrive=t0+(from!==to?dur:0);
+      setTimeout(()=>{to.tAct=performance.now();to.heat++;to.last=a;to.col=col;
+        this.pulses.push({n:to,t0:performance.now(),col});
+        this.ctr.hops++;
+        if(to.name==='ToolBus'||(to.name==='ToolRouter'&&a==='select'))this.ctr.tools++;
+        if(a.includes('write_authorisation'))this.ctr.committed++;
+        if(a.includes('write_blocked'))this.ctr.blocked++;
+        if(a==='verify'||a.includes('verif'))this.ctr.verified++;
+        if(to.name==='NotifyAgent'&&a.includes('dispatch'))this.ctr.notified++;
+        this.feed.unshift({agent:it.agent,action:a,detail:it.detail||'',col});
+        if(this.feed.length>80)this.feed.pop();
+        meshStat();if(!$('#v-mesh').classList.contains('hidden'))meshSide();
+      },Math.max(0,arrive-now));
+      prev=it.agent;
+    });
+    this.busy=start+trace.length*gap+dur;
+  }
+};
+MeshModel.init();
+class MeshView{
+  constructor(box,big){
+    this.box=box;this.big=big;this.cv=box.querySelector('canvas');this.ctx=this.cv.getContext('2d');
+    this.tip=box.querySelector('.mesh-tip');this.yaw=.6;this.pitch=-.32;this.zoom=1;this.drag=null;this.idle=0;this.proj={};
+    this.stars=Array.from({length:big?140:60},(_,i)=>{const y=Math.random()*2-1,t=Math.random()*6.283,r=Math.sqrt(1-y*y);
+      return [Math.cos(t)*r*2.4,y*2.4,Math.sin(t)*r*2.4]});
+    this.cv.addEventListener('pointerdown',e=>{this.drag=[e.clientX,e.clientY];this.cv.setPointerCapture(e.pointerId)});
+    this.cv.addEventListener('pointerup',()=>{this.drag=null;this.idle=performance.now()});
+    this.cv.addEventListener('pointermove',e=>{
+      if(this.drag){this.yaw+=(e.clientX-this.drag[0])*.008;this.pitch=Math.max(-1.3,Math.min(1.3,this.pitch+(e.clientY-this.drag[1])*.006));
+        this.drag=[e.clientX,e.clientY];}
+      this.hover(e);});
+    this.cv.addEventListener('pointerleave',()=>{this.tip.style.display='none'});
+    this.cv.addEventListener('wheel',e=>{e.preventDefault();this.zoom=Math.max(.6,Math.min(1.9,this.zoom*(1-e.deltaY*.001)))},{passive:false});
+    new ResizeObserver(()=>this.fit()).observe(box);this.fit();
+  }
+  fit(){const d=devicePixelRatio||1,w=this.box.clientWidth,h=this.box.clientHeight;if(!w||!h)return;
+    this.cv.width=w*d;this.cv.height=h*d;this.W=w;this.H=h;this.ctx.setTransform(d,0,0,d,0,0);}
+  project(p){
+    const cy=Math.cos(this.yaw),sy=Math.sin(this.yaw),cp=Math.cos(this.pitch),sp=Math.sin(this.pitch);
+    const x1=p[0]*cy+p[2]*sy,z1=-p[0]*sy+p[2]*cy,y2=p[1]*cp-z1*sp,z2=p[1]*sp+z1*cp;
+    const F=3.2,s=F/(F+z2),R=Math.min(this.W,this.H)*(this.big?.36:.34)*this.zoom;
+    return {x:this.W/2+x1*R*s,y:this.H/2+(this.big?-10:12)-y2*R*s,s,z:z2};
+  }
+  hover(e){
+    const r=this.cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;let best=null,bd=14;
+    for(const n of Object.values(MeshModel.nodes)){const q=this.proj[n.name];if(!q)continue;
+      const d=Math.hypot(q.x-mx,q.y-my);if(d<bd){bd=d;best=n;}}
+    if(!best){this.tip.style.display='none';return;}
+    this.tip.style.display='block';this.tip.style.left=mx+'px';this.tip.style.top=my+'px';
+    this.tip.innerHTML=`<b>${esc(best.name)}</b><small>${esc((GROUPS[best.group]||GROUPS.ops).label)} · ${best.heat} activation${best.heat===1?'':'s'}${best.last?' · last: '+esc(best.last):''}</small>`;
+  }
+  draw(now){
+    if(!this.W||this.box.offsetParent===null)return;
+    const c=this.ctx,M=MeshModel;c.clearRect(0,0,this.W,this.H);
+    if(!this.drag&&!RM&&now-this.idle>1800)this.yaw+=M.flight?.006:.0022;
+    for(const s of this.stars){const q=this.project(s);c.fillStyle=`rgba(170,190,255,${.12+.25*(1-q.z/2.4)/2})`;c.fillRect(q.x,q.y,1.2,1.2);}
+    c.lineWidth=1;
+    for(const y of [-.55,0,.55]){const r=Math.sqrt(1-y*y);c.beginPath();
+      for(let i=0;i<=64;i++){const a=i/64*6.2832,q=this.project([Math.cos(a)*r,y*.92,Math.sin(a)*r]);i?c.lineTo(q.x,q.y):c.moveTo(q.x,q.y);}
+      c.strokeStyle='rgba(120,150,230,.07)';c.stroke();}
+    const P={};for(const n of Object.values(M.nodes))P[n.name]=this.project(n.p);this.proj=P;
+    const sup=P.Supervisor;
+    for(const n of Object.values(M.nodes)){if(n.name==='Supervisor')continue;const q=P[n.name];
+      c.strokeStyle='rgba(140,165,235,.06)';c.beginPath();c.moveTo(sup.x,sup.y);c.lineTo(q.x,q.y);c.stroke();}
+    for(const [k,w] of Object.entries(M.edges)){const [a,b]=k.split('|');if(!P[a]||!P[b])continue;
+      c.strokeStyle=`rgba(157,183,255,${Math.min(.5,.08+w*.03)})`;c.lineWidth=Math.min(2.5,.6+w*.12);
+      c.beginPath();c.moveTo(P[a].x,P[a].y);c.lineTo(P[b].x,P[b].y);c.stroke();}
+    c.lineWidth=1;
+    const pt=(A,B,u)=>{const m=[(A[0]+B[0])/2,(A[1]+B[1])/2+.18,(A[2]+B[2])/2],L=Math.hypot(...m)||1,k=Math.max(1,.62/L);
+      const C=m.map(v=>v*k*1.15),w=1-u;return [0,1,2].map(i=>w*w*A[i]+2*w*u*C[i]+u*u*B[i]);};
+    M.packets=M.packets.filter(p=>now<p.t0+p.dur+60);
+    for(const p of M.packets){if(now<p.t0)continue;const u=Math.min(1,(now-p.t0)/p.dur),e=u<.5?2*u*u:1-Math.pow(-2*u+2,2)/2;
+      for(let j=10;j>=0;j--){const uu=Math.max(0,e-j*.035),q=this.project(pt(p.a.p,p.b.p,uu));
+        c.globalAlpha=(1-j/11)*.85;c.fillStyle=p.col;c.beginPath();c.arc(q.x,q.y,(j?1.6:3.2)*q.s,0,6.2832);c.fill();}
+      c.globalAlpha=1;}
+    M.pulses=M.pulses.filter(p=>now-p.t0<900);
+    const order=Object.values(M.nodes).sort((a,b)=>P[b.name].z-P[a.name].z);
+    for(const n of order){const q=P[n.name],col=this.color(n,now);
+      const flash=Math.max(0,1-(now-n.tAct)/1100);
+      const breathe=n.name==='Supervisor'?(M.flight?.5+.5*Math.sin(now/140):.15+.1*Math.sin(now/900)):0;
+      const r=(n.name==='Supervisor'?7.5:4.2+Math.min(5,n.heat*.45))*q.s*(this.big?1.25:.9);
+      const g=c.createRadialGradient(q.x,q.y,0,q.x,q.y,r*(3.2+flash*2.5));
+      g.addColorStop(0,col+'cc');g.addColorStop(1,col+'00');
+      c.globalAlpha=.25+.5*flash+breathe*.6;c.fillStyle=g;c.beginPath();c.arc(q.x,q.y,r*(3.2+flash*2.5),0,6.2832);c.fill();
+      c.globalAlpha=.55+.45*Math.max(flash,(1-q.z)/2);c.fillStyle=col;c.beginPath();c.arc(q.x,q.y,r,0,6.2832);c.fill();
+      c.globalAlpha=1;
+      const show=this.big?(q.s>.93||flash>.05||n.heat>0||n.name==='Supervisor'):(flash>.05||n.name==='Supervisor');
+      if(show){c.font=`${this.big?11:9.5}px Inter,ui-sans-serif,sans-serif`;c.fillStyle=`rgba(225,233,255,${.45+.55*Math.max(flash,.3)})`;
+        c.fillText(n.name,q.x+r+4,q.y+3);}}
+    for(const p of M.pulses){const q=P[p.n.name],u=(now-p.t0)/900;
+      c.strokeStyle=p.col;c.globalAlpha=1-u;c.lineWidth=1.5;c.beginPath();c.arc(q.x,q.y,(6+u*26)*q.s,0,6.2832);c.stroke();}
+    c.globalAlpha=1;c.lineWidth=1;
+  }
+  color(n,now){return now-n.tAct<1100&&n.col?n.col:MeshModel.color(n)}
+}
+let MESH_MINI=null,MESH_BIG=null;
+const MESH={inflight:v=>{MeshModel.inflight(v);meshStat(v?'thinking…':null)},play:(t,l)=>MeshModel.play(t,l)};
+function meshStat(txt){
+  const c=MeshModel.ctr,s=txt||(c.hops?`${c.turns} run${c.turns===1?'':'s'} · ${c.hops} hops · ${Object.values(MeshModel.nodes).filter(n=>n.heat).length} agents`:'idle');
+  const a=$('#meshMiniStat'),b=$('#meshBigStat');if(a)a.textContent=s;if(b)b.textContent=s;
+}
+function meshSide(){
+  const c=MeshModel.ctr;
+  $('#meshCtr').innerHTML=[['Runs',c.turns],['Agent hops',c.hops],['Tool calls',c.tools],['Writes committed',c.committed],
+    ['Writes held for approval',c.blocked],['Post-write verifications',c.verified]].map(([l,v])=>`<div><div class="l">${l}</div><div class="v">${v}</div></div>`).join('');
+  const top=Object.values(MeshModel.nodes).filter(n=>n.heat).sort((a,b)=>b.heat-a.heat).slice(0,8);
+  const mx=top.length?top[0].heat:1;
+  $('#meshTop').innerHTML=top.length?`<div class="bars" style="border:0;box-shadow:none;padding:0">${top.map(n=>`<div class="brow" style="grid-template-columns:120px minmax(0,1fr) 34px">
+    <div class="bl">${esc(n.name)}</div><div class="bt"><i style="width:${100*n.heat/mx}%;background:${MeshModel.color(n)}"></i></div><div class="bv">${n.heat}</div></div>`).join('')}</div>`
+    :'<div style="color:var(--dim)">No activity yet — run a command.</div>';
+  $('#meshFeed').innerHTML=MeshModel.feed.map(f=>`<div><b style="color:${f.col}">●</b> <b>${esc(f.agent)}</b> ${esc(f.action)}<br>${esc(f.detail).slice(0,110)}</div>`).join('')||'<div>Waiting for the first request.</div>';
+}
+(function meshBoot(){
+  MESH_MINI=new MeshView($('#meshMini'),false);
+  MESH_BIG=new MeshView($('#meshBig'),true);
+  $('#meshLegend').innerHTML=Object.values(GROUPS).map(g=>`<span><i style="background:${g.c}"></i>${g.label}</span>`).join('')+
+    '<span><i style="background:#4fe0a0"></i>write approved / verified</span><span><i style="background:#ff5d73"></i>write held by PolicyGuard</span>';
+  const go=()=>{const v=$('#meshInput').value.trim();if(!v)return;$('#meshInput').value='';say(v);};
+  $('#meshGo').onclick=go;$('#meshInput').onkeydown=e=>{if(e.key==='Enter')go();};
+  $('#meshReplay').onclick=()=>{const l=MeshModel.last;if(l){MeshModel.ctr.turns--;MeshModel.play(l.trace,l.label);}};
+  const loop=now=>{MESH_MINI.draw(now);MESH_BIG.draw(now);requestAnimationFrame(loop)};requestAnimationFrame(loop);
+  meshSide();
+})();
 </script>
 </body>
 </html>

@@ -64,12 +64,18 @@ Presets for OpenAI, Groq, OpenRouter, Together, DeepSeek, Gemini-compat and loca
 listed in `.env.example`. No SDK is installed — `llm.py` talks raw HTTP over `urllib`, so there
 is nothing to `pip install`. Restart the server and the badge flips to green.
 
-**The 22 tools the model can call:** `institution_overview · get_timetable · faculty_timetable ·
-find_free_faculty · find_free_rooms · faculty_profile · faculty_workload · student_lookup ·
-attendance_defaulters · fee_summary · exam_schedule · exam_eligibility · list_requests ·
-list_leaves · plan_absence_coverage · apply_coverage_plan · plan_timetable_generation ·
-apply_timetable_generation · undo_last_change · decide_request · create_request ·
-broadcast_notice`
+**The 47 tools the model can call** — 22 academic/admin:
+`institution_overview · get_timetable · faculty_timetable · find_free_faculty · find_free_rooms ·
+faculty_profile · faculty_workload · student_lookup · attendance_defaulters · fee_summary ·
+exam_schedule · exam_eligibility · list_requests · list_leaves · plan_absence_coverage ·
+apply_coverage_plan · plan_timetable_generation · apply_timetable_generation · undo_last_change ·
+decide_request · create_request · broadcast_notice` — and 25 campus services (§5a):
+`ops_radar · student_360 · library_overview · library_search · library_overdue · issue_book ·
+return_book · library_remind_overdue · hostel_status · hostel_complaints · allocate_hostel_room ·
+dispatch_hostel_complaints · transport_status · rebalance_bus_routes · handle_bus_breakdown ·
+gate_pass_queue · decide_gate_passes · placement_overview · drive_eligibility ·
+publish_drive_shortlist · no_dues_status · issue_certificate · certificate_register ·
+review_pending_leaves · decide_leave`. **16 of the 47 are writes, and every one is gated.**
 
 **Write-guard, proven by test:** `tests/mock_llm.py` includes a *rogue agent* endpoint that tries
 to call `apply_coverage_plan` with no admin approval. PolicyGuard returns `{"BLOCKED": ...}`,
@@ -86,7 +92,7 @@ multi-hop turn was spending 7,196 of them. Four things fixed that:
 
 | Technique | Effect |
 |---|---|
-| **Tool router** — the rule-engine NLU pre-selects ~4–8 of the 22 tools per utterance | tool payload **−64%**, and the model picks better from a short menu |
+| **Tool router** — the rule-engine NLU pre-selects ~4–9 of the 47 tools per utterance | tool payload **−64%**, and the model picks better from a short menu |
 | **Prompt diet** — live-context preamble trimmed, history 8→4 turns, tool results capped at 2.8 KB | system prompt ~1,500 → ~600 tokens |
 | **Model failover chain** — `LLM_FALLBACK_MODELS`, tried in order on 429/5xx/`tool_use_failed` | quotas are *per model*, so the chain multiplies usable throughput |
 | **Nullable optional params** — every non-required arg accepts `null` | models emit `{"dept": null}` constantly; strict validators 400 on it. 41 params were latent landmines |
@@ -97,7 +103,7 @@ if the whole chain is exhausted by falling back to the rule engine with an hones
 The trace shows exactly which of these happened:
 
 ```
-· ToolRouter    narrow_toolset    7 of 22 tools offered: plan_absence_coverage, …
+· ToolRouter    narrow_toolset    7 of 47 tools offered: plan_absence_coverage, …
 · LLM Planner   reason (hop 1)    openai/gpt-oss-120b · 1032→107 tok · 513ms
 · LLM Planner   model_failover    primary rate-limited → answered on qwen/qwen3.8-27b
 ```
@@ -106,7 +112,8 @@ The trace shows exactly which of these happened:
 
 ```bash
 python3 tests/solver_test.py  # timetable solver: 44 assertions, no server, no API cost
-python3 tests/mcp_parity.py   # MCP guard parity: 155 assertions, no server, no API cost
+python3 tests/mcp_parity.py   # MCP guard parity: 240 assertions, no server, no API cost
+python3 tests/campus_test.py  # campus services: 121 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
 python3 tests/deploy_test.py  # deployment readiness: 64 assertions, no server, no API cost
 python3 tests/nlu_test.py     # date resolution: 15 assertions, no server, no API cost
@@ -233,6 +240,51 @@ does *not* get swallowed as a “yes”), disambiguation when a faculty name is 
 (“did you mean…” with match %), and contextual follow-ups (“show me the updated timetable” opens the
 class that was actually changed, on the date that was changed).
 
+### 5a. Campus services — the paperwork agents (`campus.py`)
+
+Most of a college office's day is not the timetable. Seven more specialists own those ledgers,
+each behind the same gate: called without the admin's approval, a write tool **computes the
+change, stages it and writes nothing**; the same call commits once the admin says yes — and the
+agent then **re-reads what it wrote** before claiming success.
+
+| Agent | What it does on its own | Example |
+|---|---|---|
+| **OpsRadar** (Autopilot) | asks every agent what needs a human today; returns one ranked queue, each item carrying the sentence that hands it back | “What needs my attention today?” |
+| **LibraryAgent** | catalogue search; issue/return under circulation rules (copy on shelf, 4-book student limit, no overdue books); fines at ₹2/day; one personalised reminder per overdue borrower | “Issue BK0012 to 4VP24CS017” · “Send overdue library reminders” |
+| **HostelAgent** | occupancy by block; allots the waitlist by gender → batch-mates → branch-mates → part-filled rooms; routes complaints to the right crew with an SLA | “Allocate hostel rooms to the waitlist” |
+| **TransportAgent** | seat load per route; moves riders off over-full buses **only at stops another route also serves**, never past that route's seats; breakdown cover with a spare bus | “Rebalance bus routes” · “Bus on route 4 broke down” |
+| **GatePassAgent** | screens every pass against written policy — approve / reject / *review* with the reason — so the warden decides only the arguable ones | “Decide pending gate passes by policy” |
+| **PlacementAgent** | drive eligibility: CGPA, backlogs, branch and a one-offer rule (a placed student may only sit a *dream* drive paying ≥1.5× their offer); publishes shortlists | “Who is eligible for the Nethra Robotics drive?” |
+| **DocumentAgent** | no-dues across four ledgers (accounts, library, hostel, transport); certificates with register serials — a transfer certificate is refused while any due exists; closes the matching inbox request | “Issue a bonafide certificate for 4VP24CS017 for passport” |
+| **HRAgent** | prices each pending leave by **running the substitution planner for every day it spans**; bulk-approves only the fully coverable ones | “Review pending leave applications” |
+| **Student 360** | one student across every ledger, with subject-wise attendance | “Everything about 4VP24CS017” |
+
+The gate-pass policy, stated once: emergencies and medical passes clear on policy; an outing must
+be outside class hours (per the student's own semester day length) and back by 20:00; a class-hour
+outing needs 85% attendance just to be reviewable; a home visit that misses class days needs 75%
+and at most two days; no parent consent means the warden calls first. `tests/campus_test.py` pins
+each of these as a case.
+
+Every module has its own page in the console (Autopilot, Faculty Leave, Library, Hostels,
+Transport, Gate Passes, Placements, Documents). Those pages render what the owning agent's
+**read** tools return via `/api/panel/{tool}`, which lists reads only and passes an empty turn —
+so a page can never commit anything; its buttons hand the job to the agent in the chat.
+
+### 5b. The agent mesh, in 3D
+
+The chat's right rail and the **Agent Mesh · 3D** page draw every agent on a rotating sphere
+(drag to rotate, scroll to zoom) and replay each turn's execution trace as packets travelling
+between them — PolicyGuard glows red when it holds a write, green when an approved write lands and
+is verified. It is a hand-rolled perspective projection on a plain `<canvas>` — no three.js, no
+CDN — because the console must keep loading nothing external. **Every packet is a real trace
+step returned by the server**; the only motion that is not is the Supervisor breathing while a
+request is in flight. The page also counts, per session, hops, tool calls, writes committed,
+writes held for approval and post-write verifications.
+
+Deep links run a command on load: `/#view=radar`, `/#ask=Rebalance bus routes`. A link carrying
+approval words (“approve …”) is only pre-filled, never sent — otherwise someone else's link could
+commit a write on your click.
+
 ---
 
 ## 6. Guardrails (the part that makes it deployable)
@@ -249,7 +301,7 @@ class that was actually changed, on the date that was changed).
 
 ### 6a. Driving the ERP from Claude Desktop (MCP)
 
-`mcp_server.py` puts the same 22 tools in front of any MCP client. Registration — no install
+`mcp_server.py` puts the same 47 tools in front of any MCP client. Registration — no install
 step, because there is no SDK to install:
 
 ```json
@@ -378,17 +430,21 @@ VidyaERP/
 ├── db.py               schema + seeder + CONTIGUOUS timetable generator + verify()
 ├── solver.py           from-scratch timetable solver (MRV backtracking, streams its trace)
 ├── nlu.py              intent scoring, priority rules, entity + Indian date parsing
-├── agents.py           the nine specialists + PolicyGuard + Auditor
+├── agents.py           the academic specialists + PolicyGuard + Auditor
+├── campus.py           campus-service agents: library, hostel, transport, gate pass, placement,
+│                       documents, leave review, Student 360, Ops radar — tools + rule routing
+├── campus_data.py      their tables and seed (own RNG; core institution byte-identical)
+├── guard.py            approved_this_turn() — the one write gate, importable by every tool module
 ├── orchestrator.py     rule-engine supervisor: routing, HITL state machine
 ├── llm.py              provider-agnostic OpenAI-compatible client (urllib, no SDK)
-├── tools.py            the 22 tool schemas + PolicyGuard-wrapped dispatch
+├── tools.py            the 47 tool schemas + the single PolicyGuard-wrapped dispatch point
 ├── llm_agent.py        the LLM reasoning loop (plan → call tools → answer), with failover
 ├── mcp_server.py       MCP surface over stdio JSON-RPC — same tools, same gate, no SDK
 ├── requirements.txt    FastAPI + Uvicorn. That is the entire dependency list
 ├── render.yaml         Render Blueprint — one worker, /health, key from the dashboard
 ├── LICENSE / NOTICE    Apache 2.0, provenance, and the synthetic-data statement
 ├── .env.example        LLM configuration template (.env itself is gitignored)
-├── static/index.html   admin console SPA (self-contained, zero external assets)
+├── static/index.html   admin console SPA + hand-rolled 3D agent mesh (zero external assets)
 └── tests/
     ├── smoke.py        end-to-end conversation regression
     ├── solver_test.py  timetable solver regression (no server, no API cost)
@@ -396,11 +452,14 @@ VidyaERP/
     ├── ranking_test.py plan ranking — every number measured, four labelled defect assertions
     ├── deploy_test.py  deployment claims — key never leaks, /health reads the DB, gate holds
     ├── nlu_test.py     date resolution — all 7x7 weekday pairs pinned
+    ├── campus_test.py  campus rules pinned case by case, routing kept, core data untouched
     └── mock_llm.py     fake OpenAI endpoint + rogue-agent guard test
 ```
 
-UI sections: **AI Copilot** (with a live agent-trace panel showing every hop and its latency),
-Dashboard, Timetable (override-aware grid), Faculty, Students, Approvals, Overrides, Agent Audit.
+UI sections: **Operations Assistant** (with the live 3D agent mesh and the execution trace),
+Autopilot, Agent Mesh · 3D, Institution Overview, Master Timetable (override-aware grid + live
+solver), Faculty, Students, Faculty Leave, Library, Hostels, Transport, Gate Passes, Placements,
+Documents, Approval Inbox, Schedule Changes, Audit Ledger.
 
 ---
 

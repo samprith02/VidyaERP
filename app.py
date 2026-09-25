@@ -19,7 +19,7 @@ from fastapi import FastAPI, Body, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-import db, orchestrator as orch, llm, llm_agent, solver, mcp_server
+import db, orchestrator as orch, llm, llm_agent, solver, mcp_server, tools, campus
 from agents import (rows, one, fac_name, PERIOD_TIME, TimetableAgent, AnalyticsAgent,
                     RequestAgent, Auditor)
 from nlu import TODAY, DAYS, day_of
@@ -217,7 +217,39 @@ def kpis():
                              (TODAY.isoformat(), TODAY.isoformat()))
     k["depts"] = rows(con, """SELECT dept, COUNT(*) n, ROUND(AVG(attendance),1) att,
                               SUM(CASE WHEN attendance<75 THEN 1 ELSE 0 END) short FROM students GROUP BY dept""")
+    k["campus"] = campus.kpis(con)
     return k
+
+
+# ------------------------------------------------------------ campus panels
+# The module views render exactly what the agents' READ tools return, through
+# the same tools.execute every other caller uses. Only reads are listed, and U
+# is empty, so even a listed name could not commit anything: an empty U is the
+# refusal every gated write already returns. tests/campus_test.py asserts no
+# gated write is ever in this set.
+PANELS = {"ops_radar", "library_overview", "library_overdue", "library_search", "hostel_status",
+          "hostel_complaints", "transport_status", "gate_pass_queue", "placement_overview",
+          "drive_eligibility", "certificate_register", "no_dues_status", "student_360",
+          "review_pending_leaves"}
+
+
+@app.get("/api/panel/{name}")
+def panel(name: str, request: Request):
+    if name not in PANELS:
+        return JSONResponse({"error": f"'{name}' is not a readable panel"}, status_code=404)
+    args = {k: v for k, v in request.query_params.items() if v}
+    r = tools.execute(con, {"pending": None, "history": [], "ctx": {}}, "", name, args)
+    return {"blocks": r.get("blocks", []), "data": r.get("data"), "chips": r.get("chips", []),
+            "trace": [{"agent": t[0], "action": t[1], "detail": t[2] if len(t) > 2 else "",
+                       "status": "ok", "ms": 0} for t in r.get("trace", [])]}
+
+
+@app.get("/api/badges")
+def badges():
+    c = campus.kpis(con)
+    return {"requests": one(con, "SELECT COUNT(*) c FROM requests WHERE status='Pending'")["c"],
+            "gatepasses": c["gatepass_pending"], "leaves": c["leaves_pending"],
+            "complaints": c["hostel_complaints"], "overdue": c["library_overdue"]}
 
 
 @app.get("/api/timetable")

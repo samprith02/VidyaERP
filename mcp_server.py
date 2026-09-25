@@ -20,7 +20,7 @@ sees stops being the guarded surface the app sees, and the parity claim is
 gone. `tests/mcp_parity.py` replays the same adversarial items through both
 entry points and fails if the verdicts ever diverge.
 
-No MCP-only tool. No tool hidden from MCP. All 22 are exposed and the guard is
+No MCP-only tool. No tool hidden from MCP. All 47 are exposed and the guard is
 the only thing that decides.
 
 ────────────────────────────────────────────────────────────────────────────
@@ -241,9 +241,10 @@ def handle_request(req, con, S):
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
             "instructions": (
                 "VidyaERP - college ERP for Vidyatech Institute of Engineering. Reads are open. "
-                "The five write tools commit only with a one-time approval code the admin "
-                "generates in the ERP console; you cannot generate one. Always call the plan_* "
-                "tool first, show the admin what would change, and ask them for a code."),
+                f"The {len(tools.GATED_WRITES)} write tools commit only with a one-time approval code "
+                "the admin generates in the ERP console; you cannot generate one. Call a write "
+                "without a code (or the plan_* tool) first to get the proposal, show the admin "
+                "what would change, and ask them for a code."),
         })
 
     if method == "ping":
