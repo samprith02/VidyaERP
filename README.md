@@ -120,10 +120,10 @@ python3 tests/mcp_parity.py   # MCP guard parity: 254 assertions, no server, no 
 python3 tests/campus_test.py  # campus services: 122 assertions, no server, no API cost
 python3 tests/mesh_test.py    # the agent mesh's fault channel: 22 assertions, no server, no API cost
 python3 tests/auth_test.py    # logins, route gating, per-role policy: 77 assertions, no server, no API cost
-python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits verified by re-read: 27 assertions, no server, no API cost
+python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits verified by re-read: 30 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
 python3 tests/deploy_test.py  # deployment readiness: 68 assertions, no server, no API cost
-python3 tests/nlu_test.py     # date resolution, ISO dates included: 19 assertions, no server, no API cost
+python3 tests/nlu_test.py     # date resolution, ISO dates included: 24 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 ```

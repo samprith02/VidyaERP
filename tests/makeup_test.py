@@ -290,6 +290,22 @@ check("6h (#54) once they hold a make-up then, busy_faculty counts them busy - s
 con.execute("DELETE FROM makeup_sessions WHERE plan_ref='t54'")
 con.commit()
 
+# ------------------------------ 7 · two different days in one instruction are asked about (#17)
+print("\n7 · the absence flow asks when a weekday and a date disagree (#17)")
+print("-" * 78)
+f9 = one(con, "SELECT * FROM faculty WHERE id=?", (tue_teachers[3],))
+before = one(con, "SELECT COUNT(*) c FROM overrides")["c"]
+out = orchestrator.handle(con, f"{f9['name']} is absent on monday 15 sep, arrange coverage", "mk7", "admin",
+                          "registrar")
+text = " ".join(b.get("md") or "" for b in out["blocks"])
+check("7a it asks which day, and plans nothing", "Which day" in text and not any(b.get("type") == "plans"
+                                                                                   for b in out["blocks"]), text[:160])
+check("7b both readings are one tap away", any("2026-09-15" in c for c in out.get("chips", []))
+      and any("2026-09-07" in c for c in out.get("chips", [])), str(out.get("chips")))
+out2 = orchestrator.handle(con, "apply plan A", "mk7", "admin", "registrar")
+check("7c a 'yes' after the question commits nothing",
+      one(con, "SELECT COUNT(*) c FROM overrides")["c"] == before, str([b.get("md") for b in out2["blocks"]])[:160])
+
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")
 for f in FAILED:

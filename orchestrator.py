@@ -465,6 +465,20 @@ def h_absence(con, text, ent, st, tr, actor):
 
     date = ent["date"] or (TODAY + dt.timedelta(days=1))
     lbl = ent["date_label"] or "tomorrow"
+    said = nlu.date_conflict(text, ent["date"])
+    if said:
+        # Two different days in one instruction (#17). Either guess covers the
+        # wrong day for somebody, so ask - with both answers one tap away.
+        alt = TODAY + dt.timedelta(days=(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].index(said)
+                                         - TODAY.weekday()) % 7 or 7)
+        tr.add("EntityResolver", "date_conflict",
+               f"text names {said} but {date.isoformat()} is a {day_of(date)}", status="warn")
+        return {"blocks": [B_text(f"You said **{alt.strftime('%A')}**, but **{date.strftime('%d %b')}** is a "
+                                  f"**{date.strftime('%A')}**. Which day is {f['name']} absent? "
+                                  f"Nothing has been planned yet.")],
+                "agent": "SubstitutionAgent",
+                "chips": [f"{f['name']} is absent on {date.isoformat()}",
+                          f"{f['name']} is absent on {alt.isoformat()}"]}
     if day_of(date) == "Sun":
         return {"blocks": [B_text(f"{date.strftime('%d %b')} is a **Sunday** — no classes are scheduled, "
                                   f"so no coverage is needed. I've noted the absence in the leave ledger.")],
