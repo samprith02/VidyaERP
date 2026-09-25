@@ -545,6 +545,8 @@ def _campus():
     tests/campus_test.py pins that. Imported lazily: campus_data imports db."""
     import campus_data
     campus_data.ensure()
+    import academics
+    academics.ensure()
 
 
 # ====================================================================== check

@@ -140,6 +140,7 @@ FACULTY = {
     "faculty_timetable": self_fac, "faculty_profile": self_fac,
     "get_timetable": dept_class, "exam_schedule": ALLOW, "library_search": ALLOW, "find_free_rooms": ALLOW,
     "makeup_schedule": own_teaching,
+    "faculty_availability": lambda con, P, a: self_fac(con, P, a, "faculty"),
 }
 HOD = {
     **FACULTY,
@@ -148,6 +149,7 @@ HOD = {
     "faculty_timetable": dept_fac, "faculty_profile": dept_fac,
     "faculty_workload": own_dept, "attendance_defaulters": own_dept, "exam_eligibility": own_dept,
     "find_free_faculty": own_dept,
+    "faculty_availability": lambda con, P, a: own_dept(con, P, a),
     "student_360": lambda con, P, a: dept_student(con, P, a, "usn"),
     "student_lookup": lambda con, P, a: dept_student(con, P, a, "query"),
     "review_pending_leaves": lambda con, P, a: own_dept(con, P, a),

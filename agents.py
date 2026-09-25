@@ -204,6 +204,27 @@ def ensure_makeups(con):
     con.execute(MAKEUP_DDL)
 
 
+# A teacher's STANDING unavailability (#19): a weekly window they cannot teach
+# in - a visiting professor's off-campus days, a council they sit on, a research
+# afternoon. Weekly, like the timetable, which is what lets the solver honour
+# it; a one-off absence is leave, and drives rescheduling instead.
+AVAIL_DDL = """
+CREATE TABLE IF NOT EXISTS faculty_availability(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, faculty TEXT, day TEXT, p_from INT, p_to INT, reason TEXT,
+  status TEXT, created_by TEXT, created_at TEXT)"""
+
+
+def ensure_availability(con):
+    con.execute(AVAIL_DDL)
+
+
+def unavailable_at(con, day, period):
+    """Teachers whose standing window covers (day, period)."""
+    ensure_availability(con)
+    return {r["faculty"] for r in rows(con, """SELECT faculty FROM faculty_availability WHERE status='Active'
+                                              AND day=? AND ? BETWEEN p_from AND p_to""", (day, period))}
+
+
 def timing_intact(slip_days):
     """How intact a session's timing is after slipping `slip_days` days.
 
@@ -234,7 +255,9 @@ class SubstitutionAgent:
         for r in rows(con, "SELECT faculty FROM makeup_sessions WHERE status='Scheduled' AND date=? AND period=?",
                       (date_iso, period)):
             b.add(r["faculty"])
-        return b
+        # ...and so does a standing window (#19): nobody is handed a class in
+        # the hours they have said, once and for every week, they cannot teach.
+        return b | unavailable_at(con, day, period)
 
     def on_leave(self, con, date_iso):
         return {r["faculty"] for r in rows(
@@ -440,6 +463,7 @@ class SubstitutionAgent:
             one(con, "SELECT 1 FROM timetable WHERE dept=? AND sem=? AND section=? AND day=? AND period=?",
                 (slot["dept"], slot["sem"], slot["section"], dy, p))
             or one(con, "SELECT 1 FROM timetable WHERE faculty=? AND day=? AND period=?", (slot["faculty"], dy, p))
+            or slot["faculty"] in unavailable_at(con, dy, p)
             or one(con, """SELECT 1 FROM makeup_sessions WHERE status='Scheduled' AND date=? AND period=?
                            AND plan_ref<>? AND ((dept=? AND sem=? AND section=?) OR faculty=?)""",
                    (di, p, ex, slot["dept"], slot["sem"], slot["section"], slot["faculty"])))

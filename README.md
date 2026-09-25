@@ -66,20 +66,21 @@ Presets for OpenAI, Groq, OpenRouter, Together, DeepSeek, Gemini-compat and loca
 listed in `.env.example`. No SDK is installed — `llm.py` talks raw HTTP over `urllib`, so there
 is nothing to `pip install`. Restart the server and the badge flips to green.
 
-**The 56 tools the model can call** (a student, teacher or HOD is offered only their role's) — 22 academic/admin:
+**The 59 tools the model can call** (a student, teacher or HOD is offered only their role's) — 23 academic/admin:
 `institution_overview · get_timetable · faculty_timetable · find_free_faculty · find_free_rooms ·
 faculty_profile · faculty_workload · student_lookup · attendance_defaulters · fee_summary ·
 exam_schedule · exam_eligibility · list_requests · list_leaves · plan_absence_coverage ·
 apply_coverage_plan · plan_timetable_generation · apply_timetable_generation · undo_last_change ·
-decide_request · create_request · broadcast_notice` — and 25 campus services (§5a):
+makeup_schedule · decide_request · create_request · broadcast_notice` — and 25 campus services (§5a):
 `ops_radar · student_360 · library_overview · library_search · library_overdue · issue_book ·
 return_book · library_remind_overdue · hostel_status · hostel_complaints · allocate_hostel_room ·
 dispatch_hostel_complaints · transport_status · rebalance_bus_routes · handle_bus_breakdown ·
 gate_pass_queue · decide_gate_passes · placement_overview · drive_eligibility ·
 publish_drive_shortlist · no_dues_status · issue_certificate · certificate_register ·
 review_pending_leaves · decide_leave` — and 9 self-service (§5c): `my_home · my_requests · my_placement ·
-request_gate_pass · request_certificate · my_mentees · my_leaves · apply_leave · dept_overview`.
-**19 of the 56 are writes, and every one is gated.**
+request_gate_pass · request_certificate · my_mentees · my_leaves · apply_leave · dept_overview` — and 2
+for standing faculty availability: `faculty_availability · set_faculty_availability`.
+**20 of the 59 are writes, and every one is gated.**
 
 **Write-guard, proven by test:** `tests/mock_llm.py` includes a *rogue agent* endpoint that tries
 to call `apply_coverage_plan` with no admin approval. PolicyGuard returns `{"BLOCKED": ...}`,
@@ -96,7 +97,7 @@ multi-hop turn was spending 7,196 of them. Four things fixed that:
 
 | Technique | Effect |
 |---|---|
-| **Tool router** — the rule-engine NLU pre-selects ~4–9 of the 56 tools per utterance | tool payload **−64%**, and the model picks better from a short menu |
+| **Tool router** — the rule-engine NLU pre-selects ~4–9 of the 59 tools per utterance | tool payload **−64%**, and the model picks better from a short menu |
 | **Prompt diet** — live-context preamble trimmed, history 8→4 turns, tool results capped at 2.8 KB | system prompt ~1,500 → ~600 tokens |
 | **Model failover chain** — `LLM_FALLBACK_MODELS`, tried in order on 429/5xx/`tool_use_failed` | quotas are *per model*, so the chain multiplies usable throughput |
 | **Nullable optional params** — every non-required arg accepts `null` | models emit `{"dept": null}` constantly; strict validators 400 on it. 41 params were latent landmines |
@@ -107,7 +108,7 @@ if the whole chain is exhausted by falling back to the rule engine with an hones
 The trace shows exactly which of these happened:
 
 ```
-· ToolRouter    narrow_toolset    7 of 56 tools offered: plan_absence_coverage, …
+· ToolRouter    narrow_toolset    7 of 59 tools offered: plan_absence_coverage, …
 · LLM Planner   reason (hop 1)    openai/gpt-oss-120b · 1032→107 tok · 513ms
 · LLM Planner   model_failover    primary rate-limited → answered on qwen/qwen3.8-27b
 ```
@@ -116,11 +117,12 @@ The trace shows exactly which of these happened:
 
 ```bash
 python3 tests/solver_test.py  # timetable solver: 44 assertions, no server, no API cost
-python3 tests/mcp_parity.py   # MCP guard parity: 254 assertions, no server, no API cost
+python3 tests/mcp_parity.py   # MCP guard parity: 263 assertions, no server, no API cost
 python3 tests/campus_test.py  # campus services: 122 assertions, no server, no API cost
-python3 tests/mesh_test.py    # the agent mesh's fault channel: 22 assertions, no server, no API cost
+python3 tests/mesh_test.py    # the agent mesh's fault channel and approval stamp: 25 assertions, no server, no API cost
 python3 tests/auth_test.py    # logins, route gating, per-role policy: 77 assertions, no server, no API cost
 python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits verified by re-read: 30 assertions, no server, no API cost
+python3 tests/academics_test.py # standing faculty availability, honoured by every planner: 24 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
 python3 tests/deploy_test.py  # deployment readiness: 68 assertions, no server, no API cost
 python3 tests/nlu_test.py     # date resolution, ISO dates included: 24 assertions, no server, no API cost
@@ -352,7 +354,7 @@ commit a write on your click.
 
 ### 6a. Driving the ERP from Claude Desktop (MCP)
 
-`mcp_server.py` puts the same 56 tools in front of any MCP client. Registration — no install
+`mcp_server.py` puts the same 59 tools in front of any MCP client. Registration — no install
 step, because there is no SDK to install:
 
 ```json
@@ -468,8 +470,13 @@ lab room for the whole college it still places 93% and keeps every day contiguou
 **Two limits it reports rather than hides.** Lab rooms seat 36 and a CSE section is ~60, because
 real colleges split a lab into batches and this dataset has no batches — the solver relaxes the
 capacity constraint and names every affected class in `capacity_relaxed`, shown as an amber
-warning above the Apply button. And teacher unavailability is honoured as an input but nothing
-populates it yet: approved leave drives the *rescheduling* path, not generation.
+warning above the Apply button. Teachers' **standing availability** (a visiting professor's
+off-campus day, a council, a research afternoon) is recorded as weekly windows in
+`faculty_availability` (#19). Generation never places a class in one, `solver.verify` reports any
+committed class that does, and the substitution planner and make-up booking respect them. The
+Registrar records one in plain words ("Prof. X is not available every Friday afternoon"). The
+proposal lists the classes already inside the window and offers to rebuild those sections.
+Dated leave still drives the *rescheduling* path, not generation.
 
 ---
 
@@ -488,10 +495,11 @@ VidyaERP/
 ├── guard.py            approved_this_turn() — the one write gate, importable by every tool module
 ├── orchestrator.py     rule-engine supervisor: routing, HITL state machine
 ├── llm.py              provider-agnostic OpenAI-compatible client (urllib, no SDK)
-├── tools.py            the 56 tool schemas + the single dispatch point (gate + role policy)
+├── tools.py            the 59 tool schemas + the single dispatch point (gate + role policy)
 ├── auth.py             sign-in: principals, PBKDF2, hashed sessions, auth.gate() for every route
 ├── access.py           per-role tool policy: default deny, rules that only ever narrow
 ├── portal.py           self-service tools for students, faculty and HODs
+├── academics.py        standing faculty availability: seed, read and gated write (#19)
 ├── llm_agent.py        the LLM reasoning loop (plan → call tools → answer), with failover
 ├── mcp_server.py       MCP surface over stdio JSON-RPC — same tools, same gate, no SDK
 ├── requirements.txt    FastAPI + Uvicorn. That is the entire dependency list
@@ -515,6 +523,7 @@ VidyaERP/
     ├── mesh_test.py    the fault channel: failures reported, pinned on their owner, holds are not faults
     ├── auth_test.py    sign-in, every route's gate, per-role policy, self-service writes, session binding
     ├── makeup_test.py  make-ups booked and held, coverage commits verified by an independent re-read
+    ├── academics_test.py standing availability: seeded consistently, honoured by solver and planners
     └── mock_llm.py     fake OpenAI endpoint + rogue-agent guard test
 ```
 

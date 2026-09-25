@@ -142,6 +142,43 @@ check("5e mesh.js itself fetches nothing from outside",
 check("5f the mesh draws red only from the server's own status",
       "if (step.status === 'error') return 'error';" in MESH and "Math.random() < " not in MESH)
 
+# ------------------------------------------ 6 · the approval stamp reads the write, not the turn (#58)
+print("\n6 · the approval stamp judges only what happened from the authorisation on")
+print("-" * 78)
+import shutil, subprocess                                          # noqa: E402
+BLOCKS = open(os.path.join(HERE, "static", "blocks.js"), encoding="utf-8").read()
+
+
+def js_function(src, name):
+    """The source of one top-level function, by brace matching."""
+    i = src.index(f"function {name}(")
+    j = src.index("{", i)
+    depth = 0
+    for k in range(j, len(src)):
+        depth += {"{": 1, "}": -1}.get(src[k], 0)
+        if depth == 0:
+            return src[i:k + 1]
+
+
+node = shutil.which("node")
+if not node:
+    print("  skip 6a-6c: node is not installed, so the stamp logic cannot be executed here")
+else:
+    CASES = {
+        # a model that failed over BEFORE the write: the write is still clean
+        "failover": [{"action": "transport_error", "status": "error"}, {"action": "failover", "status": "warn"},
+                     {"action": "write_authorisation", "status": "ok"}, {"action": "verify", "status": "ok"}],
+        "bad_verify": [{"action": "write_authorisation", "status": "ok"}, {"action": "verify", "status": "error"}],
+        "held": [{"action": "write_blocked", "status": "ok"}],
+    }
+    prog = js_function(BLOCKS, "approvalMark") + "\nconst C=" + json.dumps(CASES) + \
+        ";\nconsole.log(JSON.stringify(Object.fromEntries(Object.entries(C).map(([k,v])=>[k,approvalMark(v)]))));"
+    out = json.loads(subprocess.run([node, "-e", prog], capture_output=True, text=True, encoding="utf-8").stdout)
+    check("6a a failover before the write does not mark the write as a problem",
+          "written and verified" in out["failover"], out["failover"])
+    check("6b a failed verify after the write still does", "with a problem" in out["bad_verify"], out["bad_verify"])
+    check("6c a held write gets no stamp at all", out["held"] == "", out["held"])
+
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")
 for f in FAILED:

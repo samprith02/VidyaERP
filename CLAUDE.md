@@ -33,7 +33,7 @@ key into `.env` (gitignored) and the LLM agent takes over — same guardrails ei
 ## Architecture in one pass
 
 `app.py` routes → `orchestrator.py` (rule engine) **or** `llm_agent.py` (model plans and calls
-tools) → `tools.py` (56 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
+tools) → `tools.py` (59 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
 + `portal.py` (the specialists). Everyone signs in first (`auth.py`).
 
 | Piece | Where | Note |
@@ -44,6 +44,7 @@ tools) → `tools.py` (56 tool schemas, PolicyGuard-wrapped, role policy enforce
 | Auditor | `agents.py` (`class Auditor`) | immutable ledger of who asked, which agent acted, what changed |
 | Campus services | `campus.py` | library, hostel, transport, gate pass, placement, documents, leave review, Student 360, Ops radar — tools + `rule_route` |
 | Campus data | `campus_data.py` | their tables + seed, own `Random`; `ensure()` is additive to an old DB |
+| Academics | `academics.py` | standing faculty availability (#19): seed, read tool, gated write, `rule_route` |
 | Sign-in | `auth.py` | principals from the data, PBKDF2, hashed session tokens, `gate()` for every route |
 | Role policy | `access.py` | default-deny per role; rules that NARROW arguments or refuse |
 | Self-service | `portal.py` | student / faculty / HOD tools + rule routing; acts only for `S["user"]` |
@@ -59,17 +60,18 @@ the exception on the rule side: `orchestrator.h_campus` picks a tool with `campu
 runs it through `tools.execute`, so for them all three callers share one path. The parity that is
 actually enforced is between the **LLM agent and MCP** — both reach `tools.execute` and cannot
 differ, which is what `tests/mcp_parity.py` asserts.
-`tools.select_tools()` narrows 56 tools to ~4–9 per utterance (a non-admin is offered exactly their role's menu) (−64% payload) — free tiers are
+`tools.select_tools()` narrows 59 tools to ~4–9 per utterance (a non-admin is offered exactly their role's menu) (−64% payload) — free tiers are
 stingy and this is what keeps multi-hop turns inside the budget.
 
 ---
 
 ## Rules that matter here
 
-- **Writes are guarded, and the guard is in code, not in the prompt.** *Nineteen* write tools —
+- **Writes are guarded, and the guard is in code, not in the prompt.** *Twenty* write tools —
   `tools.GATED_WRITES`: the five core ones (`apply_coverage_plan`, `apply_timetable_generation`,
-  `decide_request`, `create_request`, `broadcast_notice`), the eleven in `campus.GATED_WRITES` and the
-  three in `portal.GATED_WRITES`
+  `decide_request`, `create_request`, `broadcast_notice`), the eleven in `campus.GATED_WRITES`, the
+  three in `portal.GATED_WRITES` and the one in `academics.GATED_WRITES` (parity-probed in
+  `mcp_parity.py` section 18)
   — refuse to commit without explicit admin approval *in the current turn*
   (`guard.approved_this_turn`, re-exported as `tools.approved_this_turn`). `tests/mock_llm.py` has a
   rogue-agent endpoint that tries to skip the gate and is blocked. **Never** add a write path that
@@ -280,11 +282,12 @@ ships a timetable back.
 
 ```bash
 python tests/solver_test.py    # 44 assertions, no server, no API cost
-python tests/mcp_parity.py     # 254 assertions, no server, no API cost
+python tests/mcp_parity.py     # 263 assertions, no server, no API cost
 python tests/campus_test.py    # 122 assertions, no server, no API cost
-python tests/mesh_test.py      # 22 assertions, no server, no API cost
+python tests/mesh_test.py      # 25 assertions, no server, no API cost (6a-6c need node)
 python tests/auth_test.py      # 77 assertions, no server, no API cost
 python tests/makeup_test.py    # 30 assertions, no server, no API cost
+python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 68 assertions, no server, no API cost
 python tests/nlu_test.py       # 24 assertions, no server, no API cost
@@ -393,8 +396,19 @@ and room scarcity must degrade rather than collapse.
   from P1, so no in-week lab window is ever free for a whole batch — measured, plan C found a slot
   for 0 of the lab blocks before. A teacher missing two labs gets the second one honestly marked
   "NOT yet scheduled" rather than the same hour twice.
-- Teacher unavailability is honoured by the solver as an input but nothing populates it yet —
-  approved leave drives the *rescheduling* path, not generation.
+- ~~Teacher unavailability is never populated.~~ **Done 2026-09-25 (#19)** as *standing* weekly
+  windows (`faculty_availability`), because a weekly timetable can only honour a weekly
+  constraint. Dated leave still drives rescheduling, not generation. The solver reads the windows
+  (`solver.standing_unavailability`) and `solver.verify` reports a committed class inside one,
+  scoped to the rebuilt classes. `busy_faculty` and the make-up search respect them too. Six
+  seeded windows sit only where the seeded timetable leaves the teacher free
+  (`academics_test.py:1b`). Recording a window does **not** move classes already inside it: the
+  proposal names them and offers the rebuild. A standing window is "every"/"each"/plural-weekday
+  phrasing. "Absent on Friday" is still an absence (`academics_test.py:5b`).
+- **The approval stamp judges the write, not the turn (#58).** A model that fails over *before*
+  the write (every 429 on the free tier) used to stamp every approved write "with a problem".
+  `approvalMark` now reads only steps from `write_authorisation` on. `mesh_test.py` section 6 runs
+  it under Node when Node is installed, and says it skipped when not.
 - **Attendance is a single independent draw per student** — `random.gauss(80, 12)` clamped to
   [46, 99] (`db.py`, students insert). It carries no correlation with CGPA, backlogs, subject or
   semester, so any "attendance risk" analytics are structurally shallow.

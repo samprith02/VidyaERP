@@ -108,6 +108,10 @@ INTENTS = {
         "kw": [("leave application", 8), ("leave applications", 8), ("pending leave", 8),
                ("leave requests", 7)],
         "desc": "Pending faculty leave priced against coverage"},
+    # ---- academics.py ----
+    "availability": {
+        "kw": [("availability", 8), ("standing", 4), ("every week", 4), ("visiting faculty", 6)],
+        "desc": "Standing weekly windows a teacher cannot be timetabled in (#19)"},
 }
 
 CONFIRM_YES = ["yes", "yeah", "yep", "ok", "okay", "approve", "apply", "confirm", "go ahead",
@@ -149,6 +153,11 @@ PRIORITY = [
     (r"\bleave (?:application|request)s?\b|\bpending (?:faculty )?leaves?\b|"
      r"\b(?:approve|reject|grant|sanction)\s+(?:all\s+)?(?:the\s+)?(?:pending\s+)?leaves?\b|"
      r"\breview (?:the )?(?:pending )?leaves?\b|\b(?:approve|reject) leave\s*#?\d", "leave.review", 20),
+    # A STANDING window, not a one-off absence: it has to say "every" / "each" /
+    # a plural weekday / "weekly", or talk about availability itself (#19).
+    (r"\bavailability\b|\bavailable again\b|"
+     r"\b(?:not available|unavailable|can(?:no|')?t teach|cannot teach|busy)\b[^.?!]{0,40}"
+     r"\b(?:every|each|weekly|(?:mon|tues|wednes|thurs|fri|satur)days)\b", "availability", 22),
     (r"\bautopilot\b|\bneeds? (?:my )?attention\b|\baction items?\b|\bops radar\b|"
      r"\bwhat should i (?:do|act on|focus on|look at)\b|\bto-?do list\b", "ops.radar", 18),
     (r"(?:\b360\b|everything about|full profile|complete profile|subject[- ]wise attendance)"

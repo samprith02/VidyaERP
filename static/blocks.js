@@ -146,9 +146,13 @@ function rDocument(b){
 // are read from the server's own trace, never inferred from wording.
 function approvalMark(trace){
   const t=trace||[];
-  if(t.some(s=>/write_authorisation/.test(s.action||''))){
-    const verified=t.some(s=>s.action==='verify'&&s.status!=='error');
-    const failed=t.some(s=>s.status==='error');
+  const i=t.findIndex(s=>/write_authorisation/.test(s.action||''));
+  if(i>=0){
+    // Only what happened from the authorisation on is about the write (#58): a
+    // model that failed over BEFORE it is not a problem with what was written.
+    const after=t.slice(i);
+    const verified=after.some(s=>s.action==='verify'&&s.status!=='error');
+    const failed=after.some(s=>s.status==='error');
     return `<div class="stamp"><b>Approved</b><small>${failed?'written, with a problem reported below':verified?'written and verified':'written'}</small></div>`;
   }
   return '';
