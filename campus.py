@@ -94,7 +94,7 @@ def _done(S, name):
 
 
 def _err(msg, **extra):
-    return {"data": {"error": msg, **extra}, "blocks": [B_text(f"⚠ {msg}")], "trace": []}
+    return {"data": {"error": msg, **extra}, "blocks": [B_text(f"{msg}")], "trace": []}
 
 
 def _notify(con, msgs):
@@ -285,7 +285,7 @@ def t_issue_book(con, S, U, book="", member="", **kw):
     la = LibraryAgent()
     b, err = la.resolve_book(con, book)
     if err:
-        return {"data": err, "blocks": [B_text(f"⚠ {err.get('error') or 'Which title did you mean?'}")]
+        return {"data": err, "blocks": [B_text(f"{err.get('error') or 'Which title did you mean?'}")]
                 + ([B_table(["ID", "Title", "Available"], [[c["id"], c["title"], c["available"]]
                                                            for c in err.get("candidates", [])])]
                    if err.get("candidates") else []), "trace": []}
@@ -324,7 +324,7 @@ def t_issue_book(con, S, U, book="", member="", **kw):
     _done(S, "issue_book")
     return {"data": {"issued": True, "book": b["id"], "member": m["id"], "due": due.isoformat(),
                      "copies_left": left},
-            "blocks": [B_text(f"📚 **{b['title']}** ({b['id']}) issued to **{m['name']}** — due back "
+            "blocks": [B_text(f"**{b['title']}** ({b['id']}) issued to **{m['name']}** — due back "
                               f"**{due.strftime('%d %b %Y')}**. {left} cop{'y' if left == 1 else 'ies'} "
                               f"left on the shelf (re-read after the write).")],
             "refresh": True,
@@ -363,7 +363,7 @@ def t_return_book(con, S, U, member="", book=None, **kw):
                   "Applied" if not still else "Partial")
     _done(S, "return_book")
     return {"data": {"returned": len(loans) - len(still), "fine_collected": total},
-            "blocks": [tbl, B_text(f"✅ {len(loans) - len(still)} book(s) checked in"
+            "blocks": [tbl, B_text(f"{len(loans) - len(still)} book(s) checked in"
                                    + (f"; collect **{inr(total)}** in fines at the counter." if total
                                       else " — no fine due."))],
             "refresh": True,
@@ -401,7 +401,7 @@ def t_library_remind_overdue(con, S, U, **kw):
     Auditor().log(con, ACTOR, "LibraryAgent", "library.remind", {"reminders": len(msgs)}, "Applied")
     _done(S, "library_remind_overdue")
     return {"data": {"sent": len(msgs)},
-            "blocks": [B_text(f"📣 **{len(msgs)} reminders sent** to overdue borrowers "
+            "blocks": [B_text(f"**{len(msgs)} reminders sent** to overdue borrowers "
                               f"(app push + SMS).")], "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
                            ("NotifyAgent", "dispatch", f"{len(msgs)} messages")]}
@@ -562,7 +562,7 @@ def t_allocate_hostel_room(con, S, U, usn=None, **kw):
     _done(S, "allocate_hostel_room")
     return {"data": {"allotted": len(plan), "verification": "clean" if not bad and not wrong else
                      {"over_capacity": bad, "gender_mismatch": wrong}},
-            "blocks": [tbl, B_text(f"🏠 **{len(plan)} bed(s) allotted** and students notified. Re-read "
+            "blocks": [tbl, B_text(f"**{len(plan)} bed(s) allotted** and students notified. Re-read "
                                    f"after the write: {len(bad)} room(s) over capacity, {len(wrong)} "
                                    f"gender mismatches.")], "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
@@ -595,7 +595,7 @@ def t_dispatch_hostel_complaints(con, S, U, **kw):
     Auditor().log(con, ACTOR, "HostelAgent", "hostel.dispatch", {"n": len(c)}, "Applied")
     _done(S, "dispatch_hostel_complaints")
     return {"data": {"assigned": len(c), "crews": dict(crews), "still_open": left},
-            "blocks": [tbl, B_text(f"🔧 **{len(c)} complaint(s) dispatched** to {len(crews)} crew(s); "
+            "blocks": [tbl, B_text(f"**{len(c)} complaint(s) dispatched** to {len(crews)} crew(s); "
                                    f"{left} still open after re-read.")], "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
                            ("HostelAgent", "verify", f"{left} still open after re-read", "error" if left else "ok"),
@@ -726,7 +726,7 @@ def t_rebalance_bus_routes(con, S, U, **kw):
     mv = B_table(["USN", "Stop", "From", "To", "New pickup"],
                  [[m["usn"], m["stop"], m["from"], m["to"], m["pickup"]] for m in moves],
                  title=f"{len(moves)} rider move(s) at shared stops", dense=True)
-    note = (B_text("⚠ Still over capacity after the moves: " + ", ".join(f"**{r} +{n}**" for r, n in residual.items())
+    note = (B_text("Still over capacity after the moves: " + ", ".join(f"**{r} +{n}**" for r, n in residual.items())
                    + " — riders at stops no other bus serves. A spare bus is the honest fix.")
             if residual else B_text("Every route ends within its seats."))
     tr = [("TransportAgent", "rebalance_plan", f"{len(moves)} moves · residual overflow "
@@ -748,7 +748,7 @@ def t_rebalance_bus_routes(con, S, U, **kw):
     _done(S, "rebalance_bus_routes")
     return {"data": {"moved": len(moves), "load_after": now, "residual": residual,
                      "verification": "clean" if not broke else {"newly_over": broke}},
-            "blocks": [tbl, note, B_text(f"🚌 **{len(moves)} riders moved** and notified. Re-read after the "
+            "blocks": [tbl, note, B_text(f"**{len(moves)} riders moved** and notified. Re-read after the "
                                          f"write: {len(broke)} route(s) pushed over capacity by the move.")],
             "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
@@ -809,7 +809,7 @@ def t_handle_bus_breakdown(con, S, U, route="", **kw):
     _done(S, "handle_bus_breakdown")
     return {"data": {"route": rid, "replacement": spare["bus"], "riders_seated": seated,
                      "overflow_moved": len(moves)},
-            "blocks": [tbl, B_notice([msg]), B_text(f"🚌 **{spare['bus']} is now running {rid}.** Riders and the "
+            "blocks": [tbl, B_notice([msg]), B_text(f"**{spare['bus']} is now running {rid}.** Riders and the "
                                                     f"driver are notified. Re-read: every rider has a seat — "
                                                     f"**{'yes' if seated else 'NO'}**.")],
             "refresh": True,
@@ -898,7 +898,7 @@ class GatePassAgent:
         return out
 
 
-VERDICT_MD = {"approve": "✅ approve", "reject": "⛔ reject", "review": "🟡 review"}
+VERDICT_MD = {"approve": "**Approve**", "reject": "**Reject**", "review": "Review"}
 
 
 def t_gate_pass_queue(con, S, U, **kw):
@@ -978,7 +978,7 @@ def t_decide_gate_passes(con, S, U, ids=None, decision=None, **kw):
                   "Applied" if done == len(plan) else "Partial")
     _done(S, "decide_gate_passes")
     return {"data": {"decided": done, "left_for_warden": left},
-            "blocks": [tbl, B_text(f"🛂 **{done} pass(es) decided** and students, parents and wardens "
+            "blocks": [tbl, B_text(f"**{done} pass(es) decided** and students, parents and wardens "
                                    f"notified. {left} left for a human.")], "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
                            ("GatePassAgent", "verify", f"{done}/{len(plan)} no longer pending",
@@ -1134,7 +1134,7 @@ def t_publish_drive_shortlist(con, S, U, drive="", **kw):
     Auditor().log(con, ACTOR, "PlacementAgent", "placement.shortlist", {"drive": d["id"], "n": len(new)}, "Applied")
     _done(S, "publish_drive_shortlist")
     return {"data": {"drive": d["company"], "shortlisted": n},
-            "blocks": [B_text(f"🎯 **{n} students shortlisted** for {d['company']} and notified.")],
+            "blocks": [B_text(f"**{n} students shortlisted** for {d['company']} and notified.")],
             "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
                            ("PlacementAgent", "verify", f"{n} registrations on re-read",
@@ -1307,7 +1307,7 @@ def t_issue_certificate(con, S, U, usn="", kind="Bonafide", purpose="", **kw):
     _done(S, "issue_certificate")
     return {"data": {"issued": bool(ok), "serial": serial, "request_closed": req["id"] if req else None},
             "blocks": [B_document({**doc, "status": "issued"}),
-                       B_text(f"🧾 **{serial}** entered in the certificate register"
+                       B_text(f"**{serial}** entered in the certificate register"
                               + (f" and **REQ-{req['id']:04d}** closed." if req else "."))],
             "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "admin approved in this turn"),
@@ -1443,7 +1443,7 @@ def t_decide_leave(con, S, U, leave_id=None, decision="approve", dept=None, **kw
               if dec == "Approved" and a["periods"]]
     return {"data": {"decided": done, "decision": dec,
                      "needs_coverage": [{"faculty": f["name"], "date": d["date"]} for f, d in follow]},
-            "blocks": [tbl, B_text(f"🗓 **{done} leave(s) {dec.lower()}** and staff notified."
+            "blocks": [tbl, B_text(f"**{done} leave(s) {dec.lower()}** and staff notified."
                                    + (f" {len(follow)} of them have classes to cover — plan each one next."
                                       if follow else ""))],
             "refresh": True,

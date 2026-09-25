@@ -726,7 +726,7 @@ def execute(con, S, U, name, args=None):
         except Exception as e:                       # a scope rule that errs refuses
             args, why = None, f"access check failed: {type(e).__name__}"
         if why:
-            return {"data": {"DENIED": why}, "blocks": [B_text(f"🔒 {why}")],
+            return {"data": {"DENIED": why}, "blocks": [B_text(f"{why}")],
                     "trace": [("PolicyGuard", "access_denied", f"{P['role']} {P['id']} → {name}: {why}", "warn")]}
     try:
         return fn(con, S, U, **(args or {}))

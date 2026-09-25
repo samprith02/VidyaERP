@@ -1,5 +1,11 @@
 # VidyaERP — working notes for Claude
 
+**Naming.** The product is presented as **MAWOS, the Multi-Agent Workflow Orchestration
+System** (page titles, the mark, the LLM persona, `mcp_server.SERVER_NAME = "mawos"`). The repo
+and modules stay VidyaERP. Don't confuse either with `../MAWOS`, the archived research
+prototype described at the bottom of this file. Vidyatech Institute of Engineering is only the
+synthetic college in the data; the interface names the system, not the college.
+
 **This is the product. All work happens here.** Open Claude in this folder, not in MAWOS.
 
 A SMART agentic ERP for an Indian engineering college (autonomous / VTU-affiliated model),
@@ -138,6 +144,15 @@ stingy and this is what keeps multi-hop turns inside the budget.
   silently shadow a platform dashboard with nothing in the UI to show why
   (`tests/deploy_test.py:2a`). A deployment configures this app through environment variables and
   has no `.env` to edit.
+- **The interface has one stylesheet, `static/mawos.css` (#49), and a small set of rules.**
+  Light mode only, the mesh included. Violet (`--violet`) means approval and nothing else: a held
+  write, the recommended plan's approve button, the "Approved" stamp. Hand-off buttons that only
+  *ask* an agent to prepare something are blue. Sentence case, no all-caps labels, no emoji in
+  replies or chrome (`deemoji` removed 26). Server text still reaches the page as data, so a new
+  all-caps enum (like a leg's `SUBSTITUTE`) gets sentence-cased where it renders. **Don't reuse a
+  generic class name across components:** timetable activity cells were once `.act`, the same
+  class as the Autopilot rows, and the rows' grid crushed every activity cell into three
+  columns. They are `.actv` now.
 - **`static/index.html` loads nothing external** — no CDN, no fonts, no images. Keep it that way;
   it is why the console works offline and on a locked-down college network. The 3D agent mesh is
   therefore a hand-rolled perspective projection on a 2D canvas (`static/mesh.js`, served locally),
@@ -267,7 +282,7 @@ python tests/makeup_test.py    # 19 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 68 assertions, no server, no API cost
 python tests/nlu_test.py       # 15 assertions, no server, no API cost
-python tests/smoke.py          # rule-engine regression — needs the server on :8000, no API cost
+python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 ```
 
