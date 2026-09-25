@@ -465,6 +465,10 @@ a superseded ranking weight in an API response. `source` says where the commit
 came from: `platform` (Render's `RENDER_GIT_COMMIT`), `git` (local `.git`), or
 `unavailable`.
 
+The underlying cause — most likely the Render GitHub App's access to the repository — is not
+something code can fix, and is unresolved at the time of writing. Until it is, treat every push
+as needing a manual deploy (dashboard → **Manual Deploy**) followed by the check above.
+
 An unreachable database returns **503**, so a broken instance drops out of rotation instead of
 serving errors behind a green tick. Nothing secret is in that payload — whether a key is
 configured, never what it is.

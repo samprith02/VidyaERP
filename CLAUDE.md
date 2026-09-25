@@ -150,6 +150,11 @@ ships a timetable back.
   to reading `.git/HEAD` directly (no subprocess, resolved once at import);
   `deploy_test.py:3q-3t` exercise the env read itself, not just the reporting — asserting on the
   module constant alone passes even when the variable is never read.
+  **Still unresolved as of 2026-09-25:** the likely cause is the Render GitHub App's access to
+  `samprith02/VidyaERP`, which is fixed in the GitHub/Render dashboards, not in code. Until it is,
+  **every push needs a manual deploy** (Render dashboard → Manual Deploy, or the API trigger), and
+  then the `/health` check above. Verified working live on 2026-09-25: `short: fe6d846`,
+  `source: platform`.
 - **Storage is ephemeral on a free host, and `/health` says so.** `db.seed()` rebuilds the whole
   institution on a cold start (~0.07 s), so a restart silently discards every applied override.
   `VIDYAERP_DB` points the database at a mounted disk; `/health` reports `persistent: false` when
