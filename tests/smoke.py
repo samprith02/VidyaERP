@@ -4,7 +4,11 @@ Pinned to engine="rule" on purpose: this suite asserts fixed routing/plan behavi
 so it must not depend on a model's wording — and rapid-firing it at a metered LLM
 just burns the token budget. For the LLM path run tests/live_llm.py instead.
 """
-import json, urllib.request
+import json, urllib.request, sys
+# Prints → ✔ ✘ on the SUCCESS path, so a default Windows console (cp1252) threw
+# UnicodeEncodeError on every run, not only a failing one (issue #16). Same fix
+# the no-server suites got in c1e23dd.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 BASE = "http://localhost:8000"
 
 def chat(q, s="smoke"):
