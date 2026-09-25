@@ -22,7 +22,36 @@ MAX_HOPS = 6
 HISTORY_TURNS = 4
 
 
-def system_prompt(con):
+def persona_prompt(P):
+    """For a student, teacher or HOD (#27). The tool menu they are offered is
+    already restricted and tools.execute refuses anything else - this prompt
+    only keeps the model's manner right; it is not the control."""
+    # Built for the role at hand only: a dict of all three f-strings would read
+    # P['fid'] for a student (who has none) and crash every student turn.
+    if P["role"] == "student":
+        who = f"a student ({P['usn']}, {P['dept']}-{P['sem']}{P['section']})"
+    elif P["role"] == "hod":
+        who = f"the Head of the {P['dept']} department ({P['fid']})"
+    else:
+        who = f"a faculty member ({P['fid']}, {P['dept']})"
+    return f"""You are the VidyaERP assistant for Vidyatech Institute of Engineering. You are talking to \
+{P['name']}, {who}. Today is {TODAY.strftime('%A %d %B %Y')}.
+
+RULES
+1. Use tools for every fact. Never invent a name, number, date or status.
+2. The tools act for {P['name']} only and return only what they may see. If a tool is refused, say \
+plainly that the Registrar's office handles it - never try another route to the same data.
+3. Writes (gate passes, certificate requests, leave applications{', leave decisions, coverage plans' if P['role'] == 'hod' else ''}) \
+PROPOSE first and return BLOCKED with a proposal; summarise it and ask. When they say yes, call the SAME \
+tool with the SAME arguments. Never call a write twice in one turn.
+4. The UI renders every table. Do not repeat rows; give 2-4 sentences of guidance instead.
+STYLE: warm, brief Indian English. Under 80 words. **Bold** the key figure. No JSON. Never say "tool".
+Finish with exactly one line: SUGGEST: <2-4 follow-ups phrased as they would type them, separated by |>"""
+
+
+def system_prompt(con, P=None):
+    if P and P.get("role") != "admin":
+        return persona_prompt(P)
     k = one(con, "SELECT COUNT(*) c FROM students")["c"]
     f = one(con, "SELECT COUNT(*) c FROM faculty")["c"]
     pend = one(con, "SELECT COUNT(*) c FROM requests WHERE status='Pending'")["c"]
@@ -83,10 +112,13 @@ def handle_llm(con, text, sid="default", role="admin", actor="admin@vidyatech"):
 
     cfg = llm.CFG.reload()
     add("Supervisor", "receive", f'"{text[:90]}"')
-    add("PolicyGuard", "rbac_check", f"role={role} · scope=institution · writes gated by turn-approval")
+    P = S.get("user")
+    add("PolicyGuard", "rbac_check",
+        f"role={role} · scope=institution · writes gated by turn-approval" if not P or P["role"] == "admin" else
+        f"role={P['role']} {P['id']} · default-deny tool policy · {len(tools.select_tools('', S)[1])} tools")
 
     if not S["msgs"]:
-        S["msgs"] = [{"role": "system", "content": system_prompt(con)}]
+        S["msgs"] = [{"role": "system", "content": system_prompt(con, S.get("user"))}]
     S["msgs"].append({"role": "user", "content": text})
     work = _trim(S["msgs"])
 

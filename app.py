@@ -1,25 +1,27 @@
 """VidyaERP :: FastAPI application
 
 Deployment note, stated plainly because it decides how this may be used:
-**the console has no authentication.** There is no login, and /api/chat can
-drive every write the copilot offers. Anyone who can reach the URL is the
-Registrar. That is correct for a single-admin console on a laptop or a college
-LAN, and it is the whole security model — a public deployment is a public demo
-over synthetic data, nothing more.
+**everyone signs in (#27).** The Registrar gets the console; students, faculty
+and HODs get the self-service portal, and what each may see or change is
+decided per tool by access.py, enforced in tools.execute. Every route passes
+auth.gate - one pure function, tested without a server.
 
-VIDYAERP_ADMIN_TOKEN gates the two endpoints that are NOT console features:
-/api/seed/reset (wipes and rebuilds the database) and /api/mcp/approval (mints
-the human half of the MCP write gate). Those are out-of-band operator controls,
-so leaving them open on a public URL would contradict a claim the project makes
-about itself. Unset, they stay open, which is what keeps `git clone && uvicorn`
-working with no configuration.
+**In DEMO MODE (the default) every password is published on the login page** -
+each account's password is its own ID, the Registrar's is "registrar" - so a
+public deployment in demo mode is still a public demo over synthetic data,
+nothing more. VIDYAERP_DEMO_LOGINS=0 turns that off; then only passwords that
+were actually set, or VIDYAERP_ADMIN_PASSWORD for the Registrar, work.
+
+VIDYAERP_ADMIN_TOKEN is an alternative to a Registrar session for the two
+operator endpoints: /api/seed/reset (wipes and rebuilds the database) and
+/api/mcp/approval (mints the human half of the MCP write gate).
 """
 import os, json, datetime as dt
 from fastapi import FastAPI, Body, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-import db, orchestrator as orch, llm, llm_agent, solver, mcp_server, tools, campus
+import db, orchestrator as orch, llm, llm_agent, solver, mcp_server, tools, campus, auth
 from agents import (rows, one, fac_name, PERIOD_TIME, TimetableAgent, AnalyticsAgent,
                     RequestAgent, Auditor)
 from nlu import TODAY, DAYS, day_of
@@ -27,10 +29,26 @@ from nlu import TODAY, DAYS, day_of
 HERE = os.path.dirname(os.path.abspath(__file__))
 db.seed()
 con = db.connect()
+auth.ensure(con)
 
 app = FastAPI(title="VidyaERP", docs_url="/api/docs")
 
 ADMIN_TOKEN = (os.environ.get("VIDYAERP_ADMIN_TOKEN") or "").strip()
+
+
+@app.middleware("http")
+async def signed_in(request: Request, call_next):
+    """Attach the signed-in person, then let auth.gate decide. Pages redirect
+    to /login; API calls get a JSON 401/403."""
+    user = auth.session_user(con, request.cookies.get(auth.COOKIE))
+    request.state.user = user
+    verdict = auth.gate(request.url.path, user, dict(request.headers), ADMIN_TOKEN)
+    if verdict:
+        status, reason = verdict
+        if not request.url.path.startswith("/api/") and status == 401:
+            return RedirectResponse("/login", status_code=303)
+        return JSONResponse({"error": reason}, status_code=status)
+    return await call_next(request)
 
 
 def _git_head(root):
@@ -94,13 +112,18 @@ COMMIT, BRANCH, COMMIT_SOURCE = resolve_build()
 
 
 def _denied(request):
-    """None if the caller may use an operator endpoint, else a 401 response."""
-    if not ADMIN_TOKEN:
-        return None                      # unset: local development, stays open
-    if request.headers.get("X-Admin-Token", "") == ADMIN_TOKEN:
+    """None if the caller may use an operator endpoint, else a 401 response.
+
+    The middleware already applied auth.gate; this repeats the same rule at
+    the handler so the endpoint is safe even when called directly (as the
+    suite does). A Registrar session or the admin token - nothing else. Before
+    logins existed (#27) an unset token left these open; with logins, an
+    anonymous caller being able to wipe the database would be indefensible."""
+    user = getattr(getattr(request, "state", None), "user", None)
+    if auth.gate("/api/seed/reset", user, dict(request.headers), ADMIN_TOKEN) is None:
         return None
-    return JSONResponse({"error": "operator endpoint — send the X-Admin-Token header"},
-                        status_code=401)
+    return JSONResponse({"error": "operator endpoint — sign in as the Registrar or send the "
+                                  "X-Admin-Token header"}, status_code=401)
 
 
 @app.get("/health")
@@ -141,32 +164,152 @@ def health():
                "persistent": bool((os.environ.get("VIDYAERP_DB") or "").strip())},
         "engine": "llm" if cfg.enabled else "rule-engine",
         "llm": {"configured": cfg.enabled, "provider": cfg.provider, "model": cfg.model},
-        "operator_endpoints": "token-protected" if ADMIN_TOKEN else "open",
+        "operator_endpoints": "registrar-session-or-token" if ADMIN_TOKEN else "registrar-session",
+        # Demo mode publishes every password on the login page. Say so here too:
+        # a deployment's security posture should be readable, not inferred.
+        "auth": {"logins": True, "mode": "demo" if auth.demo_mode() else "strict",
+                 "passwords_published": auth.demo_mode()},
     }, status_code=200 if ok else 503)
 
 
-@app.get("/", response_class=HTMLResponse)
-def index():
-    # encoding is explicit on purpose: the console contains typographic quotes and
+def _page(name):
+    # encoding is explicit on purpose: the pages contain typographic quotes and
     # '·' separators, and Windows defaults open() to cp1252, which cannot decode
     # them - the whole page 500s on a byte the file has always carried.
-    with open(os.path.join(HERE, "static", "index.html"), encoding="utf-8") as f:
+    with open(os.path.join(HERE, "static", name), encoding="utf-8") as f:
         return f.read()
 
 
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request):
+    """The Registrar gets the console; everyone else the self-service portal."""
+    user = getattr(request.state, "user", None)
+    return _page("index.html" if user and user["role"] == "admin" else "portal.html")
+
+
+@app.get("/portal", response_class=HTMLResponse)
+def portal_page():
+    return _page("portal.html")
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page():
+    return _page("login.html")
+
+
+# ------------------------------------------------------------------ sign-in
+def _cookie(resp, request, token, age):
+    secure = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
+    resp.set_cookie(auth.COOKIE, token, max_age=age, httponly=True, samesite="lax", secure=secure, path="/")
+
+
+def _public(p):
+    return {k: p[k] for k in ("id", "role", "name", "dept", "usn", "sem", "section", "fid", "designation") if k in p}
+
+
+@app.post("/api/auth/login")
+def login(request: Request, payload: dict = Body(default={})):
+    ip = request.client.host if request.client else "?"
+    p, token = auth.login(con, payload.get("username", ""), payload.get("password", ""),
+                          key=f"{(payload.get('username') or '').lower()}@{ip}")
+    if not p:
+        return JSONResponse({"error": token}, status_code=401)
+    Auditor().log(con, p["id"], "Auth", "login", {"role": p["role"]}, "ok")
+    resp = JSONResponse({"user": _public(p), "home": "/"})
+    _cookie(resp, request, token, auth.SESSION_HOURS * 3600)
+    return resp
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request):
+    auth.logout(con, request.cookies.get(auth.COOKIE))
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(auth.COOKIE, path="/")
+    return resp
+
+
+@app.get("/api/auth/me")
+def me(request: Request):
+    return {"user": _public(request.state.user), "demo": auth.demo_mode()}
+
+
+@app.get("/api/auth/demo")
+def demo_accounts():
+    """Sample accounts for the login page - only while demo mode publishes
+    passwords anyway. In strict mode this says nothing."""
+    if not auth.demo_mode():
+        return {"demo": False, "accounts": []}
+    hod = one(con, "SELECT id, name, dept FROM faculty WHERE is_hod=1 ORDER BY id LIMIT 1")
+    fac = one(con, "SELECT f.id, f.name, f.dept FROM faculty f WHERE is_hod=0 AND EXISTS "
+                   "(SELECT 1 FROM students s WHERE s.mentor=f.id) ORDER BY f.id LIMIT 1")
+    stu = one(con, "SELECT usn, name, dept, sem, section FROM students WHERE hostel=1 AND sem=5 ORDER BY usn LIMIT 1")
+    fin = one(con, "SELECT usn, name, dept FROM students WHERE sem=7 AND backlogs=0 AND cgpa>=7.5 ORDER BY usn LIMIT 1")
+    acc = [{"role": "Registrar", "username": "registrar", "who": "Institution administrator"},
+           {"role": "HOD", "username": hod["id"], "who": f"{hod['name']} · {hod['dept']}"},
+           {"role": "Faculty", "username": fac["id"], "who": f"{fac['name']} · {fac['dept']}"},
+           {"role": "Student", "username": stu["usn"], "who": f"{stu['name']} · {stu['dept']}-{stu['sem']}{stu['section']}"},
+           {"role": "Final-year student", "username": fin["usn"], "who": f"{fin['name']} · {fin['dept']}-7"}]
+    for a in acc:
+        a["password"] = auth.demo_password(a["username"])
+    return {"demo": True, "accounts": acc,
+            "note": "Demo mode: every account's password is its own ID in lower case. Synthetic data."}
+
+
+@app.post("/api/auth/password")
+def change_password(request: Request, payload: dict = Body(default={})):
+    user = request.state.user
+    new = payload.get("new") or ""
+    if not auth.verify_password(con, user, payload.get("current") or ""):
+        return JSONResponse({"error": "Current password is wrong."}, status_code=400)
+    if len(new) < 8 or new.lower() == auth.demo_password(user["id"]):
+        return JSONResponse({"error": "Use at least 8 characters, and not your ID."}, status_code=400)
+    auth.set_password(con, user["id"], new)
+    Auditor().log(con, user["id"], "Auth", "password.change", {}, "ok")
+    return {"ok": True}
+
+
+@app.post("/api/auth/reset")
+def reset_password(payload: dict = Body(default={})):
+    """Registrar only (auth.gate). The temporary password is returned to the
+    Registrar's screen once - never logged, never shown to a model."""
+    pw = auth.temporary_password(con, payload.get("username", ""))
+    if not pw:
+        return JSONResponse({"error": "No such account."}, status_code=404)
+    Auditor().log(con, "registrar", "Auth", "password.reset", {"username": payload.get("username")}, "issued")
+    return {"username": payload.get("username"), "temporary_password": pw,
+            "note": "Shown once. Their existing sessions were signed out."}
+
+
+@app.get("/api/me/home")
+def my_home(request: Request):
+    S = {"pending": None, "history": [], "ctx": {}, "user": request.state.user}
+    r = tools.execute(con, S, "", "my_home", {})
+    return {"blocks": r.get("blocks", []), "chips": r.get("chips", []), "data": r.get("data")}
+
+
+def _sid(user, sid):
+    """The chat session belongs to the signed-in person. Keying it by the
+    client's id alone would let anyone answer "yes" to someone else's pending
+    write by sending their session id."""
+    return f"{user['id']}::{sid or 'default'}"
+
+
 @app.post("/api/chat")
-def chat(payload: dict = Body(...)):
-    """Routes to the LLM agent when a key is configured, else the deterministic rule engine."""
+def chat(request: Request, payload: dict = Body(...)):
+    """Routes to the LLM agent when a key is configured, else the deterministic rule engine.
+    The role is the SESSION's, never a field the client sends."""
+    user = request.state.user
     text = (payload.get("text") or "").strip()
-    sid = payload.get("session", "default")
-    role = payload.get("role", "admin")
+    sid = _sid(user, payload.get("session"))
     if not text:
         return {"blocks": [], "trace": []}
+    S = orch.sess(sid)
+    S["user"] = None if user["role"] == "admin" else user   # admin: unrestricted, as before
     want = payload.get("engine")                      # 'llm' | 'rule' | None (auto)
     use_llm = llm.CFG.reload().enabled if want in (None, "auto") else (want == "llm")
     if use_llm and llm.CFG.enabled:
-        return llm_agent.handle_llm(con, text, sid, role)
-    out = orch.handle(con, text, sid, role)
+        return llm_agent.handle_llm(con, text, sid, user["role"], actor=user["id"])
+    out = orch.handle(con, text, sid, user["role"], actor=user["id"])
     out["engine"] = "rule-engine"
     return out
 
@@ -182,8 +325,8 @@ def mode_test():
 
 
 @app.post("/api/reset")
-def reset(payload: dict = Body(default={})):
-    orch.SESS.pop(payload.get("session", "default"), None)
+def reset(request: Request, payload: dict = Body(default={})):
+    orch.SESS.pop(_sid(request.state.user, payload.get("session")), None)
     return {"ok": True}
 
 

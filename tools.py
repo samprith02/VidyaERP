@@ -10,7 +10,7 @@ Write-tools are wrapped by PolicyGuard: they refuse to commit unless the admin
 gave explicit approval **in the current turn**. The model cannot talk its way past this.
 """
 import re, datetime as dt
-import nlu, db, solver, agents, campus
+import nlu, db, solver, agents, campus, portal, access
 from nlu import TODAY, day_of
 from agents import (rows, one, fac_name, subj_name, plabel, _span, PERIOD_SPAN,
                     SubstitutionAgent, TimetableAgent, FacultyAgent, StudentAgent,
@@ -28,7 +28,7 @@ from guard import APPROVAL_RX, approved_this_turn                  # noqa: F401
 # a new write tool cannot quietly land outside the gate. The campus services
 # contribute theirs from campus.GATED_WRITES - listed there, next to the tools.
 GATED_WRITES = ("apply_coverage_plan", "apply_timetable_generation", "decide_request",
-                "create_request", "broadcast_notice") + campus.GATED_WRITES
+                "create_request", "broadcast_notice") + campus.GATED_WRITES + portal.GATED_WRITES
 
 
 def inr(n):
@@ -624,6 +624,9 @@ REGISTRY = [
 # Student 360 and the Ops radar. Same registry, so the same execute(), the same
 # gate and the same MCP surface - there is no second way in for them either.
 REGISTRY += campus.REGISTRY
+# Self-service for students, faculty and HODs (#27). Who may call what is
+# access.py's decision, enforced below in execute().
+REGISTRY += portal.REGISTRY
 
 FUNCS = {name: fn for fn, name, _d, _s in REGISTRY}
 
@@ -641,7 +644,7 @@ TOOL_AGENT = {
     "apply_coverage_plan": "SubstitutionAgent", "undo_last_change": "SubstitutionAgent",
     "plan_timetable_generation": "TimetableAgent", "apply_timetable_generation": "TimetableAgent",
     "decide_request": "RequestAgent", "create_request": "RequestAgent",
-    "broadcast_notice": "NotifyAgent", **campus.AGENT_OF}
+    "broadcast_notice": "NotifyAgent", **campus.AGENT_OF, **portal.AGENT_OF}
 
 
 def agent_of(name):
@@ -676,6 +679,19 @@ def execute(con, S, U, name, args=None):
     fn = FUNCS.get(name)
     if fn is None:
         return {"data": {"error": f"unknown tool {name}"}, "blocks": [], "trace": []}
+    # WHO may do this, on WHOSE data (#27). The web always puts the signed-in
+    # person on the session; no principal means an operator (MCP over stdio,
+    # the suites, internal code) and is unrestricted. A refusal is the guard
+    # working - DENIED, drawn as a warning, never as a tool failure.
+    P = (S or {}).get("user")
+    if P and P.get("role") != "admin":
+        try:
+            args, why = access.authorize(con, P, name, dict(args or {}))
+        except Exception as e:                       # a scope rule that errs refuses
+            args, why = None, f"access check failed: {type(e).__name__}"
+        if why:
+            return {"data": {"DENIED": why}, "blocks": [B_text(f"🔒 {why}")],
+                    "trace": [("PolicyGuard", "access_denied", f"{P['role']} {P['id']} → {name}: {why}", "warn")]}
     try:
         return fn(con, S, U, **(args or {}))
     except Exception as e:
@@ -724,6 +740,12 @@ BY_NAME = {sch["function"]["name"]: sch for sch in SCHEMAS}
 
 def select_tools(text, session=None, limit=9):
     """Return the subset of tool schemas worth offering for this utterance."""
+    menu = access.allowed_tools((session or {}).get("user"))
+    if menu is not None:
+        # A non-admin is offered exactly what their role may call - small by
+        # construction, so no narrowing is needed. execute() refuses anything
+        # else anyway; this only keeps the model from wasting a hop on it.
+        return [BY_NAME[n] for n in menu if n in BY_NAME], menu
     picked, ranked = [], nlu.classify(text or "")
     for intent, score, _hits in ranked[:2]:
         for name in TOOL_GROUPS.get(intent, []):
