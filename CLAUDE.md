@@ -27,7 +27,8 @@ key into `.env` (gitignored) and the LLM agent takes over — same guardrails ei
 ## Architecture in one pass
 
 `app.py` routes → `orchestrator.py` (rule engine) **or** `llm_agent.py` (model plans and calls
-tools) → `tools.py` (47 tool schemas, PolicyGuard-wrapped) → `agents.py` + `campus.py` (the specialists).
+tools) → `tools.py` (56 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
++ `portal.py` (the specialists). Everyone signs in first (`auth.py`).
 
 | Piece | Where | Note |
 |---|---|---|
@@ -37,6 +38,9 @@ tools) → `tools.py` (47 tool schemas, PolicyGuard-wrapped) → `agents.py` + `
 | Auditor | `agents.py` (`class Auditor`) | immutable ledger of who asked, which agent acted, what changed |
 | Campus services | `campus.py` | library, hostel, transport, gate pass, placement, documents, leave review, Student 360, Ops radar — tools + `rule_route` |
 | Campus data | `campus_data.py` | their tables + seed, own `Random`; `ensure()` is additive to an old DB |
+| Sign-in | `auth.py` | principals from the data, PBKDF2, hashed session tokens, `gate()` for every route |
+| Role policy | `access.py` | default-deny per role; rules that NARROW arguments or refuse |
+| Self-service | `portal.py` | student / faculty / HOD tools + rule routing; acts only for `S["user"]` |
 | Write gate | `guard.py` | `approved_this_turn` lives here so every tool module can import it; `tools` re-exports it |
 | MCP surface | `mcp_server.py` | stdio JSON-RPC; `call_as` delegates to `tools.execute`. No SDK |
 | Solver | `solver.py` | timetable generation from scratch (below) |
@@ -49,16 +53,17 @@ the exception on the rule side: `orchestrator.h_campus` picks a tool with `campu
 runs it through `tools.execute`, so for them all three callers share one path. The parity that is
 actually enforced is between the **LLM agent and MCP** — both reach `tools.execute` and cannot
 differ, which is what `tests/mcp_parity.py` asserts.
-`tools.select_tools()` narrows 47 tools to ~4–9 per utterance (−64% payload) — free tiers are
+`tools.select_tools()` narrows 56 tools to ~4–9 per utterance (a non-admin is offered exactly their role's menu) (−64% payload) — free tiers are
 stingy and this is what keeps multi-hop turns inside the budget.
 
 ---
 
 ## Rules that matter here
 
-- **Writes are guarded, and the guard is in code, not in the prompt.** *Sixteen* write tools —
+- **Writes are guarded, and the guard is in code, not in the prompt.** *Nineteen* write tools —
   `tools.GATED_WRITES`: the five core ones (`apply_coverage_plan`, `apply_timetable_generation`,
-  `decide_request`, `create_request`, `broadcast_notice`) plus the eleven in `campus.GATED_WRITES`
+  `decide_request`, `create_request`, `broadcast_notice`), the eleven in `campus.GATED_WRITES` and the
+  three in `portal.GATED_WRITES`
   — refuse to commit without explicit admin approval *in the current turn*
   (`guard.approved_this_turn`, re-exported as `tools.approved_this_turn`). `tests/mock_llm.py` has a
   rogue-agent endpoint that tries to skip the gate and is blocked. **Never** add a write path that
@@ -99,13 +104,35 @@ stingy and this is what keeps multi-hop turns inside the budget.
   on-premise, which counts as distribution. There is deliberately **no LLM SDK**: `llm.py` speaks
   OpenAI-compatible HTTP over `urllib`, so any provider works and nothing needs upgrading when a
   vendor changes its client. Think hard before adding a third dependency.
-- **The console has no authentication, and that is the security model.** No login, and
-  `/api/chat` can drive every write. Anyone who can reach the URL is the Registrar — correct for a
-  laptop or a college LAN, and it makes any public deployment a demo over synthetic data, not a
-  system of record. Say this plainly rather than implying otherwise; `tests/deploy_test.py:4j`
-  asserts the docs still say it. `VIDYAERP_ADMIN_TOKEN` closes only the two *operator* endpoints
-  (`/api/seed/reset`, `/api/mcp/approval`) — an open approval endpoint would hand the MCP write
-  gate to whoever found it, which would contradict a claim this project makes about itself.
+- **Everyone signs in (#27, replacing the old no-login model, #22).** Registrar → console;
+  student / faculty / HOD → portal. **Demo mode is the default and publishes every password on the
+  login page** (each account's own ID; `registrar`), so a public deployment in demo mode is still
+  a demo over synthetic data, not a system of record — say so plainly; `deploy_test.py:4k` and
+  `/health`'s `auth.passwords_published` hold it down. `VIDYAERP_DEMO_LOGINS=0` = strict mode: only
+  set passwords, and `VIDYAERP_ADMIN_PASSWORD` for the Registrar. No auth library: PBKDF2 from
+  `hashlib`, a random token in an HttpOnly SameSite=Lax cookie, only its SHA-256 stored.
+- **Who may do what is decided in `tools.execute`, by `access.py`, per call.** Default deny: a tool
+  not listed for a role is refused for it. A rule may only NARROW (fill in "me" / "my department")
+  or refuse — never widen. A refusal is `DENIED` with a `warn` trace step: the guard working, not a
+  tool failure. **No principal on the session = an operator** (MCP over stdio, the suites, internal
+  code) and is unrestricted; the web always sets one. The rule engine never runs its admin handlers
+  for a non-admin (`orchestrator.portal_turn`), and the LLM is offered only the role's tools.
+- **Every route passes `auth.gate(path, user, headers, token)`** — one pure function, so
+  `auth_test.py` 2a–2h check it against every route the app actually registers. A new route is
+  Registrar-only unless added to `PUBLIC` or `ANY_USER`. The operator endpoints accept a Registrar
+  session or `VIDYAERP_ADMIN_TOKEN`; before logins existed they were open with no token, which
+  with logins would let any student wipe the database (`deploy_test.py:4a`).
+- **The chat session belongs to the signed-in person, and so does the role.** `app._sid` keys it
+  by user id; `/api/chat` ignores any `role` in the body. Keying by the client's session id alone
+  would let anyone answer "yes" to someone else's pending write (`auth_test.py:5b`).
+- **A self-service write needs its proposal staged first** (`portal._staged`). People ask for
+  leave with "apply for leave", and "apply" is an approval word — without this the request
+  sentence confirmed itself and the leave was filed before its timetable impact was shown. Found
+  by driving the portal in a browser. The Registrar's tools keep the older rule on purpose
+  ("approve 3" is an instruction). Self-service tools read the person from `S["user"]`, never from
+  an argument.
+- **`VIDYAERP_ADMIN_TOKEN`** remains the non-session way into the two operator endpoints — an open
+  approval endpoint would hand the MCP write gate to whoever found it.
 - **The real environment beats `.env`.** `llm.py`'s config reads `os.environ` first and `.env`
   second. It used to be the other way round, which meant a stale `.env` inside an image would
   silently shadow a platform dashboard with nothing in the UI to show why
@@ -166,6 +193,15 @@ ships a timetable back.
 
 ## Gotchas that have cost real time
 
+- **Never write backslashes through a shell heredoc.** On 2026-09-25 heredocs three times turned
+  `\b` into a literal U+0008 and `\n` into a real newline inside a Python string. One made a test
+  vacuous without anyone noticing (#47). Write such edits with the file tools;
+  `campus_test.py:10f` fails if any source file carries a stray backspace.
+- **To see a signed-in page headlessly, drive Edge over DevTools** (Node 22 has a native
+  `WebSocket`): sign in through the real form, then evaluate and click. A plain
+  `--screenshot` cannot carry a session cookie, and headless Edge stops firing animation frames
+  after ~100 — which is why `mesh.js` also steps from a timer when frames stall.
+
 - **Always pass `encoding="utf-8"` to `open()`.** Windows defaults to cp1252 and the console
   contains typographic quotes and `·` separators. `app.py` served a 500 on the whole page for
   exactly this reason.
@@ -223,11 +259,12 @@ ships a timetable back.
 
 ```bash
 python tests/solver_test.py    # 44 assertions, no server, no API cost
-python tests/mcp_parity.py     # 240 assertions, no server, no API cost
-python tests/campus_test.py    # 121 assertions, no server, no API cost
+python tests/mcp_parity.py     # 254 assertions, no server, no API cost
+python tests/campus_test.py    # 122 assertions, no server, no API cost
 python tests/mesh_test.py      # 22 assertions, no server, no API cost
+python tests/auth_test.py      # 77 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
-python tests/deploy_test.py    # 64 assertions, no server, no API cost
+python tests/deploy_test.py    # 68 assertions, no server, no API cost
 python tests/nlu_test.py       # 15 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, no API cost
 python tests/live_llm.py       # 6 real-model queries; costs tokens

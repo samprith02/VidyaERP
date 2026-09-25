@@ -3,7 +3,7 @@ VidyaERP :: Orchestrator (Supervisor agent)
 Routes an utterance through the agent mesh and composes the response payload.
 """
 import re, json, datetime as dt
-import nlu, campus, tools
+import nlu, campus, tools, portal
 from nlu import TODAY, day_of
 from agents import *
 from agents import _span, plabel
@@ -41,6 +41,17 @@ def handle(con, text, sid="default", role="admin", actor="admin@vidyatech"):
     tr = Trace()
     guard, auditor = PolicyGuard(), Auditor()
     tr.add("Supervisor", "receive", f'"{text[:90]}"')
+
+    # A student, teacher or HOD never reaches the handlers below: those read
+    # the institution directly. Their turns go through portal routing and
+    # tools.execute, where access.py decides what they may see (#27).
+    P = st.get("user")
+    if P and P.get("role") != "admin":
+        out = portal_turn(con, text, st, tr, P)
+        out["trace"] = tr.items
+        auditor.log(con, P["id"], out.get("agent", "Supervisor"), out.get("intent", "portal"), {"q": text},
+                    "answered")
+        return out
 
     # ---------------- pending confirmation branch (HITL) ----------------
     if st["pending"]:
@@ -268,6 +279,61 @@ def _relay(tr, res, tool):
     failed = tools.failure_of(res)
     if failed:
         tr.add(tools.agent_of(tool), "tool_error", failed[:160], status="error")
+
+
+def portal_turn(con, text, st, tr, P):
+    """One turn for a non-admin, on the rule engine. Every tool it runs goes
+    through tools.execute, so the access policy applies to each call."""
+    tr.add("PolicyGuard", "principal", f"{P['role']} {P['id']}" + (f" · {P['dept']}" if P.get("dept") else "")
+           + " · default-deny tool policy")
+    p = st.get("pending")
+    if p and (nlu.is_confirmation(text) or nlu.plan_choice(text) is not None):
+        if nlu.is_no(text) and not nlu.is_yes(text):
+            st["pending"] = None
+            return {"blocks": [B_text("Discarded — nothing was written.")], "agent": "Supervisor",
+                    "intent": "hitl", "confidence": 95, "chips": _portal_chips(P)}
+        if nlu.is_yes(text) or nlu.plan_choice(text) is not None:
+            if p["kind"] == "tool_commit":
+                tool, args = p["tool"], p.get("args", {})
+            elif p["kind"] == "absence_plans":           # an HOD approving their own staged plan
+                m = re.search(r"\b(?:plan|option)?\s*\b([abc])\b", text.lower())
+                tool, args = "apply_coverage_plan", {"plan_code": (m.group(1) if m else "a").upper()}
+            else:
+                tool, args = None, None
+            if tool:
+                res = tools.execute(con, st, text, tool, args)
+                _relay(tr, res, tool)
+                if st.get("pending") is p:
+                    st["pending"] = None
+                return {"blocks": res.get("blocks") or [B_text(_data_text(res.get("data")))],
+                        "agent": tools.agent_of(tool), "intent": "hitl", "confidence": 97,
+                        "refresh": res.get("refresh", False), "chips": res.get("chips") or _portal_chips(P)}
+    ent = {"usn": nlu.extract_usn(text), "dept": nlu.extract_dept(text), "sem": nlu.extract_sem(text),
+           "section": nlu.extract_section(text), "periods": nlu.extract_periods(text),
+           "date": nlu.parse_date(text)[0],
+           "faculty": nlu.match_faculty(text, rows(con, "SELECT id,name,dept,designation,expertise,max_load "
+                                                         "FROM faculty"))[0]}
+    tool, args = portal.route(con, text, P, ent)
+    if not tool:
+        tr.add("Router", "no_confident_intent", "showing what this account can do", status="warn")
+        return {"blocks": [B_text(f"Here is what I can do for you, {P['name'].split()[0] if P['role'] == 'student' else P['name']}:"),
+                           B_table(["Area", "Try saying"], portal.HELP[P["role"]])],
+                "agent": "Supervisor", "intent": "help", "confidence": 40, "chips": _portal_chips(P)}
+    tr.add("ToolRouter", "select", (f"{tool}(" + ", ".join(f"{k}={v!r}" for k, v in args.items()
+                                                          if v not in (None, "", [], False)))[:90] + ")")
+    res = tools.execute(con, st, text, tool, args)
+    _relay(tr, res, tool)
+    blocks = res.get("blocks") or [B_text(_data_text(res.get("data")))]
+    return {"blocks": blocks, "agent": tools.agent_of(tool), "intent": tool, "confidence": 90,
+            "refresh": res.get("refresh", False), "chips": res.get("chips") or _portal_chips(P)}
+
+
+def _portal_chips(P):
+    return {"student": ["My day", "My timetable", "Request a gate pass for Saturday 2pm to 7pm",
+                        "My no-dues status", "My requests"],
+            "faculty": ["My day", "My timetable", "My mentees", "Apply for casual leave on 10 sep", "My leave"],
+            "hod": ["Department overview", "Pending leave applications", "Faculty workload", "My day"]}.get(
+        P["role"], ["My day"])
 
 
 def _data_text(d):

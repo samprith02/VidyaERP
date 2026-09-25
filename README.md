@@ -64,7 +64,7 @@ Presets for OpenAI, Groq, OpenRouter, Together, DeepSeek, Gemini-compat and loca
 listed in `.env.example`. No SDK is installed — `llm.py` talks raw HTTP over `urllib`, so there
 is nothing to `pip install`. Restart the server and the badge flips to green.
 
-**The 47 tools the model can call** — 22 academic/admin:
+**The 56 tools the model can call** (a student, teacher or HOD is offered only their role's) — 22 academic/admin:
 `institution_overview · get_timetable · faculty_timetable · find_free_faculty · find_free_rooms ·
 faculty_profile · faculty_workload · student_lookup · attendance_defaulters · fee_summary ·
 exam_schedule · exam_eligibility · list_requests · list_leaves · plan_absence_coverage ·
@@ -75,7 +75,9 @@ return_book · library_remind_overdue · hostel_status · hostel_complaints · a
 dispatch_hostel_complaints · transport_status · rebalance_bus_routes · handle_bus_breakdown ·
 gate_pass_queue · decide_gate_passes · placement_overview · drive_eligibility ·
 publish_drive_shortlist · no_dues_status · issue_certificate · certificate_register ·
-review_pending_leaves · decide_leave`. **16 of the 47 are writes, and every one is gated.**
+review_pending_leaves · decide_leave` — and 9 self-service (§5c): `my_home · my_requests · my_placement ·
+request_gate_pass · request_certificate · my_mentees · my_leaves · apply_leave · dept_overview`.
+**19 of the 56 are writes, and every one is gated.**
 
 **Write-guard, proven by test:** `tests/mock_llm.py` includes a *rogue agent* endpoint that tries
 to call `apply_coverage_plan` with no admin approval. PolicyGuard returns `{"BLOCKED": ...}`,
@@ -92,7 +94,7 @@ multi-hop turn was spending 7,196 of them. Four things fixed that:
 
 | Technique | Effect |
 |---|---|
-| **Tool router** — the rule-engine NLU pre-selects ~4–9 of the 47 tools per utterance | tool payload **−64%**, and the model picks better from a short menu |
+| **Tool router** — the rule-engine NLU pre-selects ~4–9 of the 56 tools per utterance | tool payload **−64%**, and the model picks better from a short menu |
 | **Prompt diet** — live-context preamble trimmed, history 8→4 turns, tool results capped at 2.8 KB | system prompt ~1,500 → ~600 tokens |
 | **Model failover chain** — `LLM_FALLBACK_MODELS`, tried in order on 429/5xx/`tool_use_failed` | quotas are *per model*, so the chain multiplies usable throughput |
 | **Nullable optional params** — every non-required arg accepts `null` | models emit `{"dept": null}` constantly; strict validators 400 on it. 41 params were latent landmines |
@@ -103,7 +105,7 @@ if the whole chain is exhausted by falling back to the rule engine with an hones
 The trace shows exactly which of these happened:
 
 ```
-· ToolRouter    narrow_toolset    7 of 47 tools offered: plan_absence_coverage, …
+· ToolRouter    narrow_toolset    7 of 56 tools offered: plan_absence_coverage, …
 · LLM Planner   reason (hop 1)    openai/gpt-oss-120b · 1032→107 tok · 513ms
 · LLM Planner   model_failover    primary rate-limited → answered on qwen/qwen3.8-27b
 ```
@@ -112,11 +114,12 @@ The trace shows exactly which of these happened:
 
 ```bash
 python3 tests/solver_test.py  # timetable solver: 44 assertions, no server, no API cost
-python3 tests/mcp_parity.py   # MCP guard parity: 240 assertions, no server, no API cost
-python3 tests/campus_test.py  # campus services: 121 assertions, no server, no API cost
+python3 tests/mcp_parity.py   # MCP guard parity: 254 assertions, no server, no API cost
+python3 tests/campus_test.py  # campus services: 122 assertions, no server, no API cost
 python3 tests/mesh_test.py    # the agent mesh's fault channel: 22 assertions, no server, no API cost
+python3 tests/auth_test.py    # logins, route gating, per-role policy: 77 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
-python3 tests/deploy_test.py  # deployment readiness: 64 assertions, no server, no API cost
+python3 tests/deploy_test.py  # deployment readiness: 68 assertions, no server, no API cost
 python3 tests/nlu_test.py     # date resolution: 15 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
@@ -271,6 +274,23 @@ Transport, Gate Passes, Placements, Documents). Those pages render what the owni
 **read** tools return via `/api/panel/{tool}`, which lists reads only and passes an empty turn —
 so a page can never commit anything; its buttons hand the job to the agent in the chat.
 
+### 5c. Everyone signs in — students, faculty and HODs get their own portal
+
+`/login` → the Registrar lands on the console; everyone else on a mobile-first portal with their
+own day on one side and the assistant on the other. **Each sees only what their role allows**, and
+that is decided per tool call in `tools.execute` (`access.py`), not in the UI or the prompt:
+
+| Role | Their day | They can ask the agents to… |
+|---|---|---|
+| **Student** | today's classes, attendance by subject, dues, library books, next exam | file a **gate pass** (pre-screened by GatePassAgent), request a **certificate** (eligibility pre-checked by DocumentAgent), see placement eligibility, track requests |
+| **Faculty** | today's classes, load, mentees who need a conversation | **apply for leave with the timetable impact attached** (HRAgent runs the substitution planner for each day), see mentees and their own leave |
+| **HOD** | the above, plus the department's leave queue | department overview, workload and defaulters (their department only), **decide their department's leave**, plan absence cover for their own staff |
+
+Nothing a person files goes in until they confirm it in a *later* message — asking to "apply for
+leave" shows the impact first; the next "yes" files it. A student asking a Registrar question gets
+a polite refusal, not someone else's data; `tests/auth_test.py` checks that no other student's USN
+appears in any answer to a student.
+
 ### 5b. The agent mesh, in 3D
 
 The chat's right rail and the **Agent Mesh · 3D** page draw every agent in 3D and replay each
@@ -324,7 +344,7 @@ commit a write on your click.
 
 ### 6a. Driving the ERP from Claude Desktop (MCP)
 
-`mcp_server.py` puts the same 47 tools in front of any MCP client. Registration — no install
+`mcp_server.py` puts the same 56 tools in front of any MCP client. Registration — no install
 step, because there is no SDK to install:
 
 ```json
@@ -460,14 +480,20 @@ VidyaERP/
 ├── guard.py            approved_this_turn() — the one write gate, importable by every tool module
 ├── orchestrator.py     rule-engine supervisor: routing, HITL state machine
 ├── llm.py              provider-agnostic OpenAI-compatible client (urllib, no SDK)
-├── tools.py            the 47 tool schemas + the single PolicyGuard-wrapped dispatch point
+├── tools.py            the 56 tool schemas + the single dispatch point (gate + role policy)
+├── auth.py             sign-in: principals, PBKDF2, hashed sessions, auth.gate() for every route
+├── access.py           per-role tool policy: default deny, rules that only ever narrow
+├── portal.py           self-service tools for students, faculty and HODs
 ├── llm_agent.py        the LLM reasoning loop (plan → call tools → answer), with failover
 ├── mcp_server.py       MCP surface over stdio JSON-RPC — same tools, same gate, no SDK
 ├── requirements.txt    FastAPI + Uvicorn. That is the entire dependency list
 ├── render.yaml         Render Blueprint — one worker, /health, key from the dashboard
 ├── LICENSE / NOTICE    Apache 2.0, provenance, and the synthetic-data statement
 ├── .env.example        LLM configuration template (.env itself is gitignored)
-├── static/index.html   admin console SPA (zero external assets)
+├── static/index.html   the Registrar's console (zero external assets)
+├── static/portal.html  the student / faculty / HOD portal, mobile-first
+├── static/login.html   sign-in, with the demo accounts listed in demo mode
+├── static/blocks.js    block renderers shared by the console and the portal
 ├── static/mesh.js      the live 3D agent mesh: canvas projection, playback, fault display
 └── tests/
     ├── smoke.py        end-to-end conversation regression
@@ -478,6 +504,7 @@ VidyaERP/
     ├── nlu_test.py     date resolution — all 7x7 weekday pairs pinned
     ├── campus_test.py  campus rules pinned case by case, routing kept, core data untouched
     ├── mesh_test.py    the fault channel: failures reported, pinned on their owner, holds are not faults
+    ├── auth_test.py    sign-in, every route's gate, per-role policy, self-service writes, session binding
     └── mock_llm.py     fake OpenAI endpoint + rogue-agent guard test
 ```
 
@@ -562,12 +589,14 @@ configured, never what it is.
 Stated here rather than discovered later. None of them is dangerous; all of them decide how this
 may be used.
 
-- **The console has no login.** There is no authentication anywhere, and `/api/chat` can drive
-  every write the copilot offers. Anyone who can reach the URL is the Registrar. That is the right
-  model for a single-admin console on a laptop or a college LAN, and it means a public deployment
-  is a **public demo over synthetic data** — never a system of record. `VIDYAERP_ADMIN_TOKEN`
-  closes the two endpoints that are operator controls rather than console features
-  (`/api/seed/reset`, `/api/mcp/approval`); `render.yaml` generates one automatically.
+- **Everyone signs in — but in demo mode every password is published.** Demo mode is the
+  default (it keeps `git clone && uvicorn` working): each account's password is its own ID, listed
+  on the login page. That makes a public deployment in demo mode a **public demo over synthetic
+  data** — never a system of record — and `/health` reports `auth.passwords_published: true` so it
+  cannot be missed. For real use set `VIDYAERP_DEMO_LOGINS=0` and `VIDYAERP_ADMIN_PASSWORD`; the
+  Registrar then issues temporary passwords from the console (account menu → reset). The two
+  operator endpoints take a Registrar session or `VIDYAERP_ADMIN_TOKEN`, which `render.yaml`
+  generates.
 - **Free instances have an ephemeral filesystem.** `college.db` is rebuilt by `db.seed()` on every
   restart, and free instances spin down when idle, so an applied coverage plan will not be there
   tomorrow. Set `VIDYAERP_DB` to a path on a mounted disk (paid plans) to keep it. `/health`

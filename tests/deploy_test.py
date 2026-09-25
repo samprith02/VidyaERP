@@ -235,8 +235,11 @@ check("3b it reports real row counts, not a hardcoded ok",
 check("3c it names the engine actually in use",
       payload["engine"] in ("llm", "rule-engine"), payload["engine"])
 check("3d it says whether storage survives a restart", "persistent" in payload["db"])
-check("3e it says whether the operator endpoints are protected",
-      payload["operator_endpoints"] in ("open", "token-protected"))
+check("3e it says how the operator endpoints are protected",
+      payload["operator_endpoints"] in ("registrar-session", "registrar-session-or-token"))
+check("3e2 it says whether demo mode publishes passwords (#27)",
+      payload.get("auth", {}).get("passwords_published") in (True, False)
+      and payload["auth"]["mode"] in ("demo", "strict"), str(payload.get("auth")))
 check("3f no key material in /health", "gsk_" not in body_of(h) and SENTINEL not in body_of(h))
 
 
@@ -322,8 +325,25 @@ check("3p the 503 path still reports the build",
 print("\n4 · the two operator endpoints refuse strangers when a token is set")
 print("-" * 78)
 
-check("4a with no token configured they stay open (laptop default)",
-      A.ADMIN_TOKEN == "" and A._denied(FakeRequest()) is None)
+# CHANGED WITH #27. Before logins existed an unset token left these open, which
+# was the laptop default. With logins, an anonymous caller able to wipe the
+# database or mint MCP write approvals would be indefensible: a Registrar
+# session or the token, nothing else.
+check("4a with no token configured, an anonymous caller is refused",
+      A.ADMIN_TOKEN == "" and getattr(A._denied(FakeRequest()), "status_code", None) == 401)
+
+
+class SignedIn(FakeRequest):
+    def __init__(self, role, headers=None):
+        super().__init__(headers)
+        self.state = type("S", (), {"user": {"id": "x", "role": role}})()
+
+
+check("4a2 a Registrar session is admitted without any token",
+      A._denied(SignedIn("admin")) is None)
+check("4a3 a student or HOD session is refused",
+      getattr(A._denied(SignedIn("student")), "status_code", None) == 401
+      and getattr(A._denied(SignedIn("hod")), "status_code", None) == 401)
 
 A.ADMIN_TOKEN = "s3cret-operator-token"
 try:
@@ -354,9 +374,14 @@ try:
 finally:
     A.ADMIN_TOKEN = ""
 
-check("4j /api/chat is NOT gated — the console has no login, and the docs say so",
-      "no authentication" in open(os.path.join(HERE, "app.py"), encoding="utf-8").read().lower()
-      or "NO LOGIN" in open(os.path.join(HERE, "app.py"), encoding="utf-8").read())
+# CHANGED WITH #27: the old 4j asserted the docs said "no authentication". The
+# claim to hold down now is the opposite pair - chat needs a session, and the
+# docs say plainly that demo mode publishes every password.
+import auth                                                        # noqa: E402
+check("4j /api/chat needs a session", auth.gate("/api/chat", None) == (401, "sign in first"))
+_app_doc = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
+check("4k the docs say demo mode publishes every password",
+      "every password is published" in _app_doc.lower() and "public demo" in _app_doc.lower())
 
 
 # ================================================== 5 · it boots from nothing

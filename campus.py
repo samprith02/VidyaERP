@@ -1158,6 +1158,15 @@ SEM_WORD = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth", 6: "si
             8: "eighth"}
 
 
+def cert_phrase(req_kind):
+    """'Internship' -> 'an internship NOC', 'Conduct' -> 'a conduct certificate' - the sentence a
+    radar button sends, which must route back to the DocumentAgent and carry no approval word."""
+    if req_kind == "Internship":
+        return "an internship NOC"
+    noun = req_kind.lower() if req_kind.endswith("Certificate") else f"{req_kind.lower()} certificate"
+    return ("an " if noun[0] in "aeiou" else "a ") + noun
+
+
 def cert_kind(text):
     for rx, k in CERT_ALIASES:
         if re.search(rx, str(text or ""), re.I):
@@ -1311,8 +1320,8 @@ def t_certificate_register(con, S, U, usn=None, **kw):
     u = _usn(usn) if usn else None
     c = rows(con, "SELECT c.*, s.name FROM certificates c LEFT JOIN students s ON s.usn=c.usn"
              + (" WHERE c.usn=?" if u else "") + " ORDER BY c.id DESC LIMIT 40", (u,) if u else ())
-    pend = rows(con, """SELECT * FROM requests WHERE status='Pending' AND kind IN
-                        ('Bonafide','Conduct','Fee Structure','Transfer Certificate','No Dues','Internship')""")
+    kinds = tuple(v[1] for v in CERT_KINDS.values())
+    pend = rows(con, f"SELECT * FROM requests WHERE status='Pending' AND kind IN ({','.join('?' * len(kinds))})", kinds)
     return {"data": {"issued": len(c), "pending_requests": [{"id": r["id"], "kind": r["kind"],
                                                              "from": r["raised_by"], "title": r["title"]} for r in pend]},
             "blocks": [B_table(["Serial", "Kind", "Student", "Purpose", "Issued"],
@@ -1322,8 +1331,7 @@ def t_certificate_register(con, S, U, usn=None, **kw):
                                   [[f"REQ-{r['id']:04d}", r["kind"], r["raised_by"], r["title"]] for r in pend],
                                   title="Certificate requests waiting in the inbox")] if pend else []),
             "trace": [("DocumentAgent", "register_read", f"{len(c)} issued · {len(pend)} requested")],
-            "chips": [f"Issue {'a bonafide certificate' if r['kind'] == 'Bonafide' else 'an internship NOC'} "
-                      f"for {r['raised_by']}" for r in pend if _usn(r["raised_by"])][:3]}
+            "chips": [f"Issue {cert_phrase(r['kind'])} for {r['raised_by']}" for r in pend if _usn(r["raised_by"])][:3]}
 
 
 # ======================================================================== LEAVES
@@ -1369,14 +1377,17 @@ class LeaveAgent:
         return {"faculty": f, "days": days, "periods": periods, "worst": worst, "rec": rec,
                 "why": why + (" · applied retroactively" if retro else "")}
 
-    def pending(self, con):
+    def pending(self, con, dept=None):
+        if dept:                           # an HOD sees their own department's queue (#27)
+            return rows(con, """SELECT l.* FROM leaves l JOIN faculty f ON f.id=l.faculty
+                                  WHERE l.status='Pending' AND f.dept=? ORDER BY l.from_date""", (dept,))
         return rows(con, "SELECT * FROM leaves WHERE status='Pending' ORDER BY from_date")
 
 
-def t_review_pending_leaves(con, S, U, **kw):
+def t_review_pending_leaves(con, S, U, dept=None, **kw):
     la = LeaveAgent()
     out = []
-    for lv in la.pending(con):
+    for lv in la.pending(con, dept):
         a = la.assess(con, lv)
         out.append((lv, a))
     return {"data": {"pending": len(out),
@@ -1395,7 +1406,7 @@ def t_review_pending_leaves(con, S, U, **kw):
             "chips": ["Approve all pending leaves with coverage", "Who is on leave this week?"]}
 
 
-def t_decide_leave(con, S, U, leave_id=None, decision="approve", **kw):
+def t_decide_leave(con, S, U, leave_id=None, decision="approve", dept=None, **kw):
     la = LeaveAgent()
     dec = "Rejected" if str(decision or "").lower().startswith("rej") else "Approved"
     if leave_id not in (None, ""):
@@ -1407,7 +1418,7 @@ def t_decide_leave(con, S, U, leave_id=None, decision="approve", **kw):
     else:
         if dec == "Rejected":
             return _err("Name the leave to reject (by id) — I do not bulk-reject.")
-        todo = [(lv, a) for lv in la.pending(con) for a in [la.assess(con, lv)] if a["rec"] == "approve"]
+        todo = [(lv, a) for lv in la.pending(con, dept) for a in [la.assess(con, lv)] if a["rec"] == "approve"]
         if not todo:
             return _err("No pending leave is fully coverable — review them one by one.")
     tbl = B_table(["ID", "Faculty", "Dates", "Periods", "Decision", "Why"],
@@ -1573,10 +1584,11 @@ def t_ops_radar(con, S, U, **kw):
                 f"{len(ok)} eligible students", f"Prepare the shortlist for the {d['company']} drive", len(ok))
     tr.append(("PlacementAgent", "drive_scan", "shortlists due within 14 days"))
 
-    for r in rows(con, "SELECT * FROM requests WHERE status='Pending' AND kind IN ('Bonafide','Internship')"):
-        k = "a bonafide certificate" if r["kind"] == "Bonafide" else "an internship NOC"
+    kinds = tuple(v[1] for v in CERT_KINDS.values())
+    for r in rows(con, f"SELECT * FROM requests WHERE status='Pending' AND kind IN ({','.join('?' * len(kinds))})",
+                  kinds):
         add("medium", "Documents", "DocumentAgent", f"{r['kind']} certificate requested by {r['raised_by']}",
-            r["title"], f"Issue {k} for {r['raised_by']} for {r['title'].split(' for ')[-1]}", 1)
+            r["title"], f"Issue {cert_phrase(r['kind'])} for {r['raised_by']} for {r['title'].split(' for ')[-1]}", 1)
     tr.append(("DocumentAgent", "request_scan", "certificate requests in the inbox"))
 
     short = one(con, "SELECT COUNT(*) n FROM students WHERE attendance<75")["n"]
@@ -1691,10 +1703,11 @@ REGISTRY = [
     (t_certificate_register, "certificate_register",
      "Certificates issued (optionally for one USN) and certificate requests waiting.", _p({"usn": _S})),
     (t_review_pending_leaves, "review_pending_leaves",
-     "Pending faculty leave, each priced by running the substitution planner for every day it spans.", _p({})),
+     "Pending faculty leave, each priced by running the substitution planner for every day it spans.",
+     _p({"dept": _S})),
     (t_decide_leave, "decide_leave",
      "Approve/reject a leave by id; with no id, approves every pending leave that is fully coverable. "
-     "PROPOSES without approval.", _p({"leave_id": _I, "decision": _S})),
+     "PROPOSES without approval.", _p({"leave_id": _I, "decision": _S, "dept": _S})),
 ]
 
 GATED_WRITES = ("issue_book", "return_book", "library_remind_overdue", "allocate_hostel_room",

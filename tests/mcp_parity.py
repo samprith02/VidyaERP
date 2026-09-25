@@ -124,6 +124,8 @@ def verdict(result):
         return "ok"
     if "BLOCKED" in d:
         return "blocked"
+    if "DENIED" in d:                       # the per-role policy (#27); never reached over MCP
+        return "denied"
     if "error" in d:
         return "error"
     # broadcast_notice refuses by returning an unsent draft rather than a
@@ -580,6 +582,30 @@ for i, path in enumerate(PATHS):
     st = one(con, "SELECT status FROM gate_passes WHERE id=?", (pend[i],))["status"]
     check(f"16d approved campus write commits · {path}", verdict(r) == "ok" and st == "Approved",
           f"{verdict(r)} / status {st}: {json.dumps(r.get('data'), default=str)[:120]}")
+
+
+# ======================================== 17 · the self-service writes (#27)
+# request_gate_pass, request_certificate and apply_leave act for the SIGNED-IN
+# person. Over MCP there is no signed-in person - the caller is an operator - so
+# they must refuse on every path, write nothing, and refuse the same way.
+print("\n17 · self-service writes have no one to act for over MCP")
+print("-" * 78)
+import portal                                                      # noqa: E402
+
+PORTAL_ARGS = {"request_gate_pass": {"out_at": "2026-09-05 2pm", "return_by": "2026-09-05 7pm"},
+               "request_certificate": {"kind": "Bonafide", "purpose": "passport"},
+               "apply_leave": {"from_date": "2026-09-08"}}
+check("17a every self-service write has a parity probe", set(PORTAL_ARGS) == set(portal.GATED_WRITES))
+check("17b every self-service write is in tools.GATED_WRITES", set(portal.GATED_WRITES) <= set(tools.GATED_WRITES))
+for name, pargs in PORTAL_ARGS.items():
+    vs = {}
+    for path in PATHS:
+        before = campus_snapshot()
+        r = run_path(path, fresh_session(), name, pargs, approves=True)      # even WITH a real approval
+        vs[path] = verdict(r)
+        check(f"17 {name} · {path} · refused, nothing written", vs[path] == "error" and campus_snapshot() == before,
+              f"{vs[path]}: {json.dumps(r.get('data'), default=str)[:120]}")
+    check(f"17 {name} · PARITY", len(set(vs.values())) == 1, str(vs))
 
 
 # ========================================================================= out
