@@ -43,8 +43,9 @@ Honest limits, stated where a reader will see them:
     seat 36 and a CSE section is ~60, because real colleges split a lab into
     batches and this dataset does not model batches. Relaxing silently would hide
     that; `capacity_relaxed` in the result names every class it happened to.
-  * Teacher unavailability is an input the solver honours, but nothing populates
-    it yet - approved leave drives the RESCHEDULING path, not generation.
+  * Teacher unavailability is read from `faculty_availability` (#19): standing
+    weekly windows, which is what a weekly timetable can honour. Approved leave
+    is dated, so it drives the RESCHEDULING path, not generation.
 """
 from __future__ import annotations
 
@@ -138,6 +139,19 @@ class Input:
         self.time_budget_s = 25.0
 
 
+def standing_unavailability(con) -> dict:
+    """teacher id -> {slot} from the active standing windows (#19)."""
+    if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='faculty_availability'").fetchone():
+        return {}
+    out: dict = {}
+    for r in con.execute("SELECT faculty, day, p_from, p_to FROM faculty_availability WHERE status='Active'"):
+        if r["day"] not in DAYS:
+            continue
+        for p in range(max(1, r["p_from"]), min(PMAX, r["p_to"]) + 1):
+            out.setdefault(r["faculty"], set()).add(slot_of(DAYS.index(r["day"]), p))
+    return out
+
+
 def build_input(con, scope="all", dept=None, sem=None, section=None, seed=7,
                 unavailable=None, time_budget_s=25.0) -> Input:
     """Read the institution out of the database and shape it for the solver.
@@ -166,8 +180,9 @@ def build_input(con, scope="all", dept=None, sem=None, section=None, seed=7,
         f["max_per_day"] = max(3, -(-f["max_load"] // 4))
         inp.teacher_meta[f["id"]] = f
         inp.teachers.append(f["id"])
-    inp.unavailable = {t: set(unavailable.get(t, ())) for t in inp.teachers} if unavailable \
-        else {t: set() for t in inp.teachers}
+    if unavailable is None:
+        unavailable = standing_unavailability(con)
+    inp.unavailable = {t: set(unavailable.get(t, ())) for t in inp.teachers}
 
     # ---- subjects (curriculum + the activity codes used by the fill phase)
     for s in rows("SELECT code, name, dept, sem, credits, kind FROM subjects ORDER BY code"):
@@ -996,4 +1011,13 @@ def verify(con, scope="all", dept=None, sem=None, section=None):
                             WHERE room IS NOT NULL
                             GROUP BY day,period,room HAVING n>1"""):
         problems.append(f"ROOM CLASH {r['room']} {r['day']}P{r['period']} x{r['n']}")
+    # A standing window the committed rows teach through (#19). Only for the
+    # classes in scope: a window added after the rest of the college was built
+    # is the admin's known debt there, not this regeneration's failure.
+    if con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='faculty_availability'").fetchone():
+        for r in con.execute("""SELECT t.faculty, t.day, t.period, a.reason FROM timetable t
+                                JOIN faculty_availability a ON a.faculty=t.faculty AND a.day=t.day
+                                 AND t.period BETWEEN a.p_from AND a.p_to AND a.status='Active'"""
+                             + where.replace("WHERE ", "WHERE t.").replace(" AND ", " AND t."), args):
+            problems.append(f"UNAVAILABLE {r['faculty']} {r['day']}P{r['period']} ({r['reason']})")
     return problems

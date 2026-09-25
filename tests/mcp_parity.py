@@ -608,6 +608,44 @@ for name, pargs in PORTAL_ARGS.items():
     check(f"17 {name} · PARITY", len(set(vs.values())) == 1, str(vs))
 
 
+# ======================================== 18 · the academic writes (#19)
+# set_faculty_availability is a gated write like every campus one: refused the
+# same way on all three paths without approval, nothing written; committed on
+# all three with it. Mirrors section 16 for academics.GATED_WRITES.
+print("\n18 · academic writes: same refusal, same commit, every path")
+print("-" * 78)
+import academics                                                   # noqa: E402
+
+ACADEMIC_ARGS = {"set_faculty_availability": {"faculty": "F001", "day": "Sat", "periods": "P3",
+                                              "reason": "parity probe"}}
+check("18a every academic write has a parity probe", set(ACADEMIC_ARGS) == set(academics.GATED_WRITES))
+check("18b every academic write is in tools.GATED_WRITES", set(academics.GATED_WRITES) <= set(tools.GATED_WRITES))
+
+
+def avail_snapshot():
+    return [tuple(r) for r in con.execute("SELECT * FROM faculty_availability ORDER BY id")]
+
+
+for name, aargs in ACADEMIC_ARGS.items():
+    vs = {}
+    for path in PATHS:
+        S = fresh_session()
+        before = avail_snapshot()
+        r = run_path(path, S, name, aargs, approves=False)
+        vs[path] = verdict(r)
+        check(f"18 {name} · {path} · refused, nothing written", vs[path] == "blocked" and avail_snapshot() == before,
+              f"{vs[path]}: {json.dumps(r.get('data'), default=str)[:120]}")
+    check(f"18 {name} · PARITY", len(set(vs.values())) == 1, str(vs))
+for i, path in enumerate(PATHS):
+    S = fresh_session()
+    day = ("Mon", "Tue", "Wed")[i]          # a different window per path, so each commit is its own row
+    r = run_path(path, S, "set_faculty_availability",
+                 {"faculty": "F002", "day": day, "periods": "P7", "reason": "parity probe"}, approves=True)
+    got = one(con, "SELECT 1 FROM faculty_availability WHERE faculty='F002' AND day=? AND p_from=7 "
+                   "AND status='Active'", (day,))
+    check(f"18c approved academic write commits · {path}", verdict(r) == "ok" and got is not None,
+          f"{verdict(r)}: {json.dumps(r.get('data'), default=str)[:120]}")
+
 # ========================================================================= out
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")

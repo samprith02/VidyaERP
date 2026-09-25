@@ -574,7 +574,11 @@ async function renderFac(el){
   el.innerHTML=`<div class="toolbar"><select id="fd" aria-label="Faculty department"><option value="">All departments</option>
     ${['CSE','ISE','ECE','MECH','CIVIL'].map(d=>`<option>${d}</option>`).join('')}</select>
     <span style="color:var(--dim);font-size:11.5px">${f.length} staff · sorted by utilisation</span></div>
-    <div class="pnl" id="fbox"></div>`;
+    <div class="pnl" id="fbox"></div>
+    <div class="modhead" style="margin-top:22px"><span class="lbl">Standing availability</span>
+      <button class="btn sm ghost" data-ask="Prof. Vivek Rao is not available every Friday afternoon because of BoS meetings">Record a window</button></div>
+    <div class="pnl" id="favail"></div>`;
+  panel('faculty_availability').then(r=>{$('#favail').innerHTML=(r.blocks||[]).map(rBlock).join('')}).catch(()=>{});
   const draw=list=>$('#fbox').innerHTML=`<table><thead><tr><th>ID</th><th>Name</th><th>Dept</th>
     <th>Designation</th><th>Load</th><th>Utilisation</th><th>Status</th><th></th></tr></thead><tbody>
     ${list.map(x=>`<tr><td>${x.id}</td><td><b>${x.name}</b><br><span style="color:var(--dim);font-size:11px">${x.email}</span></td>

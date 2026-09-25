@@ -10,7 +10,7 @@ Write-tools are wrapped by PolicyGuard: they refuse to commit unless the admin
 gave explicit approval **in the current turn**. The model cannot talk its way past this.
 """
 import re, datetime as dt
-import nlu, db, solver, agents, campus, portal, access
+import nlu, db, solver, agents, campus, portal, access, academics
 from nlu import TODAY, day_of
 from agents import (rows, one, fac_name, subj_name, plabel, _span, PERIOD_SPAN,
                     SubstitutionAgent, TimetableAgent, FacultyAgent, StudentAgent,
@@ -28,7 +28,8 @@ from guard import APPROVAL_RX, approved_this_turn                  # noqa: F401
 # a new write tool cannot quietly land outside the gate. The campus services
 # contribute theirs from campus.GATED_WRITES - listed there, next to the tools.
 GATED_WRITES = ("apply_coverage_plan", "apply_timetable_generation", "decide_request",
-                "create_request", "broadcast_notice") + campus.GATED_WRITES + portal.GATED_WRITES
+                "create_request", "broadcast_notice") + campus.GATED_WRITES + portal.GATED_WRITES \
+    + academics.GATED_WRITES
 
 
 def inr(n):
@@ -666,6 +667,8 @@ REGISTRY += campus.REGISTRY
 # Self-service for students, faculty and HODs (#27). Who may call what is
 # access.py's decision, enforced below in execute().
 REGISTRY += portal.REGISTRY
+# Standing faculty availability (#19): academics.py.
+REGISTRY += academics.REGISTRY
 
 FUNCS = {name: fn for fn, name, _d, _s in REGISTRY}
 
@@ -684,7 +687,7 @@ TOOL_AGENT = {
     "makeup_schedule": "SubstitutionAgent",
     "plan_timetable_generation": "TimetableAgent", "apply_timetable_generation": "TimetableAgent",
     "decide_request": "RequestAgent", "create_request": "RequestAgent",
-    "broadcast_notice": "NotifyAgent", **campus.AGENT_OF, **portal.AGENT_OF}
+    "broadcast_notice": "NotifyAgent", **campus.AGENT_OF, **portal.AGENT_OF, **academics.AGENT_OF}
 
 
 def agent_of(name):
@@ -757,6 +760,7 @@ TOOL_GROUPS = {
     "analytics.kpi":   ["institution_overview", "attendance_defaulters", "fee_summary", "list_requests",
                         "placement_overview"],
     **campus.TOOL_GROUPS,
+    **academics.TOOL_GROUPS,
 }
 CORE = ["ops_radar", "institution_overview", "get_timetable", "faculty_profile", "student_lookup",
         "list_requests", "plan_absence_coverage"]

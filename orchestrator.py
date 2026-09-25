@@ -3,7 +3,7 @@ VidyaERP :: Orchestrator (Supervisor agent)
 Routes an utterance through the agent mesh and composes the response payload.
 """
 import re, json, datetime as dt
-import nlu, campus, tools, portal
+import nlu, campus, tools, portal, academics
 from nlu import TODAY, day_of
 from agents import *
 from agents import _span, plabel
@@ -90,6 +90,8 @@ def handle(con, text, sid="default", role="admin", actor="admin@vidyatech"):
     }.get(intent, h_fallback)
     if intent in CAMPUS_INTENTS:
         fn = lambda c, x, e, s, t, a: h_campus(c, x, e, s, t, a, intent)
+    if intent in academics.INTENTS:
+        fn = lambda c, x, e, s, t, a: h_campus(c, x, e, s, t, a, intent, academics.rule_route)
     # "full profile of Dr ..." scores for student.360 on wording alone; without a
     # USN it was never about a student
     if intent == "student.360" and not ent["usn"]:
@@ -351,11 +353,11 @@ def _data_text(d):
 
 
 # =====================================================================
-def h_campus(con, text, ent, st, tr, actor, intent):
+def h_campus(con, text, ent, st, tr, actor, intent, router=None):
     """Campus services on the rule engine: the NLU picks the tool and its
     arguments, and tools.execute runs it - the same dispatch point the LLM agent
     and MCP use, so a write here meets exactly the gate it meets there."""
-    tool, args = campus.rule_route(con, intent, text, ent)
+    tool, args = (router or campus.rule_route)(con, intent, text, ent)
     tr.add("ToolRouter", "select", (f"{tool}(" + ", ".join(f"{k}={v!r}" for k, v in args.items()
                                                           if v not in (None, "", [])))[:90] + ")")
     res = tools.execute(con, st, text, tool, args)
