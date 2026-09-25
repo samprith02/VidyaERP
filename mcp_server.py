@@ -208,8 +208,8 @@ def _as_content(result):
     data = result.get("data", {})
     payload = {"data": data}
     if result.get("trace"):
-        payload["trace"] = [{"agent": t[0], "action": t[1],
-                             "detail": t[2] if len(t) > 2 else ""} for t in result["trace"]]
+        payload["trace"] = [{"agent": t[0], "action": t[1], "detail": t[2] if len(t) > 2 else "",
+                             "status": t[3] if len(t) > 3 else "ok"} for t in result["trace"]]
     is_error = isinstance(data, dict) and ("error" in data or "BLOCKED" in data)
     return {"content": [{"type": "text", "text": json.dumps(payload, default=str, indent=1)}],
             "isError": is_error}

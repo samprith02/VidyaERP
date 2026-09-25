@@ -245,8 +245,7 @@ def resolve_pending(con, text, st, tr, actor):
             return None
         tr.add("PolicyGuard", "write_authorisation", f"admin confirmed → {tool}")
         res = tools.execute(con, st, text, tool, args)
-        for t in res.get("trace", []):
-            tr.add(t[0], t[1], t[2] if len(t) > 2 else "")
+        _relay(tr, res, tool)
         if st.get("pending") is p:
             st["pending"] = None            # a refused commit must not stay armed either
         Auditor().log(con, actor, campus.AGENT_OF.get(tool, "Supervisor"), tool, args,
@@ -258,6 +257,17 @@ def resolve_pending(con, text, st, tr, actor):
 
     # undo
     return None
+
+
+def _relay(tr, res, tool):
+    """Copy a tool's trace into this turn's, keeping each step's own status, and
+    pin a failed call on the agent that owns the tool - which is what lets the
+    console's agent mesh show a failure as a failure."""
+    for t in res.get("trace", []):
+        tr.add(t[0], t[1], t[2] if len(t) > 2 else "", t[3] if len(t) > 3 else "ok")
+    failed = tools.failure_of(res)
+    if failed:
+        tr.add(tools.agent_of(tool), "tool_error", failed[:160], status="error")
 
 
 def _data_text(d):
@@ -274,8 +284,7 @@ def h_campus(con, text, ent, st, tr, actor, intent):
     tr.add("ToolRouter", "select", (f"{tool}(" + ", ".join(f"{k}={v!r}" for k, v in args.items()
                                                           if v not in (None, "", [])))[:90] + ")")
     res = tools.execute(con, st, text, tool, args)
-    for t in res.get("trace", []):
-        tr.add(t[0], t[1], t[2] if len(t) > 2 else "")
+    _relay(tr, res, tool)
     d = res.get("data") or {}
     blocks = res.get("blocks") or []
     if d.get("ambiguous") and not blocks:
@@ -296,8 +305,7 @@ def h_generate(con, text, ent, st, tr, actor):
     args = ({"scope": "all"} if whole or not ent["dept"] else
             {"scope": "class", "dept": ent["dept"], "sem": ent["sem"] or 5, "section": ent["section"] or "A"})
     res = tools.execute(con, st, text, "plan_timetable_generation", args)
-    for t in res.get("trace", []):
-        tr.add(t[0], t[1], t[2] if len(t) > 2 else "")
+    _relay(tr, res, "plan_timetable_generation")
     if (res.get("data") or {}).get("error"):
         return {"blocks": [B_text(_data_text(res["data"]))], "agent": "TimetableAgent"}
     return {"blocks": res["blocks"] + [B_text("Nothing is written yet. Say **yes** to replace the current "
@@ -369,6 +377,7 @@ def h_absence(con, text, ent, st, tr, actor):
                       for _, r in cands[:3]]}
 
     if not f:
+        tr.add("EntityResolver", "unresolved", "no faculty member named in the request", status="warn")
         return {"blocks": [B_text("I couldn't pin down **which faculty member** is absent. "
                                   "Give me a name or staff ID — e.g. *“Dr. Ramesh Bhat is absent tomorrow”* "
                                   "or *“F012 on leave 9 Sep”*."),
@@ -582,6 +591,7 @@ def h_student(con, text, ent, st, tr, actor):
     if ent["usn"]:
         s = one(con, "SELECT * FROM students WHERE usn=?", (ent["usn"],))
         if not s:
+            tr.add("StudentAgent", "record_missing", f"no student with USN {ent['usn']}", status="error")
             return {"blocks": [B_text(f"No student found with USN **{ent['usn']}**.")], "agent": "StudentAgent"}
         tr.add("StudentAgent", "record_fetch", ent["usn"])
         return {"blocks": [
