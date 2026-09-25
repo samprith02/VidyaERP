@@ -203,9 +203,8 @@ ships a timetable back.
   replaced the name of the failed assertion with a `UnicodeEncodeError` traceback at exactly the
   moment you needed it. Exit codes were always right, so CI never noticed; only the human
   debugging did. `solver_test` is ASCII-only and needs nothing.
-  **`smoke.py` and `live_llm.py` still need `PYTHONIOENCODING=utf-8`** — they print `→`, `✔` and
-  `✘` on the *success* path, so they throw on every run rather than only a failing one. Same
-  one-line fix if it ever becomes worth it.
+  `smoke.py` and `live_llm.py` printed `→`, `✔`, `✘` on the *success* path and so threw on every
+  run; they got the same one-line fix on 2026-09-25 (#16). All seven suites now self-configure.
 
 ---
 

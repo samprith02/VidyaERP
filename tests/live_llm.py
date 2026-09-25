@@ -3,7 +3,11 @@
 Checks each query is actually answered by the LLM (not the rule-engine failover),
 stays inside the token budget, and never leaks a markdown table into the prose.
 """
-import json,urllib.request,time
+import json,urllib.request,time, sys
+# Prints → ✔ ✘ on the SUCCESS path, so a default Windows console (cp1252) threw
+# UnicodeEncodeError on every run, not only a failing one (issue #16). Same fix
+# the no-server suites got in c1e23dd.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 Q=["which faculty is most overloaded right now?",
    "attendance defaulters below 65 percent in CSE",
    "show me the pending approvals",
