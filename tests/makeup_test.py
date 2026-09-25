@@ -210,6 +210,86 @@ home = tools.execute(con, S_stu, "", "my_home", {})
 check("5f a student's day lists the booked make-ups", any(x.get("title") == "Make-up classes booked"
                                                           for x in home["blocks"]))
 
+# ------------------------------- 6 · a commit is reported on a re-read, not its own word
+print("\n6 · a coverage commit is verified by re-reading it (#51), and make-ups hold their teacher (#54)")
+print("-" * 78)
+import orchestrator                                                # noqa: E402
+TUE = MON + dt.timedelta(days=1)
+
+
+def steps(tr):
+    """Trace entries as (agent, action, status), whatever shape they arrive in."""
+    out = []
+    for t in tr or []:
+        if isinstance(t, dict):
+            out.append((t.get("agent"), t.get("action"), t.get("status", "ok")))
+        else:
+            out.append((t[0], t[1], t[3] if len(t) > 3 else "ok"))
+    return out
+
+
+# The tool path: what the LLM agent and MCP reach.
+tue_teachers = [r["faculty"] for r in rows(con, """SELECT faculty, COUNT(*) n FROM timetable WHERE day='Tue'
+                                                   AND faculty IS NOT NULL GROUP BY faculty ORDER BY n DESC, faculty""")]
+f6, ps6 = plans_for(tue_teachers[0], TUE)
+S6 = {"pending": {"kind": "absence_plans", "plans": ps6, "faculty": f6, "date": TUE.isoformat()}, "ctx": {}}
+r = tools.execute(con, S6, "yes, apply plan A", "apply_coverage_plan", {"plan_code": "A"})
+v6 = [x for x in steps(r.get("trace")) if x[1] == "verify"]
+check("6a the tool commit reports verified=True from a re-read, with an Auditor verify step marked ok",
+      r["data"].get("verified") is True and v6 == [("Auditor", "verify", "ok")], str(r["data"])[:200] + str(v6))
+
+# The rule engine's own commit path.
+f7 = one(con, "SELECT * FROM faculty WHERE id=?", (tue_teachers[1],))
+orchestrator.handle(con, f"{f7['name']} is absent on {TUE.isoformat()}, arrange coverage", "mk6", "admin", "registrar")
+out = orchestrator.handle(con, "apply plan A", "mk6", "admin", "registrar")
+v7 = [x for x in steps(out.get("trace")) if x[1] == "verify"]
+check("6b the rule engine's commit carries the same verify step, marked ok, and says it checked",
+      v7 == [("Auditor", "verify", "ok")] and any("Checked after writing" in (b.get("md") or "")
+                                                   for b in out["blocks"]), str(v7))
+
+# The check has teeth: break the committed state and it must say so.
+f8, ps8 = plans_for(tue_teachers[2], TUE)
+p8 = plan(ps8, "C") if any(l.get("makeup") for l in plan(ps8, "C")["legs"]) else plan(ps8, "A")
+s8 = SubstitutionAgent()
+s8.apply_plan(con, p8, f8, TUE)
+check("6c a clean commit verifies", s8.verify_plan(con, p8["id"], TUE.isoformat(), s8.last_commit)["ok"])
+gone = one(con, "SELECT * FROM overrides WHERE plan_ref=? ORDER BY id", (p8["id"],))
+con.execute("DELETE FROM overrides WHERE id=?", (gone["id"],))
+v = s8.verify_plan(con, p8["id"], TUE.isoformat(), s8.last_commit)
+check("6d a row the plan wrote that is no longer there is reported missing",
+      not v["ok"] and any("missing" in x for x in v["problems"]), str(v["problems"]))
+con.execute("""INSERT INTO overrides(date,slot_id,action,new_faculty,new_room,new_subject,reason,status,
+               created_by,created_at,plan_ref) SELECT date,slot_id,action,new_faculty,new_room,new_subject,
+               reason,status,created_by,created_at,plan_ref FROM overrides WHERE plan_ref=? LIMIT 1""", (p8["id"],))
+v = s8.verify_plan(con, p8["id"], TUE.isoformat(), s8.last_commit)
+check("6e a row the plan never made is reported, not counted as success",
+      not v["ok"] and any("never made" in x for x in v["problems"]), str(v["problems"]))
+mk = one(con, "SELECT * FROM makeup_sessions WHERE status='Scheduled' ORDER BY id")
+con.execute("""INSERT INTO makeup_sessions(date,day,period,dept,sem,section,subject,faculty,room,plan_ref,status,
+               created_at,created_by,reason) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (mk["date"], mk["day"], mk["period"], "XX", 9, "Z", "X", "F999", mk["room"], "intruder",
+             "Scheduled", "", "test", "double-booked room"))
+v = SubstitutionAgent().verify_plan(con, mk["plan_ref"], "1900-01-01", {"overrides": [], "makeups": [
+    (r2["date"], r2["period"], r2["faculty"], r2["room"]) for r2 in booked(mk["plan_ref"])]})
+check("6f a make-up whose room is booked twice at the same hour is reported",
+      any("shares its room" in x for x in v["problems"]), str(v["problems"]))
+con.execute("DELETE FROM makeup_sessions WHERE plan_ref='intruder'")
+con.commit()
+
+# #54, constructed: a teacher holding a make-up at an hour is not free then.
+# Saturday P6 is outside every batch's day, so only the booking can make them busy.
+sat = MON + dt.timedelta(days=5)
+t54 = tue_teachers[5]
+check("6g (#54) with nothing booked, the teacher is free at Sat P6",
+      t54 not in sub.busy_faculty(con, "Sat", 6, sat.isoformat()))
+con.execute("""INSERT INTO makeup_sessions(date,day,period,dept,sem,section,subject,faculty,room,plan_ref,status,
+               created_at,created_by,reason) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (sat.isoformat(), "Sat", 6, "CSE", 5, "A", "X", t54, "SB-102", "t54", "Scheduled", "", "test", "t"))
+check("6h (#54) once they hold a make-up then, busy_faculty counts them busy - so no plan can hand them a class",
+      t54 in sub.busy_faculty(con, "Sat", 6, sat.isoformat()))
+con.execute("DELETE FROM makeup_sessions WHERE plan_ref='t54'")
+con.commit()
+
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")
 for f in FAILED:

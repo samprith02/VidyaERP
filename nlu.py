@@ -230,7 +230,17 @@ def parse_date(text, today=None):
             return dt.date(yr, mon, day), f"{day} {m.group(2).title()}"
         except ValueError:
             return None, None
-    m = re.search(r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b", t)
+    # ISO first (#55). The dd-mm pattern below used to match the "09-08" inside
+    # "2026-09-08" and return 9 August - a Sunday, so the reply said no cover
+    # was needed. ISO is what the console's own date fields produce.
+    m = re.search(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", t)
+    if m:
+        try:
+            d = dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None, None
+        return d, d.strftime("%d %b")
+    m = re.search(r"(?<![\d/-])\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b(?![/-]\d)", t)
     if m:
         day, mon = int(m.group(1)), int(m.group(2))
         yr = int(m.group(3) or today.year)

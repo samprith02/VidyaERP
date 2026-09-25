@@ -120,10 +120,10 @@ python3 tests/mcp_parity.py   # MCP guard parity: 254 assertions, no server, no 
 python3 tests/campus_test.py  # campus services: 122 assertions, no server, no API cost
 python3 tests/mesh_test.py    # the agent mesh's fault channel: 22 assertions, no server, no API cost
 python3 tests/auth_test.py    # logins, route gating, per-role policy: 77 assertions, no server, no API cost
-python3 tests/makeup_test.py  # booked make-up classes, never double-booked: 19 assertions, no server, no API cost
+python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits verified by re-read: 27 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
 python3 tests/deploy_test.py  # deployment readiness: 68 assertions, no server, no API cost
-python3 tests/nlu_test.py     # date resolution: 15 assertions, no server, no API cost
+python3 tests/nlu_test.py     # date resolution, ISO dates included: 19 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 ```
@@ -510,11 +510,11 @@ VidyaERP/
     ├── mcp_parity.py   the same adversarial items down three paths, identical verdicts
     ├── ranking_test.py plan ranking — every number measured, four labelled defect assertions
     ├── deploy_test.py  deployment claims — key never leaks, /health reads the DB, gate holds
-    ├── nlu_test.py     date resolution — all 7x7 weekday pairs pinned
+    ├── nlu_test.py     date resolution — all 7x7 weekday pairs pinned, ISO dates read as ISO
     ├── campus_test.py  campus rules pinned case by case, routing kept, core data untouched
     ├── mesh_test.py    the fault channel: failures reported, pinned on their owner, holds are not faults
     ├── auth_test.py    sign-in, every route's gate, per-role policy, self-service writes, session binding
-    ├── makeup_test.py  make-ups are booked, re-read for clashes, released on undo, shown to the right people
+    ├── makeup_test.py  make-ups booked and held, coverage commits verified by an independent re-read
     └── mock_llm.py     fake OpenAI endpoint + rogue-agent guard test
 ```
 

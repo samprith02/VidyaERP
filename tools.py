@@ -371,6 +371,8 @@ def t_apply_coverage_plan(con, S, U, plan_code="A", **kw):
     d = dt.date.fromisoformat(p["date"])
     sub, notif = SubstitutionAgent(), NotifyAgent()
     applied = sub.apply_plan(con, plan, f, d)
+    # Reported on a re-read, never on the writer's own count (#51).
+    v = sub.verify_plan(con, plan["id"], p["date"], sub.last_commit)
     msgs = notif.draft_absence(con, f, d, plan)
     notif.dispatch(con, msgs)
     if not one(con, "SELECT 1 FROM leaves WHERE faculty=? AND from_date<=? AND to_date>=?",
@@ -384,7 +386,8 @@ def t_apply_coverage_plan(con, S, U, plan_code="A", **kw):
     S["ctx"]["last_override_date"] = p["date"]
     if applied:
         S["ctx"]["last_class"] = applied[0]["class"]
-    return {"data": {"applied": True, "plan": plan["code"], "plan_ref": plan["id"],
+    return {"data": {"applied": True, "verified": v["ok"], "problems": v["problems"],
+                     "plan": plan["code"], "plan_ref": plan["id"],
                      "date": p["date"], "periods_written": sum(len(l.get("slot_ids", [1])) for l in applied),
                      "notifications_sent": len(msgs), "undo": "call undo_last_change"},
             "blocks": [B_table(["Block", "Class", "Subject", "Action", "Now handled by"],
@@ -395,6 +398,7 @@ def t_apply_coverage_plan(con, S, U, plan_code="A", **kw):
             "refresh": True,
             "trace": [("PolicyGuard", "write_authorisation", f"admin approved plan {plan['code']}"),
                       ("SubstitutionAgent", "commit_overrides", f"{len(applied)} block(s) written"),
+                      ("Auditor", "verify", sub.verify_line(v), "ok" if v["ok"] else "error"),
                       ("NotifyAgent", "dispatch", f"{len(msgs)} notifications"),
                       ("Auditor", "ledger_write", plan["id"])]}
 

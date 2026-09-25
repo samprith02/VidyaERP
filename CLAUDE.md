@@ -101,6 +101,12 @@ stingy and this is what keeps multi-hop turns inside the budget.
   page's copy of the regex identical to `guard.APPROVAL_RX`).
 - **Never report a write as clean on the writer's own word.** `apply_timetable_generation` calls
   `solver.verify()` — an independent re-read of the committed rows — before saying it worked.
+  Coverage plans do the same since #51: `apply_plan` records what it meant to write
+  (`last_commit`), and `SubstitutionAgent.verify_plan` re-reads by `plan_ref` and checks the rows
+  (present once, nothing extra) and the resulting state (no substitute teaching two places, no
+  make-up sharing a room, teacher or batch). Both commit paths emit an `Auditor · verify` step with
+  an explicit status, so a failure blinks red in the mesh. The first sweep of 279 stacked commits
+  found one real clash, which became #54.
 - **All data is synthetic and must stay that way.** No real institution, person, USN, email or
   phone number ever enters this repo. This is public and Apache 2.0 licensed: anything committed
   here is granted to the world. The sibling MAWOS repo got this wrong and is documented as a
@@ -278,10 +284,10 @@ python tests/mcp_parity.py     # 254 assertions, no server, no API cost
 python tests/campus_test.py    # 122 assertions, no server, no API cost
 python tests/mesh_test.py      # 22 assertions, no server, no API cost
 python tests/auth_test.py      # 77 assertions, no server, no API cost
-python tests/makeup_test.py    # 19 assertions, no server, no API cost
+python tests/makeup_test.py    # 27 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 68 assertions, no server, no API cost
-python tests/nlu_test.py       # 15 assertions, no server, no API cost
+python tests/nlu_test.py       # 19 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 ```
@@ -359,6 +365,12 @@ and room scarcity must degrade rather than collapse.
   on the day it happens and nothing notices, while a week early is caught by the date echoed back
   before anything commits. `tests/nlu_test.py` pins all 7×7 reference-target pairs, so changing the
   convention again is a deliberate act with a failing test attached.
+- **An ISO date is parsed before the Indian dd-mm form (#55).** Without that branch, the dd-mm
+  pattern matched the `09-08` inside `2026-09-08` and returned 9 August, a Sunday, so the reply
+  was "no coverage needed". `nlu_test.py` section 4 pins it.
+- **A booked make-up holds its teacher for every planner (#54).** `busy_faculty` counts
+  `makeup_sessions`. Before this, only other make-up searches saw a booking, and plan B made a
+  teacher a swap partner at the hour they owed their own make-up (`makeup_test.py:6h`).
 - **A swap must never split a lab.** `find_swap` refuses any partner whose subject is `kind='L'`
   or which sits in a contiguous same-subject block (`in_multi_period_block`). Labs run three
   consecutive periods; CIVIL-3A Mon P5-P7 is the live example. Removing that guard makes
