@@ -28,12 +28,12 @@ function rPlans(b){
     const legs=p.legs.map(l=>{
       const cls={SUBSTITUTE:'sub',SWAP:'swap',MAKEUP:'makeup',UNCOVERED:'unc',VACATED:'vacated'}[l.action];
       return `<div class="leg"><div class="p">P${l.period}<br><small style="color:#54648f">${l.time}</small></div>
-        <div class="act"><span class="chipx ${cls}">${l.action}</span></div>
+        <div class="act"><span class="chipx ${cls}">${String(l.action).charAt(0)+String(l.action).slice(1).toLowerCase()}</span></div>
         <div class="d"><b>${esc(l.class)}</b> · ${esc(l.subject)} ${esc(l.subject_name||'')}
         <small>→ ${esc(l.to)} — ${esc(l.why)}</small></div></div>`}).join('');
     return `<div class="plan ${i===0?'best':''}">
       <div class="ph"><div class="pcode">${p.code}</div><b>${esc(p.title)}</b>
-        ${i===0?'<span class="tag">recommended</span>':''}</div>
+        ${i===0?'<span class="tag">Recommended</span>':''}</div>
       <div class="metrics">
         <div class="metric g"><div class="l">Confidence <span class="n">${p.confidence}%</span></div>
           <div class="bar"><i style="width:${p.confidence}%"></i></div></div>
@@ -62,20 +62,21 @@ function rPlans(b){
         <div class="legs">${legs}</div></div>
       <div class="pc"><div style="flex:1"><div class="h">Upside</div><ul>${p.pros.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>
         <div style="flex:1"><div class="h">Trade-off</div><ul>${p.cons.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div></div>
-      <div class="pf"><button class="btn ${i===0?'ok':''}" onclick="say('apply plan ${p.code}')">Approve &amp; apply plan ${p.code}</button>
-        <span style="font-size:10px;color:var(--dim)">Controlled action · no records change before approval</span></div>
+      <div class="pf"><button class="btn ${i===0?'ok':'ghost'}" onclick="say('apply plan ${p.code}')">Approve plan ${p.code}</button>
+        <span>Nothing changes until you approve.</span></div>
     </div>`}).join('');
 }
 function rGrid(b){
   const per=Object.keys(b.periods).map(Number).sort((x,y)=>x-y);
   const br=b.breaks||{}; const dl=b.day_len||{};
-  let h=`<div class="legend"><span><i style="background:var(--acc)"></i>Lecture</span>
-    <span><i style="background:var(--acc2)"></i>Lab block</span>
-    <span><i style="background:#a8b0bd"></i>Activity / project</span>
-    <span><i style="background:var(--amber)"></i>Approved change</span></div>
+  let h=`<div class="legend"><span><i style="background:#DCE2F4"></i>Lecture</span>
+    <span><i style="background:#D3E9E1"></i>Lab</span>
+    <span><i style="background:#E4E7EC"></i>Activity or project</span>
+    <span><i style="background:#6A3DB8"></i>Changed for this date</span>
+    <span><i style="background:#A35A06"></i>Make-up class</span></div>
     <div class="gridwrap"><table class="ttg"><thead><tr><th class="ph">Day</th>`;
   per.forEach(p=>{
-    h+=`<th>P${p}<br><span style="color:#4a5a75;font-weight:400">${b.periods[p]}</span></th>`;
+    h+=`<th>P${p}<br><span style="color:var(--muted);font-weight:400">${b.periods[p]}</span></th>`;
     if(br[p]) h+=`<th class="brk"><span>${br[p].split('·')[0].trim()}</span></th>`;
   });
   h+='</tr></thead><tbody>';
@@ -89,14 +90,15 @@ function rGrid(b){
       }else{
         const o=c.override;
         const k=(c.kind||'T');
-        const cls=o?'ovr':k==='L'?'lab':k==='A'?'act':'has';
+        const cls=o?'ovr':k==='M'?'mk':k==='L'?'lab':k==='A'?'actv':'has';
         // a VACATED period is released: the absent teacher must not be left
         // standing against it, and a swapped-in subject shows what it replaced
-        const who=o&&o.released?'— released —':(o&&o.faculty?o.faculty:c.faculty);
+        const who=o&&o.released?'Released':(o&&o.faculty?o.faculty:c.faculty);
         const was=o&&o.was?` (was ${esc(o.was)})`:'';
-        h+=`<td><div class="cell ${cls}"><div class="s">${esc(c.subject)}${was}</div>
+        const note=o?`, ${esc(o.action.toLowerCase())}`:k==='M'?`, make-up ${esc(c.makeup.date.slice(5))}`:'';
+        h+=`<td><div class="cell ${cls}" title="${esc((o&&o.reason)||(c.makeup&&c.makeup.reason)||'')}"><div class="s">${esc(c.subject)}${was}</div>
           <div class="f">${esc(who)}</div>
-          <div class="r">${esc(c.room)}${o?' · '+o.action:''}</div></div></td>`;
+          <div class="r">${esc(c.room)}${note}</div></div></td>`;
       }
       if(br[p]) h+=`<td class="brk"></td>`;
     });
@@ -139,7 +141,22 @@ function rDocument(b){
     <div class="spec">Specimen generated from VidyaERP's synthetic demo data — not a document of any real institution.</div></div>
     ${draft?'':`<div class="doc-actions"><button class="btn sm ghost" data-print="${id}">Print certificate</button></div>`}`;
 }
+// The approval moment. A write the agents prepared but did not make is shown
+// as waiting for you; one that was approved and made carries the stamp. Both
+// are read from the server's own trace, never inferred from wording.
+function approvalMark(trace){
+  const t=trace||[];
+  if(t.some(s=>/write_authorisation/.test(s.action||''))){
+    const verified=t.some(s=>s.action==='verify'&&s.status!=='error');
+    const failed=t.some(s=>s.status==='error');
+    return `<div class="stamp"><b>Approved</b><small>${failed?'written, with a problem reported below':verified?'written and verified':'written'}</small></div>`;
+  }
+  return '';
+}
 function rBlock(b){
+  if(b.type==='text' && /^\*\*Nothing has been written yet\.\*\*/.test(b.md))
+    return `<div class="held-note"><span>${md(b.md.replace(/^\*\*Nothing has been written yet\.\*\*\s*/,
+      '**Prepared, and waiting for your approval.** Nothing has been written. '))}</span></div>`;
   if(b.type==='text')   return `<p>${md(b.md)}</p>`;
   if(b.type==='table')  return rTable(b);
   if(b.type==='cards')  return rCards(b);

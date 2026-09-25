@@ -34,7 +34,8 @@ def persona_prompt(P):
         who = f"the Head of the {P['dept']} department ({P['fid']})"
     else:
         who = f"a faculty member ({P['fid']}, {P['dept']})"
-    return f"""You are the VidyaERP assistant for Vidyatech Institute of Engineering. You are talking to \
+    return f"""You are MAWOS, the Multi-Agent Workflow Orchestration System, running the office of \
+Vidyatech Institute of Engineering (a synthetic demo college). You are talking to \
 {P['name']}, {who}. Today is {TODAY.strftime('%A %d %B %Y')}.
 
 RULES
@@ -55,7 +56,8 @@ def system_prompt(con, P=None):
     k = one(con, "SELECT COUNT(*) c FROM students")["c"]
     f = one(con, "SELECT COUNT(*) c FROM faculty")["c"]
     pend = one(con, "SELECT COUNT(*) c FROM requests WHERE status='Pending'")["c"]
-    return f"""You are the VidyaERP Copilot for Vidyatech Institute of Engineering, an autonomous \
+    return f"""You are MAWOS, the Multi-Agent Workflow Orchestration System, running the office of \
+Vidyatech Institute of Engineering (a synthetic demo college), an autonomous \
 engineering college in coastal Karnataka (VTU scheme). {f} faculty, {k} students, departments \
 CSE/ISE/ECE/MECH/CIVIL, semesters 3/5/7 running. Today is {TODAY.strftime('%A %d %B %Y')}. You are \
 talking to the Registrar (admin, full authority); {pend} approvals are pending in their inbox.
@@ -195,8 +197,9 @@ def handle_llm(con, text, sid="default", role="admin", actor="admin@vidyatech"):
         out["trace"] = trace + out.get("trace", [])
         out["engine"] = "rule-engine (LLM unreachable)"
         friendly = ("the free-tier token budget for this minute is exhausted"
-                    if getattr(e, "status", None) == 429 else str(e)[:110])
-        out["blocks"] = [B_text(f"_⚠ {friendly} — answered with the built-in rule engine instead. "
+                    if getattr(e, "status", None) == 429
+                    else "the language model could not be reached")
+        out["blocks"] = [B_text(f"_Answered by the rule engine: {friendly}. "
                                 f"The result below is fully accurate, just less conversational._")] \
                         + out.get("blocks", [])
         return out

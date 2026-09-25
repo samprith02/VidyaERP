@@ -128,7 +128,7 @@ def t_my_home(con, S, U, **kw):
                                                                    for l in loans], title="Library books with you", dense=True)]
                              if loans else [])
                           + _makeups_block(con, "dept=? AND sem=? AND section=?", (s["dept"], s["sem"], s["section"]))
-                          + ([B_text(f"🛂 {len(passes)} gate pass request(s) waiting for the warden.")] if passes else []),
+                          + ([B_text(f"{len(passes)} gate pass request(s) waiting for the warden.")] if passes else []),
                 "trace": [("StudentAgent", "home", s["usn"]), ("AttendanceAgent", "subject_rollup", f"{len(short)} below 75%"),
                           ("TimetableAgent", "today", f"{len(today)} periods"), ("LibraryAgent", "member_loans", str(len(loans)))],
                 "chips": ["Request a gate pass for tomorrow 2pm to 7pm", "Request a bonafide certificate for passport",
@@ -199,10 +199,10 @@ def t_my_placement(con, S, U, **kw):
     offers = rows(con, "SELECT * FROM student_offers WHERE usn=?", (s["usn"],))
     return {"data": {"eligible_for": [o["drive"]["company"] for o in out if o["ok"]],
                      "offers": [o["company"] for o in offers]},
-            "blocks": ([B_text("🎉 Offers: " + ", ".join(f"**{o['company']}** ₹{o['ctc']} LPA" for o in offers))] if offers else [])
+            "blocks": ([B_text("Offers: " + ", ".join(f"**{o['company']}** ₹{o['ctc']} LPA" for o in offers))] if offers else [])
                       + [B_table(["Company", "Role", "CTC", "Date", "You", "Why / status"],
                                  [[o["drive"]["company"], o["drive"]["role"], f"₹{o['drive']['ctc']} LPA", o["drive"]["drive_date"],
-                                   "✅ eligible" if o["ok"] else "—",
+                                   "**Eligible**" if o["ok"] else "—",
                                    (o["reg"] or "shortlist not published yet") if o["ok"] else "; ".join(o["why"])]
                                   for o in out], title="Upcoming drives and you")],
             "trace": [("PlacementAgent", "self_eligibility", f"{sum(o['ok'] for o in out)}/{len(out)} drives")]}
@@ -255,7 +255,7 @@ def t_request_gate_pass(con, S, U, kind="Outing", out_at="", return_by="", reaso
     Auditor().log(con, s["usn"], "GatePassAgent", "gatepass.request", {"id": gid, "kind": k}, "Applied" if ok else "FAILED")
     _done(S, "request_gate_pass")
     return {"data": {"filed": bool(ok), "id": gid, "pre_check": verdict},
-            "blocks": [tbl, B_text(f"🛂 Gate pass **#{gid}** filed. The warden decides; the policy pre-check says "
+            "blocks": [tbl, B_text(f"Gate pass **#{gid}** filed. The warden decides; the policy pre-check says "
                                    f"**{verdict}**. You will get a notification either way.")], "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "the student confirmed in this turn"),
                            ("GatePassAgent", "verify", "filed" if ok else "MISSING", "ok" if ok else "error")]}
@@ -296,7 +296,7 @@ def t_request_certificate(con, S, U, kind="Bonafide", purpose="", **kw):
     Auditor().log(con, s["usn"], "DocumentAgent", "certificate.request", {"id": rid, "kind": k}, "Applied")
     _done(S, "request_certificate")
     return {"data": {"filed": True, "request": rid},
-            "blocks": [B_text(f"🧾 **REQ-{rid:04d}** — {title} — is with the Registrar. The DocumentAgent has already "
+            "blocks": [B_text(f"**REQ-{rid:04d}** — {title} — is with the Registrar. The DocumentAgent has already "
                               f"checked you are eligible, so it should be a one-click issue on their side.")],
             "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "the student confirmed in this turn"),
@@ -408,7 +408,7 @@ def t_apply_leave(con, S, U, from_date="", to_date="", kind="Casual Leave", reas
     Auditor().log(con, P["fid"], "HRAgent", "leave.apply", {"id": lid, **args}, "Applied")
     _done(S, "apply_leave")
     return {"data": {"filed": True, "leave_id": lid, "assessment": assess["why"]},
-            "blocks": [tbl, B_text(f"🗓 Leave **#{lid}** is with {hod['name'] if hod else 'your HOD'}, with the coverage "
+            "blocks": [tbl, B_text(f"Leave **#{lid}** is with {hod['name'] if hod else 'your HOD'}, with the coverage "
                                    f"impact attached.")], "refresh": True,
             "trace": tr + [("PolicyGuard", "write_authorisation", "the teacher confirmed in this turn"),
                            ("HRAgent", "verify", f"leave #{lid} on record", "ok")]}

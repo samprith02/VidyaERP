@@ -266,7 +266,7 @@ class SubstitutionAgent:
             s -= 4
         s -= extra * 9
         if kind in ("L", "P") and fid not in same_sub and subject not in expertise:
-            s -= 18; why.append("⚠ lab session – limited hands-on familiarity")
+            s -= 18; why.append("lab session, limited hands-on familiarity")
         return round(s, 1), why
 
     def subject_kind(self, con, subject):

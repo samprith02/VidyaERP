@@ -37,7 +37,7 @@ module never reads one. The only thing that can produce an approving `U` here
 is a one-time code the admin minted out of band:
 
     python mcp_server.py --approve          (on the machine running the ERP)
-    POST /api/mcp/approval                  (from the VidyaERP console)
+    POST /api/mcp/approval                  (from the MAWOS console)
 
 The code is six digits, valid for 120 seconds, single-use, and consumed the
 moment it is redeemed. A model can relay a code the admin read out; it cannot
@@ -79,7 +79,7 @@ import orchestrator
 import tools
 from agents import Auditor, one
 
-SERVER_NAME = "vidyaerp"
+SERVER_NAME = "mawos"
 SERVER_VERSION = "1.0.0"
 
 # Revisions of the MCP spec this server will speak. A client that asks for one
@@ -95,7 +95,7 @@ MCP_ACTOR = "mcp-client@claude-desktop"
 # ============================================================ approval channel
 APPROVAL_TTL = 120             # seconds - long enough to read a code out, short
                                # enough that a leaked one is worthless
-APPROVAL_PHRASE = ("the admin approved this write in the VidyaERP console")
+APPROVAL_PHRASE = ("the admin approved this write in the MAWOS console")
 # ^ redeeming a code hands this to the tool as `U`. It is a real approval in the
 #   one sense that matters: a human produced it. APPROVAL_RX matches "approved".
 
@@ -201,7 +201,7 @@ def tool_specs():
 
 
 def _as_content(result):
-    """Tool result -> MCP content. `blocks` are for the VidyaERP console's
+    """Tool result -> MCP content. `blocks` are for the MAWOS console's
     renderer and mean nothing to an external client, so they are dropped; `data`
     is already the compact JSON a model reasons over. `trace` rides along
     because the guard's own reasoning is the interesting part over MCP."""
@@ -240,7 +240,8 @@ def handle_request(req, con, S):
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
             "instructions": (
-                "VidyaERP - college ERP for Vidyatech Institute of Engineering. Reads are open. "
+                "MAWOS - the Multi-Agent Workflow Orchestration System, an ERP for educational institutions, "
+                "here running a synthetic college (Vidyatech Institute of Engineering). Reads are open. "
                 f"The {len(tools.GATED_WRITES)} write tools commit only with a one-time approval code "
                 "the admin generates in the ERP console; you cannot generate one. Call a write "
                 "without a code (or the plan_* tool) first to get the proposal, show the admin "

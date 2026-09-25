@@ -21,15 +21,18 @@
 (function () {
 'use strict';
 
+// Light mode only. Group colours are kept clear of the four status colours:
+// red is a fault, amber a warning, violet a write held for approval, green a
+// write that landed and was verified.
 const GROUPS = {
-  core: {c: '#9db7ff', label: 'Supervisor & routing'},
-  gov:  {c: '#e2e8f0', label: 'Guard & audit'},
-  acad: {c: '#8fa2ff', label: 'Academic'},
-  stud: {c: '#5fd4a6', label: 'Students & finance'},
-  camp: {c: '#ffc46b', label: 'Campus services'},
-  ops:  {c: '#6fd3ff', label: 'Ops & comms'},
+  core: {c: '#2342A8', label: 'Supervisor and routing'},
+  gov:  {c: '#161922', label: 'Guard and audit'},
+  acad: {c: '#0E7490', label: 'Academic'},
+  stud: {c: '#BE185D', label: 'Students and finance'},
+  camp: {c: '#8A6D1F', label: 'Campus services'},
+  ops:  {c: '#64748B', label: 'Operations'},
 };
-const RED = '#ff4d5e', AMBER = '#ffb45c', GREEN = '#4fe0a0', VIOLET = '#c9a4ff';
+const RED = '#D93A2B', AMBER = '#D97706', GREEN = '#1C7A4B', VIOLET = '#6A3DB8';
 
 // Every agent that can appear in a trace. tests/campus_test.py checks that the
 // server's tool -> agent map never names an agent missing from this catalog.
@@ -277,8 +280,6 @@ class View {
     this.cv = canvas; this.ctx = canvas.getContext('2d'); this.big = big;
     this.yaw = .6; this.pitch = -.3; this.zoom = big ? 1 : 1; this.px = 0; this.py = 0;
     this.goal = null; this.auto = !RM; this.lastInput = 0; this.proj = {};
-    this.stars = Array.from({length: big ? 220 : 80}, () => { const y = Math.random() * 2 - 1, t = Math.random() * 6.283,
-      r = Math.sqrt(1 - y * y), d = 2.6 + Math.random() * 1.6; return [Math.cos(t) * r * d, y * d, Math.sin(t) * r * d, Math.random()]; });
     new ResizeObserver(() => this.fit()).observe(canvas.parentElement);
     this.fit();
   }
@@ -327,14 +328,10 @@ class View {
     if (!this.visible()) return;
     const c = this.ctx, W = this.W, H = this.H, T = M.clock;
     // background painted into the canvas so an exported PNG looks like the screen
-    const bg = c.createRadialGradient(W / 2, H * .45, 0, W / 2, H * .45, Math.max(W, H) * .75);
-    bg.addColorStop(0, '#15213a'); bg.addColorStop(.55, '#0b1220'); bg.addColorStop(1, '#05080f');
-    c.fillStyle = bg; c.fillRect(0, 0, W, H);
-    for (const s of this.stars) {
-      const q = this.project(s); c.globalAlpha = .08 + .32 * s[3] * clamp(1 - q.z / 4, 0, 1);
-      c.fillStyle = '#b9c8ff'; c.fillRect(q.x, q.y, 1.3, 1.3);
-    }
-    c.globalAlpha = 1;
+    c.fillStyle = '#FFFFFF'; c.fillRect(0, 0, W, H);
+    c.fillStyle = '#E3E7EE';                      // a quiet dot grid: depth comes from the scene, not the backdrop
+    const g0 = 24, ox = (this.px % g0 + g0) % g0, oy = (this.py % g0 + g0) % g0;
+    for (let x = ox; x < W; x += g0) for (let y = oy; y < H; y += g0) c.fillRect(x, y, 1.2, 1.2);
     this.guides(c);
     const P = {}; for (const n of Object.values(M.nodes)) P[n.name] = this.project(n.p);
     this.proj = P;
@@ -347,7 +344,7 @@ class View {
     const sup = P.Supervisor;
     if (sup) for (const n of Object.values(M.nodes)) {
       if (n.name === 'Supervisor' || M.hidden.has(n.g)) continue;
-      const p = P[n.name]; c.strokeStyle = `rgba(140,165,235,${.05 * dim(n)})`; c.lineWidth = 1;
+      const p = P[n.name]; c.strokeStyle = `rgba(94,100,114,${.07 * dim(n)})`; c.lineWidth = 1;
       c.beginPath(); c.moveTo(sup.x, sup.y); c.lineTo(p.x, p.y); c.stroke();
     }
     // learned edges: curved, thickness by traffic
@@ -356,20 +353,19 @@ class View {
       const A = M.nodes[e.a], B = M.nodes[e.b]; if (!A || !B || M.hidden.has(A.g) || M.hidden.has(B.g)) continue;
       const lit = focusSet ? (focusSet.has(e.a) && focusSet.has(e.b) && (e.a === (M.hover || M.sel).name || e.b === (M.hover || M.sel).name)) : true;
       const w = e.n / maxE, alpha = (lit ? .12 + .45 * w : .04) * Math.min(dim(A), dim(B)) ;
-      c.strokeStyle = M.heat ? `rgba(255,${Math.round(190 - 120 * w)},${Math.round(110 - 60 * w)},${alpha + .05})` : `rgba(157,183,255,${alpha})`;
+      c.strokeStyle = M.heat ? `rgba(217,${Math.round(140 - 80 * w)},${Math.round(40 - 20 * w)},${alpha + .08})` : `rgba(35,66,168,${alpha})`;
       c.lineWidth = (M.heat ? .8 + 4 * w : .7 + 2.2 * w) * (this.big ? 1 : .7);
       this.curve(c, A.p, B.p, 18);
     }
     c.lineWidth = 1;
-    // packets, additive
-    c.globalCompositeOperation = 'lighter';
+    // packets
     for (const p of M.packets) {
       if (T < p.start) continue;
       const u = clamp((T - p.start) / p.dur, 0, 1), e = u < .5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
-      const col = p.s.kind === 'error' ? RED : p.s.kind === 'warn' ? AMBER : p.s.kind === 'held' ? VIOLET : p.s.kind === 'commit' ? GREEN : GROUPS[p.b.g] ? GROUPS[p.b.g].c : '#9db7ff';
+      const col = p.s.kind === 'error' ? RED : p.s.kind === 'warn' ? AMBER : p.s.kind === 'held' ? VIOLET : p.s.kind === 'commit' ? GREEN : GROUPS[p.b.g] ? GROUPS[p.b.g].c : '#2342A8';
       for (let j = 12; j >= 0; j--) {
         const uu = Math.max(0, e - j * .03), qp = this.project(this.arc(p.a.p, p.b.p, uu));
-        c.globalAlpha = (1 - j / 13) * .9; c.fillStyle = col;
+        c.globalAlpha = (1 - j / 13) * .85; c.fillStyle = col;
         c.beginPath(); c.arc(qp.x, qp.y, (j ? 1.7 : 3.6) * qp.s * (this.big ? 1.15 : .9), 0, 6.2832); c.fill();
       }
     }
@@ -397,15 +393,14 @@ class View {
       // halo
       const hr = r * (3 + flash * 2.8 + (faulty ? 1.6 * blink : 0) + breathe * 1.5);
       const g = c.createRadialGradient(pp.x, pp.y, 0, pp.x, pp.y, hr);
-      g.addColorStop(0, hexA(col, .55)); g.addColorStop(1, hexA(col, 0));
-      c.globalCompositeOperation = 'lighter';
-      c.globalAlpha = d * f * (.35 + .55 * flash + (faulty ? .5 : 0) + breathe * .5);
+      g.addColorStop(0, hexA(col, .28)); g.addColorStop(1, hexA(col, 0));
+      c.globalAlpha = d * f * (.25 + .6 * flash + (faulty ? .6 : 0) + breathe * .5);
       c.fillStyle = g; c.beginPath(); c.arc(pp.x, pp.y, hr, 0, 6.2832); c.fill();
-      c.globalCompositeOperation = 'source-over';
       // shaded ball
       const sh = c.createRadialGradient(pp.x - r * .35, pp.y - r * .4, r * .1, pp.x, pp.y, r);
-      sh.addColorStop(0, '#ffffff'); sh.addColorStop(.25, col); sh.addColorStop(1, shade(col, .45));
+      sh.addColorStop(0, hexA(col, .55)); sh.addColorStop(.35, col); sh.addColorStop(1, shade(col, .72));
       c.globalAlpha = d * f; c.fillStyle = sh; c.beginPath(); c.arc(pp.x, pp.y, r, 0, 6.2832); c.fill();
+      c.strokeStyle = '#FFFFFF'; c.lineWidth = Math.max(1, r * .22); c.stroke(); c.lineWidth = 1;
       if (faulty) {                                   // pulsing alarm rings + badge
         for (let k = 0; k < 2; k++) {
           const u = ((now / 900) + k / 2) % 1;
@@ -413,11 +408,11 @@ class View {
           c.beginPath(); c.arc(pp.x, pp.y, r * (1.3 + u * 2.6), 0, 6.2832); c.stroke();
         }
         c.globalAlpha = d; c.fillStyle = RED; c.beginPath(); c.arc(pp.x + r * .85, pp.y - r * .85, Math.max(6, r * .45), 0, 6.2832); c.fill();
-        c.fillStyle = '#fff'; c.font = `700 ${Math.max(8, r * .55)}px Inter,sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillStyle = '#fff'; c.font = `700 ${Math.max(8, r * .55)}px "Segoe UI",sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
         c.fillText(n.fault > 9 ? '9+' : String(n.fault), pp.x + r * .85, pp.y - r * .82); c.textAlign = 'left'; c.textBaseline = 'alphabetic';
       }
       if (M.sel === n) {                              // rotating selection reticle
-        c.globalAlpha = 1; c.strokeStyle = '#e5ecff'; c.lineWidth = 1.4; c.setLineDash([4, 5]); c.lineDashOffset = -now / 40;
+        c.globalAlpha = 1; c.strokeStyle = '#161922'; c.lineWidth = 1.4; c.setLineDash([4, 5]); c.lineDashOffset = -now / 40;
         c.beginPath(); c.arc(pp.x, pp.y, r + 7, 0, 6.2832); c.stroke(); c.setLineDash([]);
       }
       c.globalAlpha = 1; c.lineWidth = 1;
@@ -443,24 +438,25 @@ class View {
       }
     }
     c.globalAlpha = 1; c.lineWidth = 1;
-    // labels
-    for (const n of order) {
+    // labels: a fault's label is drawn last so nothing sits on top of it
+    for (const n of [...order].sort((a, b) => (a.fault > 0) - (b.fault > 0))) {
       const pp = P[n.name], d = dim(n);
       const flash = T - n.act < 1100, faulty = n.fault > 0;
       const show = faulty || M.sel === n || M.hover === n || (q && d === 1) ||
         (this.big ? (M.labels && (pp.s > .9 || n.heat > 0 || n.name === 'Supervisor') && d > .2) || flash
                   : flash || n.name === 'Supervisor');
       if (!show) continue;
-      c.font = `${faulty || M.sel === n ? 650 : 500} ${this.big ? 11.5 : 9.5}px Inter,ui-sans-serif,sans-serif`;
-      const txt = faulty ? `${n.name}  ⚠ fault` : n.name;
-      const x = pp.x + (pp.r || 5) + 5, y = pp.y + 3.5;
-      if (this.big) { const w = c.measureText(txt).width; c.fillStyle = 'rgba(5,9,18,.55)'; c.fillRect(x - 3, y - 11, w + 6, 15); }
-      c.fillStyle = faulty ? '#ff9aa5' : `rgba(225,233,255,${Math.max(.5, d)})`;
-      c.fillText(txt, x, y);
+      c.font = `${faulty || M.sel === n ? 650 : 500} ${this.big ? 12 : 10}px "Segoe UI Variable Text","Segoe UI",-apple-system,sans-serif`;
+      const txt = faulty ? `${n.name}, fault` : n.name;
+      const x = pp.x + (pp.r || 5) + 6, y = pp.y + 4;
+      const w = c.measureText(txt).width;
+      c.globalAlpha = faulty ? 1 : Math.max(.55, d); c.fillStyle = faulty ? '#FFFFFF' : 'rgba(255,255,255,.88)'; c.fillRect(x - 4, y - 12, w + 8, 16);
+      c.fillStyle = faulty ? RED : '#161922';
+      c.fillText(txt, x, y); c.globalAlpha = 1;
     }
   }
   guides(c) {
-    c.lineWidth = 1; c.strokeStyle = 'rgba(120,150,230,.07)';
+    c.lineWidth = 1; c.strokeStyle = 'rgba(35,66,168,.09)';
     const poly = pts => { c.beginPath(); pts.forEach((p, i) => { const q = this.project(p); i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y); }); c.stroke(); };
     const circ = (fn) => poly(Array.from({length: 65}, (_, i) => fn(i / 64 * 6.2832)));
     if (M.layout === 'sphere') [-.55, 0, .55].forEach(y => { const r = Math.sqrt(1 - y * y); circ(a => [Math.cos(a) * r, y * .92, Math.sin(a) * r]); });
@@ -508,8 +504,8 @@ function inspector() {
       `<div class="bar2" data-sel="${esc(x.name)}"><span>${esc(x.name)}</span><span class="t"><i style="width:${100 * x.heat / mx}%;background:${x.fault ? RED : (GROUPS[x.g] || GROUPS.ops).c}"></i></span><span>${x.heat}</span></div>`).join('')
       : '<div class="empty">No activity yet. Give the agents a job below, or run the probe.</div>'}</div>
       <div class="glass"><div class="ph"><span>How to read it</span></div><div class="empty">Click an agent to inspect it and fly the camera to it. Hover to light up who it talks to.
-      <b style="color:#ff8a96">Blinking red and enlarged</b> = a real failure the server reported; it stays until acknowledged. <b style="color:#ffc46b">Amber</b> = a warning.
-      <b style="color:#c9a4ff">Violet shield</b> = PolicyGuard holding a write for your approval — the guard working. <b style="color:#6ff0b7">Green wave</b> = an approved write landed and was verified.
+      <b style="color:var(--bad)">Blinking red and enlarged</b> = a real failure the server reported; it stays until acknowledged. <b style="color:var(--warn)">Amber</b> = a warning.
+      <b style="color:var(--violet)">Violet shield</b> = PolicyGuard holding a write for your approval — the guard working. <b style="color:var(--ok)">Green wave</b> = an approved write landed and was verified.
       <br><br>Keys: <b>Space</b> play/pause · <b>N</b> step · <b>L</b> layout · <b>H</b> heat · <b>R</b> reset view · <b>F</b> full screen · <b>A</b> acknowledge · <b>Esc</b> deselect · <b>Shift/right-drag</b> pan · <b>double-click</b> reset.</div></div>`);
     return;
   }
@@ -544,7 +540,7 @@ function leftPanel() {
       <div><div class="l">Tool calls</div><div class="v">${c.tools}</div></div><div><div class="l">Writes held</div><div class="v p">${c.held}</div></div>
       <div><div class="l">Committed</div><div class="v g">${c.committed}</div></div><div><div class="l">Verified</div><div class="v g">${c.verified}</div></div>
       <div><div class="l">Faults</div><div class="v ${c.faults ? 'r' : ''}">${c.faults}</div></div><div><div class="l">Warnings</div><div class="v ${c.warnings ? 'a' : ''}">${c.warnings}</div></div></div></div>
-    <div class="glass"><div class="ph"><span>Incidents ${open.length ? `<b style="color:#ff8a96">· ${open.length} open</b>` : ''}</span>${open.length ? '<button data-m="ackall">Acknowledge all</button>' : ''}</div>
+    <div class="glass"><div class="ph"><span>Incidents${open.length ? ` <b style="color:var(--bad)">${open.length} open</b>` : ''}</span>${open.length ? '<button data-m="ackall">Acknowledge all</button>' : ''}</div>
       ${M.incidents.length ? M.incidents.slice(0, 25).map(i => `<div class="inc ${i.kind === 'warn' ? 'warn' : ''} ${i.ack ? 'ack' : ''}" data-sel="${esc(i.agent)}">
         <b>${i.kind === 'error' ? '✕' : '!'} ${esc(i.agent)} · ${esc(i.action)}</b><small>${esc(i.detail).slice(0, 150)}</small>
         <small>run “${esc(i.label).slice(0, 40)}” · ${new Date(i.at).toLocaleTimeString()}</small></div>`).join('')
@@ -562,7 +558,7 @@ function status() {
   const busy = M.flight || M.cur, f = faulted().length;
   const txt = M.flight ? 'thinking…' : M.cur ? `replaying ${Math.min(M.cur.arrived, M.cur.run.steps.length)}/${M.cur.run.steps.length}` :
     M.ctr.runs ? `${M.ctr.runs} run${M.ctr.runs > 1 ? 's' : ''} · ${M.ctr.hops} hops` : 'idle';
-  const live = $('mLive'); if (live) { live.textContent = f ? `${f} FAULT${f > 1 ? 'S' : ''}` : busy ? 'LIVE' : 'READY'; live.className = 'live' + (f ? ' fault' : busy ? ' busy' : ''); }
+  const live = $('mLive'); if (live) { live.textContent = f ? `${f} fault${f > 1 ? 's' : ''}` : busy ? 'Live' : 'Ready'; live.className = 'live' + (f ? ' fault' : busy ? ' busy' : ''); }
   const st = $('mStat'); if (st) st.textContent = txt;
   const mini = $('meshMiniStat'); if (mini) mini.textContent = txt;
   const box = $('meshMini'); if (box) box.classList.toggle('has-fault', f > 0);
@@ -733,7 +729,7 @@ async function probe(opts, btn) {
 function summarise(r) {
   const b = (r && r.blocks) || [];
   // the answer, not the "LLM unreachable, rule engine answered" notice above it
-  const t = b.find(x => x.type === 'text' && x.md && !/Nothing has been written yet/.test(x.md) && !/^_⚠/.test(x.md));
+  const t = b.find(x => x.type === 'text' && x.md && !/Nothing has been written yet/.test(x.md) && !/^_Answered by the rule engine/.test(x.md));
   if (t) return t.md.replace(/\*\*/g, '').replace(/_/g, '').slice(0, 220);
   const titled = b.find(x => x.title);
   return titled ? titled.title : '';
@@ -777,7 +773,7 @@ window.AgentMesh = {
   ingest(trace, label, summary) {
     const run = ingest(trace, label, summary);
     if (run && summary && UI.host && UI.host.offsetParent !== null)
-      toast(`<b>${esc(label).slice(0, 80)}</b><br>${esc(summary)}${run.faults ? `<small style="color:#ff8a96">${run.faults} fault${run.faults > 1 ? 's' : ''} reported — see Incidents</small>` : ''}<small>click to dismiss</small>`);
+      toast(`<b>${esc(label).slice(0, 80)}</b><br>${esc(summary)}${run.faults ? `<small style="color:var(--bad)">${run.faults} fault${run.faults > 1 ? 's' : ''} reported — see Incidents</small>` : ''}<small>click to dismiss</small>`);
     return run;
   },
   inflight(v) { M.flight = !!v; UI.dirty = true; },

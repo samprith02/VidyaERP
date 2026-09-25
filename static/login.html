@@ -3,78 +3,51 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<meta name="theme-color" content="#0b1220"/>
-<title>Sign in · VidyaERP</title>
-<style>
-:root{--acc:#3157d5;--line:#e4e7ec;--mut:#667085;--txt:#101828;--bad:#c43247}
-*{box-sizing:border-box}
-html,body{height:100%;margin:0}
-body{font:14px/1.5 Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:var(--txt);background:#f2f4f7;-webkit-font-smoothing:antialiased}
-.wrap{min-height:100%;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr)}
-.brand{position:relative;overflow:hidden;background:radial-gradient(ellipse at 30% 30%,#1b2a4a 0%,#0b1220 60%,#060a13 100%);color:#e5ecff;padding:48px 56px;display:flex;flex-direction:column}
-.brand canvas{position:absolute;inset:0;width:100%;height:100%;opacity:.55}
-.brand>*{position:relative}
-.logo{display:flex;align-items:center;gap:12px}
-.logo i{width:40px;height:40px;border-radius:10px;background:#fff;color:#0b1220;display:grid;place-items:center;font:700 16px Georgia,serif;font-style:normal}
-.logo b{font-size:15px}.logo span{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#8e9bb8}
-.pitch{margin-top:auto;max-width:520px}
-.pitch h1{margin:0 0 12px;font-size:30px;line-height:1.2;letter-spacing:-.02em}
-.pitch p{margin:0 0 20px;color:#aeb9d4;font-size:14.5px}
-.roles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.roles div{padding:12px 14px;border:1px solid rgba(140,165,235,.18);border-radius:10px;background:rgba(255,255,255,.03)}
-.roles b{display:block;font-size:12.5px;color:#fff}.roles span{font-size:11.5px;color:#9aa8c7}
-.foot{margin-top:28px;font-size:11px;color:#6f7d99}
-.panel{display:flex;align-items:center;justify-content:center;padding:32px 20px}
-.card{width:min(420px,100%)}
-.card h2{margin:0 0 4px;font-size:22px;letter-spacing:-.02em}
-.card .sub{color:var(--mut);margin-bottom:22px}
-label{display:block;font-size:12px;font-weight:600;color:#344054;margin:14px 0 5px}
-input{width:100%;height:42px;padding:0 12px;border:1px solid #d0d5dd;border-radius:9px;font:inherit;background:#fff;outline:0}
-input:focus{border-color:#8fa4e5;box-shadow:0 0 0 3px rgba(49,87,213,.12)}
-button.go{width:100%;height:44px;margin-top:18px;border:0;border-radius:9px;background:var(--acc);color:#fff;font:600 14px inherit;font-family:inherit;cursor:pointer}
-button.go:hover{background:#294bc0}button.go:disabled{opacity:.6}
-.err{min-height:20px;margin-top:10px;color:var(--bad);font-size:12.5px}
-.demo{margin-top:22px;padding:14px;border:1px solid #f3dcc0;border-radius:11px;background:#fffaf2}
-.demo .h{display:flex;justify-content:space-between;align-items:center;font-size:10px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;color:#92500c}
-.demo p{margin:6px 0 10px;font-size:11.5px;color:#8a5200}
-.acc{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;margin-top:6px;border:1px solid #f0e2cf;border-radius:8px;background:#fff;cursor:pointer;text-align:left;font:inherit}
-.acc:hover{border-color:#d8b58a}
-.acc .r{flex:0 0 118px;font-size:10px;font-weight:750;letter-spacing:.05em;text-transform:uppercase;color:#92500c}
-.acc .w{flex:1;min-width:0;font-size:12px;color:#344054;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.acc code{font:11px ui-monospace,monospace;color:#667085}
-@media(max-width:900px){.wrap{grid-template-columns:1fr}.brand{padding:28px 22px}.pitch{margin-top:26px}.pitch h1{font-size:23px}.roles{display:none}.foot{display:none}}
-</style>
+<meta name="theme-color" content="#F5F6F9"/>
+<title>MAWOS — Sign in</title>
+<link rel="stylesheet" href="/static/mawos.css"/>
 </head>
 <body>
-<div class="wrap">
-  <section class="brand">
-    <canvas id="bg"></canvas>
-    <div class="logo"><i>VI</i><div><b>Vidyatech Institute of Engineering</b><span>VidyaERP · agentic campus</span></div></div>
-    <div class="pitch">
-      <h1>One conversation for everything the campus office does.</h1>
-      <p>Sixteen specialist agents behind one assistant. Each sees only what your role allows, and nothing changes until you say yes.</p>
-      <div class="roles">
-        <div><b>Students</b><span>Attendance by subject, dues, gate passes, certificates, placement eligibility.</span></div>
-        <div><b>Faculty</b><span>Your day, mentees, leave with the timetable impact already worked out.</span></div>
-        <div><b>Heads of department</b><span>Department overview, leave decisions, absence cover for your staff.</span></div>
-        <div><b>Registrar</b><span>The whole institution, the autopilot, and the live agent mesh.</span></div>
-      </div>
-      <div class="foot">Synthetic demonstration data. No real institution or person is represented.</div>
+<div class="signin">
+  <section class="story">
+    <div class="wordmark">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="8" fill="#2342A8"/><g stroke="#fff" stroke-width="1.6" fill="none"><path d="M16 16 8.5 9.5M16 16l7.5-6.5M16 16l-7.5 6.5M16 16l7.5 6.5"/></g><g fill="#fff"><circle cx="16" cy="16" r="3.4"/><circle cx="8.5" cy="9.5" r="2"/><circle cx="23.5" cy="9.5" r="2"/><circle cx="8.5" cy="22.5" r="2"/><circle cx="23.5" cy="22.5" r="2"/></g><circle cx="23.5" cy="22.5" r="2.6" fill="#B79AF0"/></svg>
+      <div><b>MAWOS</b><span>for educational institutions</span></div>
     </div>
+
+    <h1>Multi-Agent Workflow Orchestration System</h1>
+    <p class="lede">An ERP for colleges where the office work is done by sixteen specialist agents: timetables and absence cover, leave, gate passes, hostels, buses, the library, placements and certificates. You ask in plain words. The agents prepare the change, and nothing is written until a person approves it.</p>
+
+    <div class="flow" id="flow" aria-label="How a request moves through the system">
+      <div class="st"><b>You ask</b><span>“Priya is absent on Monday, arrange cover.”</span></div>
+      <div class="st"><b>The supervisor routes it</b><span>To the agents that own the work.</span></div>
+      <div class="st"><b>Agents prepare</b><span>Three ranked plans, with make-up classes booked.</span></div>
+      <div class="st approve"><b>You approve</b><span>The guard holds every change until you say yes.</span></div>
+      <div class="st"><b>Written and checked</b><span>Re-read after the write, and logged.</span></div>
+    </div>
+
+    <div class="who-for">
+      <div><b>Registrar</b><span>The whole institution, the autopilot and the live agent mesh.</span></div>
+      <div><b>Head of department</b><span>The department's leave, workload and absence cover.</span></div>
+      <div><b>Faculty</b><span>Your day, your mentees, and leave with its timetable impact worked out.</span></div>
+      <div><b>Students</b><span>Attendance by subject, dues, gate passes, certificates, placements.</span></div>
+    </div>
+    <p class="fine">This demonstration runs on a synthetic college, Vidyatech Institute of Engineering. No real institution or person is represented.</p>
   </section>
+
   <section class="panel">
     <form class="card" id="f" autocomplete="on">
       <h2>Sign in</h2>
-      <div class="sub">Use your USN, your staff ID, or <code>registrar</code>.</div>
+      <p class="sub">Sign in with one of the demo accounts below and try a multi-agent ERP for educational institutions, from the Registrar's desk or from a student's phone.</p>
       <label for="u">Username</label>
       <input id="u" name="username" autocomplete="username" autocapitalize="characters" spellcheck="false" required/>
       <label for="p">Password</label>
       <input id="p" name="password" type="password" autocomplete="current-password" required/>
       <button class="go" id="go" type="submit">Sign in</button>
       <div class="err" id="err" role="alert"></div>
-      <div class="demo" id="demo" hidden>
-        <div class="h"><span>Demo accounts</span><span>click to fill</span></div>
-        <p id="demoNote"></p>
+      <div class="demo-box" id="demo" hidden>
+        <div class="h">Demo accounts <span>select one to fill the form</span></div>
+        <p>Each password is the username in lower case. All data is synthetic.</p>
         <div id="demoList"></div>
       </div>
     </form>
@@ -83,38 +56,38 @@ button.go:hover{background:#294bc0}button.go:disabled{opacity:.6}
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TRY={'Registrar':'Ask “What needs my attention today?”','HOD':'Ask for the department overview',
+  'Faculty':'Apply for leave and see the impact','Student':'Request a gate pass for Saturday',
+  'Final-year student':'See which placement drives you qualify for'};
 fetch('/api/auth/me').then(r=>{if(r.ok)location.href='/'}).catch(()=>{});
 fetch('/api/auth/demo').then(r=>r.json()).then(d=>{
   if(!d.demo)return;
-  $('#demo').hidden=false; $('#demoNote').textContent=d.note;
+  $('#demo').hidden=false;
   $('#demoList').innerHTML=d.accounts.map(a=>`<button type="button" class="acc" data-u="${esc(a.username)}" data-p="${esc(a.password)}">
-    <span class="r">${esc(a.role)}</span><span class="w">${esc(a.who)}</span><code>${esc(a.username)}</code></button>`).join('');
+    <span class="r">${esc(a.role)}</span><span class="w">${esc(a.who)} <code>${esc(a.username)}</code></span>
+    <span class="t">${esc(TRY[a.role]||'')}</span></button>`).join('');
   $('#demoList').onclick=e=>{const b=e.target.closest('.acc');if(!b)return;$('#u').value=b.dataset.u;$('#p').value=b.dataset.p;$('#go').focus();};
 });
 $('#f').onsubmit=async e=>{
-  e.preventDefault(); $('#err').textContent=''; $('#go').disabled=true; $('#go').textContent='Signing in…';
+  e.preventDefault(); $('#err').textContent=''; $('#go').disabled=true; $('#go').textContent='Signing in';
   try{
     const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({username:$('#u').value.trim(),password:$('#p').value})});
     const d=await r.json();
     if(r.ok){location.href=d.home||'/';return;}
-    $('#err').textContent=d.error||'Could not sign in.';
-  }catch(_){ $('#err').textContent='The server is not reachable.'; }
+    $('#err').textContent=d.error||'That did not work. Check the username and password.';
+  }catch(_){ $('#err').textContent='The server is not reachable. Check your connection and try again.'; }
   $('#go').disabled=false; $('#go').textContent='Sign in';
 };
-/* a quiet constellation behind the pitch - decorative, and says nothing about data */
+// One orchestrated moment: the request walks through the five stages, and
+// pauses on the approval, which is the point of the system.
 (function(){
-  const c=$('#bg'),x=c.getContext('2d');let W,H,P=[];
-  const fit=()=>{const d=devicePixelRatio||1;W=c.clientWidth;H=c.clientHeight;c.width=W*d;c.height=H*d;x.setTransform(d,0,0,d,0,0);
-    P=Array.from({length:Math.round(W*H/9000)},()=>({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*.25,vy:(Math.random()-.5)*.25}));};
-  fit(); addEventListener('resize',fit);
-  if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
-  (function f(){x.clearRect(0,0,W,H);
-    for(const p of P){p.x=(p.x+p.vx+W)%W;p.y=(p.y+p.vy+H)%H;}
-    for(let i=0;i<P.length;i++)for(let j=i+1;j<P.length;j++){const a=P[i],b=P[j],d=Math.hypot(a.x-b.x,a.y-b.y);
-      if(d<110){x.strokeStyle=`rgba(143,164,229,${.18*(1-d/110)})`;x.beginPath();x.moveTo(a.x,a.y);x.lineTo(b.x,b.y);x.stroke();}}
-    x.fillStyle='rgba(190,205,255,.7)';for(const p of P){x.beginPath();x.arc(p.x,p.y,1.3,0,6.3);x.fill();}
-    requestAnimationFrame(f);})();
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){document.querySelectorAll('#flow .st').forEach(s=>s.classList.add('on'));return;}
+  const st=[...document.querySelectorAll('#flow .st')];let i=0;
+  const step=()=>{st.forEach((s,k)=>s.classList.toggle('on',k<=i));const hold=st[i].classList.contains('approve')?2200:900;
+    i=(i+1)%(st.length+1);if(i===st.length){setTimeout(()=>{st.forEach(s=>s.classList.remove('on'));i=0;setTimeout(step,500)},1600);return;}
+    setTimeout(step,hold);};
+  setTimeout(step,500);
 })();
 </script>
 </body>

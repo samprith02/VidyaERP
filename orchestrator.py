@@ -195,7 +195,7 @@ def resolve_pending(con, text, st, tr, actor):
                         l["action"].title(), l["to"]] for l in applied],
                       title=f"Applied — Plan {plan['code']}")
         return {"blocks": [
-            B_text(f"✅ **Plan {plan['code']} — {plan['title']}** is now live for "
+            B_text(f"**Plan {plan['code']} — {plan['title']}** is now live for "
                    f"**{date.strftime('%d %b %Y (%A)')}**."),
             tbl,
             B_notice(msgs),
@@ -218,7 +218,7 @@ def resolve_pending(con, text, st, tr, actor):
                                         actor, "Admin", d["amount"], d["priority"])
             st["pending"] = None
             tr.add("RequestAgent", "route", f"REQ-{rid:04d} → {d['target']} (SLA 48h)")
-            return {"blocks": [B_text(f"📨 **REQ-{rid:04d}** raised and routed to **{d['target']}**.\n\n"
+            return {"blocks": [B_text(f"**REQ-{rid:04d}** raised and routed to **{d['target']}**.\n\n"
                                       f"*{d['title']}*\n\nSLA clock: 48 hours. I'll nudge them at the 36-hour mark "
                                       f"and escalate to the Principal if it's still open at 48.")],
                     "trace": tr.items, "agent": "RequestAgent", "intent": "request.manage",
@@ -234,7 +234,7 @@ def resolve_pending(con, text, st, tr, actor):
             NotifyAgent().dispatch(con, p["msgs"])
             st["pending"] = None
             tr.add("NotifyAgent", "dispatch", f"{len(p['msgs'])} channel(s) fired")
-            return {"blocks": [B_text(f"📣 Sent to **{p['msgs'][0]['audience']}** over "
+            return {"blocks": [B_text(f"Sent to **{p['msgs'][0]['audience']}** over "
                                       f"{p['msgs'][0]['channel']}. Delivery receipts will appear in "
                                       f"Notifications.")],
                     "trace": tr.items, "agent": "NotifyAgent", "intent": "notify.broadcast",
@@ -338,7 +338,7 @@ def _portal_chips(P):
 
 def _data_text(d):
     d = d or {}
-    return ("⚠ " + str(d["error"])) if d.get("error") else (d.get("note") or "Done.")
+    return ("" + str(d["error"])) if d.get("error") else (d.get("note") or "Done.")
 
 
 # =====================================================================
@@ -445,8 +445,8 @@ def h_absence(con, text, ent, st, tr, actor):
     if not f:
         tr.add("EntityResolver", "unresolved", "no faculty member named in the request", status="warn")
         return {"blocks": [B_text("I couldn't pin down **which faculty member** is absent. "
-                                  "Give me a name or staff ID — e.g. *“Dr. Ramesh Bhat is absent tomorrow”* "
-                                  "or *“F012 on leave 9 Sep”*."),
+                                  "Give me a name or staff ID, for example “Dr. Ramesh Bhat is absent tomorrow” "
+                                  "or “F012 on leave 9 Sep”."),
                            B_table(["ID", "Name", "Dept", "Designation"],
                                    [[r["id"], r["name"], r["dept"], r["designation"]]
                                     for r in rows(con, "SELECT * FROM faculty ORDER BY dept LIMIT 8")],
@@ -581,7 +581,7 @@ def h_timetable(con, text, ent, st, tr, actor):
     grid = tta.class_grid(con, dept, sem, sec, date.isoformat())
     ov = [c for c in grid["cells"].values() if c["override"]]
     tr.add("TimetableAgent", "grid_render", f"{dept}-{sem}{sec} · {len(grid['cells'])} slots · {len(ov)} override(s)")
-    note = (f"\n\n⚠ **{len(ov)} live override(s)** for {date.strftime('%d %b')} shown in amber."
+    note = (f"\n\n**{len(ov)} live override(s)** for {date.strftime('%d %b')} shown in amber."
             if ov else "")
     return {"blocks": [B_text(f"**{dept} · Semester {sem} · Section {sec}** — master timetable"
                               f" (week of {date.strftime('%d %b %Y')}){note}"),
@@ -627,7 +627,7 @@ def h_faculty(con, text, ent, st, tr, actor):
                      {"label": "Utilisation", "value": f"{round(100*total/f['max_load'])}%",
                       "tone": "bad" if total > f["max_load"] else "good"},
                      {"label": "Since", "value": f["joined"][:4]}], title=f["name"]),
-            B_text(f"**{f['designation']}**, {f['dept']} · 📧 {f['email']} · 📞 {f['phone']}"),
+            B_text(f"**{f['designation']}**, {f['dept']}. Email {f['email']}, phone {f['phone']}"),
             B_table(["Subject", "Class", "Hrs/week"],
                     [[f"{l['subject']} · {subj_name(con,l['subject'])}",
                       f"{l['dept']}-{l['sem']}{l['section']}", l["hrs"]] for l in load],
@@ -678,8 +678,8 @@ def h_student(con, text, ent, st, tr, actor):
                       "tone": "bad" if s["fee_due"] else "good"}], title=f"{s['name']} · {s['usn']}"),
             B_text(f"{s['dept']} · Semester {s['sem']} · Section {s['section']} · "
                    f"{'Hostelite' if s['hostel'] else 'Day scholar'} · Category {s['category']}\n\n"
-                   f"Mentor: **{fac_name(con, s['mentor'])}** · 📞 {s['phone']}" +
-                   ("\n\n⚠ **Below 75% attendance** — ineligible for SEE unless condonation is approved."
+                   f"Mentor: **{fac_name(con, s['mentor'])}**, phone {s['phone']}" +
+                   ("\n\n**Below 75% attendance** — ineligible for SEE unless condonation is approved."
                     if s["attendance"] < 75 else ""))],
             "agent": "StudentAgent",
             "chips": ["Send attendance warning to parent", "Fee dues in this department"]}
@@ -831,7 +831,7 @@ def h_request(con, text, ent, st, tr, actor):
         tr.add("PolicyGuard", "delegation_limit", f"admin auto-approval ceiling ₹{cap:,} respected")
         tr.add("RequestAgent", "bulk_decision", f"{len(pend)} request(s) approved in one transaction")
         val = sum(r["amount"] for r in pend)
-        return {"blocks": [B_text(f"✅ Bulk-approved **{len(pend)} request(s)** at or below {inr(cap)}"
+        return {"blocks": [B_text(f"Bulk-approved **{len(pend)} request(s)** at or below {inr(cap)}"
                                   + (f", committing {inr(val)} of budget." if val else
                                      " (all zero-value administrative items).")),
                            B_table(["ID", "Type", "Title", "Amount"],
@@ -978,7 +978,7 @@ def h_fallback(con, text, ent, st, tr, actor):
             ["Faculty leave", "“Review pending leave applications”"],
             ["Student 360", "“Everything about 4VP24CS017”"]]
     return {"blocks": [
-        B_text("I'm the **VidyaERP copilot** — a supervisor agent with sixteen specialists behind it "
+        B_text("I'm **MAWOS**, the Multi-Agent Workflow Orchestration System: a supervisor with sixteen specialist agents behind it "
                "(timetable, substitution, faculty, student, finance, exam, approvals, notifications, analytics, "
                "library, hostel, transport, gate pass, placement, documents, HR). "
                "I didn't catch a clear intent in that. Here's what I can do:"),
