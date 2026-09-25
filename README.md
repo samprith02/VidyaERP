@@ -118,6 +118,7 @@ python3 tests/mcp_parity.py   # MCP guard parity: 254 assertions, no server, no 
 python3 tests/campus_test.py  # campus services: 122 assertions, no server, no API cost
 python3 tests/mesh_test.py    # the agent mesh's fault channel: 22 assertions, no server, no API cost
 python3 tests/auth_test.py    # logins, route gating, per-role policy: 77 assertions, no server, no API cost
+python3 tests/makeup_test.py  # booked make-up classes, never double-booked: 19 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
 python3 tests/deploy_test.py  # deployment readiness: 68 assertions, no server, no API cost
 python3 tests/nlu_test.py     # date resolution: 15 assertions, no server, no API cost
@@ -220,7 +221,12 @@ Say: *“Prof. Sneha Mallya is absent next Monday, arrange coverage.”*
 5. **Commit** — timetable overrides written, leave ledger updated, notifications drafted and
    dispatched to each affected section, each substitute, and the HOD/Principal digest, audit row
    recorded. The published timetable grid shows overridden cells in amber.
-6. **Rollback** — *“undo”* reverts the whole plan by its reference id.
+6. **Make-ups are booked, not just promised** — plans B and C hold a dated make-up session with a
+   room for every deferred hour (a missed 3-period lab gets 3 consecutive periods, on Saturday
+   afternoon when no batch is timetabled). Booked hours are occupied for every later plan, and each
+   booking is re-checked at apply time against the weekly timetable and every other booking. They
+   appear on the class timetable for that week and in each student's and teacher's day.
+7. **Rollback** — *“undo”* reverts the whole plan by its reference id and releases its make-ups.
 
 ---
 
@@ -505,6 +511,7 @@ VidyaERP/
     ├── campus_test.py  campus rules pinned case by case, routing kept, core data untouched
     ├── mesh_test.py    the fault channel: failures reported, pinned on their owner, holds are not faults
     ├── auth_test.py    sign-in, every route's gate, per-role policy, self-service writes, session binding
+    ├── makeup_test.py  make-ups are booked, re-read for clashes, released on undo, shown to the right people
     └── mock_llm.py     fake OpenAI endpoint + rogue-agent guard test
 ```
 
