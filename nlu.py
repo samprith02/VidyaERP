@@ -478,3 +478,75 @@ def plan_choice(text):
     if m:
         return {"a": 0, "b": 1, "c": 2}[m.group(1)]
     return None
+
+
+# ------------------------------------------------------------------ languages (#31)
+# Kannada and Hindi - in their own scripts and romanised - for the words a
+# college office actually types. The sentence is normalised to English BEFORE
+# the NLU sees it, so every rule, date parser and guard below runs unchanged.
+#
+# Deliberate limits, each pinned by tests/nlu_test.py:
+#   * no translation ever yields an approval word. A write is confirmed with
+#     "yes" / "approve" in English, on purpose: the write gate's vocabulary is
+#     not something a lookup table should widen;
+#   * Hindi "kal" means both tomorrow and yesterday. It is read forward, the
+#     only reading an absence plan or a gate pass can act on, and the resolved
+#     date is echoed back before anything commits;
+#   * romanised forms that are also common first names (Indu, "today" in
+#     Kannada) are left out - only the Kannada-script form is read.
+# A native-script form matches as a word STEM: Kannada and Hindi add case
+# endings (ನಾಳೆಗೆ, "for tomorrow"), which the stem absorbs.
+LEXICON = [
+    ("day after tomorrow", ["ನಾಡಿದ್ದು", "naadiddu", "परसों", "parson", "parso"]),
+    ("tomorrow", ["ನಾಳೆ", "naale", "nale", "कल", "kal"]),
+    ("today", ["ಇಂದು", "ಇವತ್ತು", "ivattu", "आज", "aaj"]),
+    ("yesterday", ["ನಿನ್ನೆ", "ninne"]),
+    ("on monday", ["ಸೋಮವಾರ", "somavara", "somvara", "सोमवार", "somvar", "somwar"]),
+    ("on tuesday", ["ಮಂಗಳವಾರ", "mangalavara", "मंगलवार", "mangalvar", "mangalwar"]),
+    ("on wednesday", ["ಬುಧವಾರ", "budhavara", "बुधवार", "budhvar", "budhwar"]),
+    ("on thursday", ["ಗುರುವಾರ", "guruvara", "गुरुवार", "guruvar", "guruwar"]),
+    ("on friday", ["ಶುಕ್ರವಾರ", "shukravara", "शुक्रवार", "shukravar", "shukrawar"]),
+    ("on saturday", ["ಶನಿವಾರ", "shanivara", "शनिवार", "shanivar", "shaniwar"]),
+    ("is absent", ["ಬರೊಲ್ಲ", "ಬರಲ್ಲ", "barolla", "baralla", "नहीं आएंगे", "नहीं आएगा", "नहीं आएगी",
+                   "nahi aayenge", "nahin aayenge", "nahi aayega", "nahi aayegi"]),
+    ("absent", ["ಗೈರುಹಾಜರು", "ಗೈರು", "gairuhajaru", "gairu", "अनुपस्थित", "anupasthit", "गैरहाज़िर", "gairhazir"]),
+    ("leave", ["ರಜೆ", "raje", "छुट्टी", "chutti", "chhutti"]),
+    ("timetable", ["ವೇಳಾಪಟ್ಟಿ", "velapatti", "समय सारणी", "samay sarni", "samay saarini", "samay sarini"]),
+    ("attendance", ["ಹಾಜರಾತಿ", "hajarati", "उपस्थिति", "upasthiti", "हाज़िरी", "हाजिरी", "haziri", "hazri"]),
+    ("exam", ["ಪರೀಕ್ಷೆ", "pareekshe", "परीक्षा", "pariksha"]),
+    ("fees", ["ಶುಲ್ಕ", "shulka", "शुल्क", "shulk", "फीस", "phees"]),
+    ("library", ["ಗ್ರಂಥಾಲಯ", "granthalaya", "पुस्तकालय", "pustakalaya"]),
+    ("books", ["ಪುಸ್ತಕ", "pustaka", "किताब", "kitab", "kitaab", "पुस्तक", "pustak"]),
+    ("hostel", ["ವಸತಿ ನಿಲಯ", "छात्रावास", "chhatravas", "chatravas"]),
+    ("students", ["ವಿದ್ಯಾರ್ಥಿ", "vidyarthi", "विद्यार्थी", "छात्र", "chhatra"]),
+    ("faculty", ["ಉಪನ್ಯಾಸಕ", "upanyasaka", "ಶಿಕ್ಷಕ", "shikshaka", "शिक्षक", "shikshak", "अध्यापक", "adhyapak"]),
+    ("substitute", ["ಬದಲಿ", "badali", "बदली", "badli"]),
+    ("show", ["ತೋರಿಸಿ", "torisi", "दिखाओ", "दिखाइए", "dikhao", "dikhaiye", "बताओ", "बताइए", "batao", "bataiye"]),
+    ("gate pass", ["ಗೇಟ್ ಪಾಸ್", "गेट पास"]),
+]
+# Words people use to CONFIRM in these languages. They are recognised only so
+# the answer can say why they do not commit anything (see LEXICON's first limit).
+NATIVE_YES = re.compile(r"(?:ಹೌದು|ಸರಿ|हाँ|हां|ठीक है|(?<![a-z])(?:haan|haa|howdu|houdu|sari|theek hai|thik hai)(?![a-z]))", re.I)
+_NATIVE = re.compile(r"[\u0900-\u097F\u0C80-\u0CFF]")
+
+
+def _lex_rx(form):
+    if _NATIVE.search(form):
+        # a stem: absorb the case ending that follows it
+        return re.escape(form).replace(r"\ ", r"\s+") + r"[\u0900-\u097F\u0C80-\u0CFF]*"
+    return r"(?<![a-z])" + re.escape(form).replace(r"\ ", r"\s+") + r"(?![a-z])"
+
+
+_LEX = sorted(((_lex_rx(f), en, f) for en, forms in LEXICON for f in forms), key=lambda x: -len(x[2]))
+_LEX = [(re.compile(rx, re.I), en, f) for rx, en, f in _LEX]
+
+
+def normalize(text):
+    """-> (english text, [(form, english), ...]). Text with nothing to
+    translate comes back unchanged, so English input is never touched."""
+    out, hits = str(text or ""), []
+    for rx, en, form in _LEX:
+        if rx.search(out):
+            hits.append((form, en))
+            out = rx.sub(f" {en} ", out)
+    return (re.sub(r"[ \t]+", " ", out).strip() if hits else out), hits

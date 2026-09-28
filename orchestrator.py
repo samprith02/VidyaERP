@@ -41,6 +41,18 @@ def handle(con, text, sid="default", role="admin", actor="admin@vidyatech"):
     tr = Trace()
     guard, auditor = PolicyGuard(), Auditor()
     tr.add("Supervisor", "receive", f'"{text[:90]}"')
+    # Kannada / Hindi (#31): read in English from here on, so every rule below
+    # is unchanged; the trace says what was translated, the ledger keeps the words.
+    said, (text, lex) = text, nlu.normalize(text)
+    if lex:
+        tr.add("EntityResolver", "translate", " · ".join(f"{f} → {e}" for f, e in lex[:6]))
+    if st.get("pending") and nlu.NATIVE_YES.search(said) and not nlu.is_yes(text):
+        # a confirmation in another language commits nothing, and says why
+        tr.add("PolicyGuard", "write_blocked", "confirmation not in English · proposal kept", status="warn")
+        return {"blocks": [B_text("Nothing has been written. To confirm, please say **yes** in English: "
+                                  "the write gate reads only that, on purpose.")],
+                "agent": "PolicyGuard", "intent": "hitl", "confidence": 90, "trace": tr.items,
+                "chips": ["Yes, go ahead", "No, discard it"]}
 
     # A student, teacher or HOD never reaches the handlers below: those read
     # the institution directly. Their turns go through portal routing and
@@ -49,7 +61,7 @@ def handle(con, text, sid="default", role="admin", actor="admin@vidyatech"):
     if P and P.get("role") != "admin":
         out = portal_turn(con, text, st, tr, P)
         out["trace"] = tr.items
-        auditor.log(con, P["id"], out.get("agent", "Supervisor"), out.get("intent", "portal"), {"q": text},
+        auditor.log(con, P["id"], out.get("agent", "Supervisor"), out.get("intent", "portal"), {"q": said},
                     "answered")
         return out
 
@@ -57,7 +69,7 @@ def handle(con, text, sid="default", role="admin", actor="admin@vidyatech"):
     if st["pending"]:
         res = resolve_pending(con, text, st, tr, actor)
         if res:
-            auditor.log(con, actor, "Supervisor", "hitl_resolution", {"text": text}, "committed")
+            auditor.log(con, actor, "Supervisor", "hitl_resolution", {"text": said}, "committed")
             return res
 
     ranked = nlu.classify(text)
@@ -102,7 +114,7 @@ def handle(con, text, sid="default", role="admin", actor="admin@vidyatech"):
     out["trace"] = tr.items
     out["intent"] = intent
     out["confidence"] = conf
-    auditor.log(con, actor, out.get("agent", "Supervisor"), intent, {"q": text}, "answered")
+    auditor.log(con, actor, out.get("agent", "Supervisor"), intent, {"q": said}, "answered")
     st["history"].append({"q": text, "intent": intent})
     return out
 

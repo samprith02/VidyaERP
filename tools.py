@@ -790,7 +790,8 @@ def select_tools(text, session=None, limit=9):
         # construction, so no narrowing is needed. execute() refuses anything
         # else anyway; this only keeps the model from wasting a hop on it.
         return [BY_NAME[n] for n in menu if n in BY_NAME], menu
-    picked, ranked = [], nlu.classify(text or "")
+    # a Kannada or Hindi request is narrowed on its English reading (#31)
+    picked, ranked = [], nlu.classify(nlu.normalize(text or "")[0])
     for intent, score, _hits in ranked[:2]:
         for name in TOOL_GROUPS.get(intent, []):
             if name not in picked:

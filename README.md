@@ -5,7 +5,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![Dependencies: 2](https://img.shields.io/badge/dependencies-2-brightgreen.svg)](requirements.txt)
-[![Tests: 734 assertions](https://img.shields.io/badge/tests-734_assertions_passing-brightgreen.svg)](#tests)
+[![Tests: 753 assertions](https://img.shields.io/badge/tests-753_assertions_passing-brightgreen.svg)](#tests)
 [![Tools: 59, 20 gated](https://img.shields.io/badge/tools-59_·_20_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
 [![Data: synthetic](https://img.shields.io/badge/data-100%25_synthetic-lightgrey.svg)](NOTICE)
 
@@ -40,7 +40,7 @@ LLM client included, and the console is plain HTML with three local files (`stat
 
 | | | | |
 |:--|:--|:--|:--|
-| **16** specialist agents | **59** tools · **20** writes, every one gated | **734** test assertions, 0 failing | **2** dependencies |
+| **16** specialist agents | **59** tools · **20** writes, every one gated | **753** test assertions, 0 failing | **2** dependencies |
 | **271** absences swept: the top plan fully covers **268** | **456 / 456** periods placed by the solver, 0 clashes | **91%** less tool payload per LLM turn | **0** external assets in the console |
 
 Every number above is measured by [`docs/charts/make_charts.py`](docs/charts/make_charts.py) and
@@ -89,6 +89,15 @@ README redraw themselves from the code.
 The UI badge in the top bar shows which engine is live; click it to ping the endpoint.
 Everything degrades gracefully: if the LLM is unreachable mid-turn, the rule engine answers
 and says so.
+
+**Kannada and Hindi, too (#31).** Office staff can type *ನಾಳೆ CSE 5A ವೇಳಾಪಟ್ಟಿ ತೋರಿಸಿ*, *कल ECE
+sem 3 की समय सारणी दिखाओ* or *Dr. X naale barolla*. The rule engine reads a curated lexicon (both
+scripts and romanised; Kannada case endings absorbed) as English before the NLU runs, the trace
+shows what was translated and the ledger keeps the words as typed; the LLM is told to answer in the
+language it was asked in. Two limits are deliberate: **a write is confirmed only by “yes” in
+English** (ಹೌದು / हाँ commit nothing and the answer says why; no translation may produce an approval
+word), and Hindi *kal* is read as *tomorrow*, the only reading a plan can act on, with the date
+echoed before anything commits.
 
 ### Enabling the LLM agent
 
@@ -162,7 +171,7 @@ The trace shows exactly which of these happened:
 ### Tests
 
 <p align="center">
-  <img src="docs/charts/tests.svg" alt="Bar chart: 734 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 753 assertions across 11 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24, language_test 19" width="760">
 </p>
 
 ```bash
@@ -176,6 +185,7 @@ python3 tests/academics_test.py # standing faculty availability, honoured by eve
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
 python3 tests/deploy_test.py  # deployment readiness: 68 assertions, no server, no API cost
 python3 tests/nlu_test.py     # date resolution, ISO dates included: 24 assertions, no server, no API cost
+python3 tests/language_test.py # Kannada and Hindi input, never widening the write gate: 19 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 python3 docs/charts/make_charts.py --tests   # re-measure everything and redraw this README's charts
@@ -335,7 +345,7 @@ sequenceDiagram
 ### The ranking, measured across every absence the timetable can produce
 
 Each of the 53 teachers made absent on each teaching day of one week gives **271 absences**
-(24.8 ms each to plan). The recommendation is spread across all three strategies. None of them is
+(10.6 ms each to plan). The recommendation is spread across all three strategies. None of them is
 a default that wins by construction:
 
 <p align="center">
@@ -363,7 +373,7 @@ arranged), and those cards are flagged **incomplete** on the page rather than ra
 | Plan B folded into plan A (identical committed rows) | 90 |
 | Top plan covers every hour | 268 of 271 |
 | Rank of the recommended plan | min 48.5 · median 94.7 · max 98.95 |
-| Planning time | 24.8 ms per absence |
+| Planning time | 10.6 ms per absence |
 
 </details>
 
@@ -777,7 +787,7 @@ keeps every day contiguous.
 <table>
 <tr>
 <td width="50%"><img src="docs/charts/solver_scarcity.svg" alt="Columns: share of 456 periods placed as lab rooms are removed. 6 rooms 100%, 5 100%, 4 99.1%, 3 97.8%, 2 95.6%, 1 93.2%"></td>
-<td width="50%"><img src="docs/charts/solver_seeds.svg" alt="Columns: solve time for ten seeds, all between about 0.8 and 1.0 seconds on this machine, every seed placing 456 of 456"></td>
+<td width="50%"><img src="docs/charts/solver_seeds.svg" alt="Columns: solve time for ten seeds, every one under a second on this machine, every seed placing 456 of 456"></td>
 </tr>
 </table>
 
