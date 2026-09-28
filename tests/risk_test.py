@@ -54,9 +54,16 @@ def call(args=None, user=None):
 W = {k: w for k, _l, w in agents.RISK_SIGNALS}
 
 
+import academics                                                  # noqa: E402
+
+# The CIE signal is live only when the register exists (#32). Its own maths is
+# cie_test's business; here it is taken as given and added in.
+CIE = ({r["usn"] for r in academics.cie_risk(con)} if hasattr(academics, "cie_risk") else set())
+
+
 def score_of(s, subj):
     """The index, recomputed from the raw tables without StudentAgent."""
-    sc = 0
+    sc = W["cie"] if s["usn"] in CIE else 0
     sc += W["att75"] if s["attendance"] < 75 else 0
     sc += W["att60"] if s["attendance"] < 60 else 0
     sc += W["subj"] if subj.get(s["usn"], 0) >= 2 else 0
