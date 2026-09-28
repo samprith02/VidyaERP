@@ -196,6 +196,7 @@ python3 tests/nlu_test.py     # date resolution, ISO dates included: 37 assertio
 python3 tests/nlu_test.py     # date resolution, ISO dates included: 24 assertions, no server, no API cost
 python3 tests/language_test.py # Kannada and Hindi input, never widening the write gate: 19 assertions, no server, no API cost
 python3 tests/cie_test.py     # CIE marks: seed, standing, validated gated entry, role scope: 59 assertions, no server, no API cost
+python3 tests/nlu_test.py     # date resolution, ISO dates included: 30 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 python3 docs/charts/make_charts.py --tests   # re-measure everything and redraw this README's charts

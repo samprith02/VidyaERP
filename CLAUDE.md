@@ -313,6 +313,7 @@ python tests/nlu_test.py       # 37 assertions, no server, no API cost
 python tests/nlu_test.py       # 24 assertions, no server, no API cost
 python tests/language_test.py  # 19 assertions, no server, no API cost
 python tests/cie_test.py       # 59 assertions, no server, no API cost
+python tests/nlu_test.py       # 30 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)
