@@ -90,6 +90,15 @@ The UI badge in the top bar shows which engine is live; click it to ping the end
 Everything degrades gracefully: if the LLM is unreachable mid-turn, the rule engine answers
 and says so.
 
+**Kannada and Hindi, too (#31).** Office staff can type *ನಾಳೆ CSE 5A ವೇಳಾಪಟ್ಟಿ ತೋರಿಸಿ*, *कल ECE
+sem 3 की समय सारणी दिखाओ* or *Dr. X naale barolla*. The rule engine reads a curated lexicon (both
+scripts and romanised; Kannada case endings absorbed) as English before the NLU runs, the trace
+shows what was translated and the ledger keeps the words as typed; the LLM is told to answer in the
+language it was asked in. Two limits are deliberate: **a write is confirmed only by “yes” in
+English** (ಹೌದು / हाँ commit nothing and the answer says why; no translation may produce an approval
+word), and Hindi *kal* is read as *tomorrow*, the only reading a plan can act on, with the date
+echoed before anything commits.
+
 ### Enabling the LLM agent
 
 ```bash
@@ -168,6 +177,7 @@ The trace shows exactly which of these happened:
   <img src="docs/charts/tests.svg" alt="Bar chart: 748 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 91, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24" width="760">
   <img src="docs/charts/tests.svg" alt="Bar chart: 737 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 71, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24" width="760">
   <img src="docs/charts/tests.svg" alt="Bar chart: 739 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, nlu_test 29, mesh_test 25, academics_test 24" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 753 assertions across 11 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24, language_test 19" width="760">
 </p>
 
 ```bash
@@ -181,6 +191,8 @@ python3 tests/academics_test.py # standing faculty availability, honoured by eve
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
 python3 tests/deploy_test.py  # deployment readiness: 68 assertions, no server, no API cost
 python3 tests/nlu_test.py     # date resolution, ISO dates included: 37 assertions, no server, no API cost
+python3 tests/nlu_test.py     # date resolution, ISO dates included: 24 assertions, no server, no API cost
+python3 tests/language_test.py # Kannada and Hindi input, never widening the write gate: 19 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 python3 docs/charts/make_charts.py --tests   # re-measure everything and redraw this README's charts

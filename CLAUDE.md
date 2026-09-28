@@ -99,6 +99,13 @@ inside the budget.
   gate, never a shortcut. After committing, a campus tool re-reads what it wrote before reporting.
 - **Module pages are read-only by construction.** `/api/panel/{name}` serves only names in
   `app.PANELS` (reads) and passes `U=""`. `campus_test.py:10a` fails if a gated write is ever listed.
+- **Kannada / Hindi input is translated, approvals are not (#31).** `nlu.normalize` reads
+  `nlu.LEXICON` as English at the top of `orchestrator.handle` (and in `tools.select_tools`), so
+  every rule after it is unchanged. **No lexicon entry may produce an approval word**
+  (`language_test.py:1g`), and ಹೌದು / हाँ / haan with a proposal pending get an explanation, not a
+  commit. Do not add native confirmations to `CONFIRM_YES` or `guard.APPROVAL_RX`. Leave out
+  romanised forms that are common names ("Indu" = today). Write Kannada/Hindi source with the file
+  tools: the shell turned `ऀ` escapes into literal characters once.
 - **Radar commands must never contain approval words.** An Ops-radar button sends its sentence as
   the admin's turn; if it said "approve", one click would commit. `campus_test.py:9e` checks every
   one. Same reason `#ask=` deep links carrying approval words are only pre-filled (`10d` keeps the
@@ -303,6 +310,8 @@ python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 68 assertions, no server, no API cost
 python tests/nlu_test.py       # 37 assertions, no server, no API cost
+python tests/nlu_test.py       # 24 assertions, no server, no API cost
+python tests/language_test.py  # 19 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)
