@@ -260,6 +260,10 @@ ships a timetable back.
   was not, so `/api/seed/reset` on a running server rebuilt a *different* institution from the one
   it booted with. The core tables are fingerprinted in `campus_test.py` (`CORE_BEFORE`, `1a`); if
   you change the core generator on purpose, re-record them.
+- **A new table must be dropped in `db.SCHEMA` too (#64).** Tables created lazily with
+  `CREATE TABLE IF NOT EXISTS` survive `db.seed(force=True)` unless `SCHEMA` drops them.
+  `makeup_sessions` and `faculty_availability` once did: after `/api/seed/reset` a booking whose
+  plan the reset had deleted still held its teacher busy (`makeup_test.py` section 8).
 - **Campus data draws from its own `Random`, after the core seed.** Never let `campus_data.py`
   touch the global stream — `1a` is what notices if it does.
 - **`college.db` is gitignored on purpose.** `db.seed()` reproduces the seeded data exactly
@@ -288,7 +292,7 @@ python tests/mcp_parity.py     # 263 assertions, no server, no API cost
 python tests/campus_test.py    # 122 assertions, no server, no API cost
 python tests/mesh_test.py      # 25 assertions, no server, no API cost (6a-6c need node)
 python tests/auth_test.py      # 77 assertions, no server, no API cost
-python tests/makeup_test.py    # 30 assertions, no server, no API cost
+python tests/makeup_test.py    # 33 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 68 assertions, no server, no API cost

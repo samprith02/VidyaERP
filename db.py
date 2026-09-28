@@ -204,6 +204,7 @@ DROP TABLE IF EXISTS bus_routes; DROP TABLE IF EXISTS bus_stops; DROP TABLE IF E
 DROP TABLE IF EXISTS gate_passes; DROP TABLE IF EXISTS placement_drives;
 DROP TABLE IF EXISTS student_offers; DROP TABLE IF EXISTS drive_registrations;
 DROP TABLE IF EXISTS certificates;
+DROP TABLE IF EXISTS makeup_sessions; DROP TABLE IF EXISTS faculty_availability;
 
 CREATE TABLE departments(code TEXT PRIMARY KEY, name TEXT, hod TEXT, intake INT);
 CREATE TABLE faculty(
