@@ -56,6 +56,26 @@ def check(name, cond, detail=""):
         print(f"  FAIL {name}  {detail}")
 
 
+# ------------------------------------------------ 0 · keywords are words (#68)
+print("\n0 · a keyword starts a word; a department's name is not an instruction")
+print("-" * 78)
+ROUTE = {"Information Science sem 5 timetable": "timetable.view",
+         "Information science department faculty workload": "faculty.query",
+         "Computer Science department overview": "analytics.kpi",
+         "Inform all students about the fest": "notify.broadcast",
+         "Recruitment drives this month": "placement"}
+for q, want in ROUTE.items():
+    got = (nlu.classify(q) or [("none",)])[0][0]
+    # Defect: "Information ..." drafted a circular (the broadcast rule had no
+    # boundary after "inform"), and "cie" inside "Science" won the exam tie.
+    check(f"0a “{q}” → {want}", got == want, got)
+inside = [(kw, w) for cfg in nlu.INTENTS.values() for kw, _s in cfg["kw"]
+          for w in ("science", "scientific", "efficient", "information", "methodology", "ambalpady", "driver")
+          if kw.strip() != w and nlu._kw_rx(kw).search(f" {w} ")]
+check("0b no keyword fires inside the institution's own words (science, information, methodology, "
+      "a bus stop, driver)", not inside, str(inside))
+
+
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 FULL = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 # One real week, so every weekday gets a turn as "today".

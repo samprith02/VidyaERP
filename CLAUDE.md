@@ -292,7 +292,7 @@ python tests/makeup_test.py    # 30 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 68 assertions, no server, no API cost
-python tests/nlu_test.py       # 24 assertions, no server, no API cost
+python tests/nlu_test.py       # 30 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)
@@ -386,6 +386,11 @@ and room scarcity must degrade rather than collapse.
 - **An ISO date is parsed before the Indian dd-mm form (#55).** Without that branch, the dd-mm
   pattern matched the `09-08` inside `2026-09-08` and returned 9 August, a Sunday, so the reply
   was "no coverage needed". `nlu_test.py` section 4 pins it.
+- **An NLU keyword must start a word (#68).** `nlu.classify` used plain substrings, so `cie` fired
+  inside "Computer *Science*" and the broadcast rule's `^inform` matched "*Inform*ation Science
+  sem 5 timetable" — the ISE department's own name drafted a circular. `nlu._kw_rx` anchors every
+  keyword at a word start; `WHOLE_WORD` verbs (`inform`, `drive`) must also end at one. A new
+  keyword that is the start of an unrelated noun belongs in `WHOLE_WORD`. `nlu_test.py` section 0.
 - **A booked make-up holds its teacher for every planner (#54).** `busy_faculty` counts
   `makeup_sessions`. Before this, only other make-up searches saw a booking, and plan B made a
   teacher a swap partner at the hour they owed their own make-up (`makeup_test.py:6h`).

@@ -4,7 +4,7 @@ Lightweight, dependency-free natural-language understanding for the ERP copilot:
 intent scoring, entity resolution (faculty / dept / sem / section / subject / student),
 and Indian-context date parsing ("tomorrow", "next monday", "12 sep", "9/9").
 """
-import re, difflib, datetime as dt
+import re, difflib, functools, datetime as dt
 
 TODAY = dt.date(2026, 9, 4)          # demo "system date" (Friday)
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -120,8 +120,9 @@ CONFIRM_NO = ["no", "cancel", "abort", "discard", "don't", "dont", "stop", "reje
 
 # Regex rules that dominate keyword scoring (verb-first phrasing, disambiguation)
 PRIORITY = [
+    # the verb must end there: "Information Science ..." is a department, not an order (#68)
     (r"^\s*(?:please\s+|pls\s+)?(?:notify|inform|announce|broadcast|circulate|alert|"
-     r"send (?:a |an )?(?:message|sms|notice|circular|whatsapp))", "notify.broadcast", 14),
+     r"send (?:a |an )?(?:message|sms|notice|circular|whatsapp))\b", "notify.broadcast", 14),
     (r"\b(?:who(?:'s| is| are)?\s+(?:all\s+)?free|are free|is free|free faculty|free staff|"
      r"available faculty|free (?:room|slot|hall|classroom)|room availability|which rooms)\b",
      "timetable.view", 12),
@@ -166,6 +167,20 @@ PRIORITY = [
 ]
 
 
+# Verbs that are also the start of unrelated nouns: "inform" / "information",
+# "drive" / "driver". These must END at a word too (an inflection allowed).
+WHOLE_WORD = {"inform", "drive"}
+
+
+@functools.lru_cache(maxsize=None)
+def _kw_rx(kw):
+    """A keyword must START a word (#68): as a bare substring "cie" fired inside
+    "science" - two department names - and "hod" inside "methodology". It may
+    still run on ("recruit" -> "recruitment"), except the WHOLE_WORD verbs."""
+    tail = r"(?:s|ed|ing)?\b" if kw in WHOLE_WORD else ""
+    return re.compile(r"(?<![a-z0-9])" + re.escape(kw) + tail)
+
+
 def classify(text):
     """Return ranked list of (intent, score, matched_keywords). Regex priority rules
     break ties that pure keyword counting gets wrong (e.g. 'notify students about exams')."""
@@ -174,7 +189,7 @@ def classify(text):
     for intent, cfg in INTENTS.items():
         s, hits = 0, []
         for kw, w in cfg["kw"]:
-            if kw in t:
+            if _kw_rx(kw).search(t):
                 s += w
                 hits.append(kw)
         if s:
