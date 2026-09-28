@@ -124,16 +124,24 @@ con.commit()
 check("3c one more offer moves placement", metric("Outgoing students placed")["value"].startswith(f"{placed + 1} of"))
 con.execute("DELETE FROM student_offers WHERE company='Probe Ltd'")
 con.commit()
-check("3d the CIE register is a gap while it does not exist...",
-      any("Continuous internal evaluation" in g["metric"] for g in pack()["data"]["gaps"]))
-con.execute("CREATE TABLE cie_marks(usn TEXT, subject TEXT, component TEXT, marks REAL)")
-con.execute("INSERT INTO cie_marks VALUES('x','y','IA1',1)")
-con.commit()
-d2 = pack()["data"]
-check("3e ...and a metric once it does (#32)", metric("Continuous internal evaluation", d2) is not None
-      and not any("Continuous internal evaluation" in g["metric"] for g in d2["gaps"]))
-con.execute("DROP TABLE cie_marks")
-con.commit()
+if AC._has(con, "cie_marks"):
+    # the CIE register (#32) is part of this build: its table exists from the seed
+    d2 = pack()["data"]
+    check("3d the CIE register exists here, so it is a metric...",
+          metric("Continuous internal evaluation", d2) is not None)
+    check("3e ...and not also listed as a gap",
+          not any("Continuous internal evaluation" in g["metric"] for g in d2["gaps"]))
+else:
+    check("3d the CIE register is a gap while it does not exist...",
+          any("Continuous internal evaluation" in g["metric"] for g in pack()["data"]["gaps"]))
+    con.execute("CREATE TABLE cie_marks(usn TEXT, subject TEXT, component TEXT, marks REAL)")
+    con.execute("INSERT INTO cie_marks VALUES('x','y','IA1',1)")
+    con.commit()
+    d2 = pack()["data"]
+    check("3e ...and a metric once it does (#32)", metric("Continuous internal evaluation", d2) is not None
+          and not any("Continuous internal evaluation" in g["metric"] for g in d2["gaps"]))
+    con.execute("DROP TABLE cie_marks")
+    con.commit()
 
 # ------------------------------------------------------------------ 4 · NBA
 print("\n4 · NBA, by programme")
