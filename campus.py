@@ -1472,6 +1472,9 @@ def t_student_360(con, S, U, usn="", **kw):
     certs = rows(con, "SELECT * FROM certificates WHERE usn=? ORDER BY id DESC", (s["usn"],))
     nd = DocumentAgent().no_dues(con, s["usn"])
     short = [a for a in att if a["held"] and 100 * a["attended"] / a["held"] < 75]
+    import academics                         # lazily: academics imports this module
+    cie = academics.t_cie_marks(con, S, "", usn=s["usn"])["data"].get("subjects", [])
+    cie_risk = [c for c in cie if c["status"] in academics.RISKY]
     life = [f"**Mentor** {fac_name(con, s['mentor'])}",
             f"**Hostel** {h['room']}, {h['block']}" if h else ("**Hostel** waitlisted" if s["hostel"] else "**Day scholar**"),
             f"**Bus** {t['route']} {t['rname']} from {t['stop']}" if t else None,
@@ -1482,6 +1485,7 @@ def t_student_360(con, S, U, usn="", **kw):
     return {"data": {"usn": s["usn"], "name": s["name"], "class": _cls(s), "cgpa": s["cgpa"],
                      "attendance": s["attendance"], "backlogs": s["backlogs"], "fee_due": s["fee_due"],
                      "subjects_below_75": [a["subject"] for a in short],
+                     "cie_at_risk": [c["subject"] for c in cie_risk],
                      "hostel": h["room"] if h else None, "bus": t["route"] if t else None,
                      "books_on_loan": len(loans), "offers": [o["company"] for o in offers],
                      "no_dues_clear": all(i["ok"] for i in nd)},
@@ -1496,12 +1500,17 @@ def t_student_360(con, S, U, usn="", **kw):
                        B_bars([{"label": f"{a['subject']} {a['sname']}", "value": a["attended"], "max": a["held"],
                                 "pct": round(100 * a["attended"] / a["held"], 1) if a["held"] else 0}
                                for a in att], title="Subject-wise attendance (hours attended / held)", unit="hrs"),
+                       B_table(["Course", "Secured", "Projected", "Standing"],
+                               [[f"{c['subject']} {c['name']}", f"{c['secured']:g}/{academics.CIE_MAX}",
+                                 "—" if c["projected"] is None else f"{c['projected']:g}", c["status"]] for c in cie],
+                               title=f"Internal marks (CIE) · {len(cie_risk)} course(s) at risk", dense=True),
                        B_checklist(nd, title="No-dues position")]
                       + ([B_table(["Pass", "Type", "Out", "Status"], [[p["id"], p["kind"], _when(p["out_at"]),
                                                                        p["status"]] for p in passes],
                                   title="Recent gate passes", dense=True)] if passes else []),
             "trace": [("StudentAgent", "record_fetch", s["usn"]),
                       ("AttendanceAgent", "subject_rollup", f"{len(att)} subjects · {len(short)} below 75%"),
+                      ("ExamAgent", "cie_read", f"{len(cie)} course(s) · {len(cie_risk)} at risk"),
                       ("LibraryAgent", "member_loans", f"{len(loans)} on loan"),
                       ("HostelAgent", "allocation", h["room"] if h else "none"),
                       ("TransportAgent", "pass", t["route"] if t else "none"),
@@ -1598,6 +1607,22 @@ def t_ops_radar(con, S, U, **kw):
             f"{short} students below 75% with SEE from {first}", "hall tickets will be withheld unless condoned",
             "SEE eligibility check", short)
     tr.append(("ExamAgent", "eligibility_scan", f"{short} below 75%"))
+
+    # CIE (#32): marks the SEE eligibility check depends on, and who they leave short
+    import academics                         # lazily: academics imports this module
+    late = academics.overdue_entries(con)
+    if late:
+        add("high" if max(x["overdue_days"] for x in late) >= 3 else "medium", "Examinations", "ExamAgent",
+            f"{len(late)} CIE marks entries overdue", ", ".join(f"{x['subject']} {x['cls']} {x['component']}"
+                                                               for x in late[:3]),
+            "Which internal marks are still to be entered?", len(late))
+    risk = academics.cie_risk(con)
+    if risk and first:
+        add("high" if any(r["status"] == "Cannot reach" for r in risk) else "medium", "Examinations", "ExamAgent",
+            f"{len({r['usn'] for r in risk})} students on course to miss the CIE minimum",
+            f"{len(risk)} student-course pairs · SEE from {first}", "Internal marks: who is at risk?",
+            len({r["usn"] for r in risk}))
+    tr.append(("ExamAgent", "cie_scan", f"{len(late)} entries overdue · {len(risk)} pairs at risk"))
 
     rank = {"high": 0, "medium": 1, "low": 2}
     items.sort(key=lambda x: (rank[x["severity"]], -x["records"]))

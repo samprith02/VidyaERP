@@ -43,6 +43,10 @@
         <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="m3 9 9-5 9 5-9 5-9-5Z"/><path d="M7 12v5c2.8 2 7.2 2 10 0v-5M21 9v6"/></svg></span>
         <span class="nav-label">Students</span>
       </button>
+      <button data-v="cie" title="Internal marks">
+        <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M8.5 10h7M8.5 14h4M14.5 16.5l1.5 1.5 3-3.5"/></svg></span>
+        <span class="nav-label">Internal marks</span>
+      </button>
 
       <button data-v="leave" title="Faculty leave">
         <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M9 15l2 2 4-4"/></svg></span>
@@ -203,6 +207,7 @@
     </section>
     <section class="view hidden" id="v-dash"></section>
     <section class="view hidden" id="v-leave"></section>
+    <section class="view hidden" id="v-cie"></section>
     <section class="view hidden" id="v-lib"></section>
     <section class="view hidden" id="v-hostel"></section>
     <section class="view hidden" id="v-bus"></section>
@@ -232,7 +237,7 @@ const SID='sess-'+Math.random().toString(36).slice(2,8);
 const api=(u,o)=>fetch(u,o).then(r=>{if(r.status===401){location.href='/login';throw new Error('signed out')}return r.json()});
 const VT={chat:['Assistant','Hand work to the agents; approve what they prepare'],dash:['Overview','The institution today'],
   tt:['Master timetable','Class schedules, teaching blocks, and approved changes'],fac:['Faculty','Directory, workload, availability, and leave'],
-  stu:['Students','Academic records, attendance, and risk'],req:['Approval inbox','Administrative requests ordered by service level'],
+  stu:['Students','Academic records, attendance, and risk'],cie:['Internal marks','CIE entry, standing, and the SEE minimum'],req:['Approval inbox','Administrative requests ordered by service level'],
   ovr:['Schedule changes','Approved substitutions and timetable amendments'],log:['Audit ledger','Immutable record of agent-assisted activity'],
   radar:['Autopilot','Every agent, asked what needs a human decision today'],mesh:['Agent mesh','Every request, traced through the agents that handled it'],
   leave:['Faculty leave','Pending leave, priced against the real timetable'],lib:['Library','Catalogue, circulation and overdue fines'],
@@ -314,6 +319,7 @@ async function render(v){
   if(v==='log')return renderLog(el);
   if(v==='radar')return renderRadar(el);
   if(v==='leave')return renderLeave(el);
+  if(v==='cie')return renderCie(el);
   if(v==='lib')return renderLib(el);
   if(v==='hostel')return renderHostel(el);
   if(v==='bus')return renderBus(el);
@@ -770,6 +776,28 @@ async function renderLeave(el){
     <table><thead><tr><th>ID</th><th>Faculty</th><th>Dept</th><th>From</th><th>To</th><th>Type</th><th>Reason</th><th>Status</th></tr></thead>
     <tbody>${lv.map(l=>`<tr><td>${l.id}</td><td><b>${esc(l.name)}</b></td><td>${l.dept}</td><td>${l.from_date}</td><td>${l.to_date}</td>
       <td>${esc(l.kind)}</td><td style="color:var(--mut)">${esc(l.reason)}</td><td><span class="st ${l.status}">${l.status}</span></td></tr>`).join('')}</tbody></table></div>`;
+}
+async function renderCie(el){
+  // Reads only (/api/panel/cie_marks). Marks are entered in the chat, where the
+  // ExamAgent validates them and shows new vs corrected before anything is written.
+  const D=['CSE','ISE','ECE','MECH','CIVIL'];
+  el.innerHTML=head([['Who is at risk?','Internal marks: who is at risk?'],
+      ['Overdue entries','Which internal marks are still to be entered?'],['SEE eligibility','SEE eligibility check']])+
+    `<div class="toolbar"><select id="cd" aria-label="Department"><option value="">All departments</option>${D.map(d=>`<option>${d}</option>`).join('')}</select>
+    <select id="cs" aria-label="Semester"><option value="">All semesters</option><option>3</option><option>5</option><option>7</option></select>
+    <select id="cx" aria-label="Section"><option value="">All sections</option><option>A</option><option>B</option></select>
+    <input type="text" id="cu" aria-label="Student USN" placeholder="Student USN, e.g. 4VP24CS009"/>
+    <span style="color:var(--dim);font-size:11.5px">To enter marks, tell the assistant: “Enter IA2 marks for BCS515 CSE 5A: 4VP24CS001 18, …”</span></div>
+    <div class="pnl" id="cbox"></div>`;
+  let seq=0;       // quick successive changes: only the latest request may paint
+  const draw=async()=>{
+    const my=++seq, u=$('#cu').value.trim();
+    const r=await panel('cie_marks',u?{usn:u}:{dept:$('#cd').value,sem:$('#cs').value,section:$('#cx').value});
+    if(my===seq)$('#cbox').innerHTML=blocksHTML(r.blocks)||'Nothing matches.';
+  };
+  ['#cd','#cs','#cx'].forEach(s=>$(s).onchange=()=>{$('#cu').value='';draw();});
+  $('#cu').onkeydown=e=>{if(e.key==='Enter')draw();};
+  draw();
 }
 async function renderLib(el){
   const [o,d]=await Promise.all([panel('library_overview'),panel('library_overdue')]);
