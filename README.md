@@ -166,6 +166,7 @@ The trace shows exactly which of these happened:
   <img src="docs/charts/tests.svg" alt="Bar chart: 747 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, nlu_test 37, makeup_test 30, mesh_test 25, academics_test 24" width="760">
   <img src="docs/charts/tests.svg" alt="Bar chart: 740 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, nlu_test 30, mesh_test 25, academics_test 24" width="760">
   <img src="docs/charts/tests.svg" alt="Bar chart: 748 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 91, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 737 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 71, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24" width="760">
 </p>
 
 ```bash
