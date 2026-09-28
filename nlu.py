@@ -138,6 +138,9 @@ PRIORITY = [
     (r"\b(?:work ?load|teaching load|utilis|utiliz|over ?loaded)\b", "faculty.query", 12),
     # whole words: "nba" sits inside "unbalanced" (#29)
     (r"\b(?:naac|nba|accreditation|accreditations|iqac|aqar|ssr)\b", "accreditation", 18),
+    # the early-warning list (#79); not bare "at risk" - that is also CIE's phrase
+    (r"\b(?:academic(?:ally)? (?:at )?risk|early[- ]warning|dropouts?|counsell?ing (?:list|report)|"
+     r"mentor[- ]?wise)\b", "student.query", 14),
     (r"\b(?:is|are|will be)\s+absent\b|\bon leave (?:tomorrow|today|on|from)\b|"
      r"\barrange (?:a )?(?:substitute|cover|coverage|proxy)\b", "absence.cover", 14),
     (r"\b(?:who(?:'s| is| are)?\s+on leave|list .*leaves?|leave (?:this week|calendar|ledger)|"
@@ -381,7 +384,12 @@ def extract_dept(text):
              "CIVIL": ["CIVIL", " CV DEPT"]}
     for code, keys in alias.items():
         for k in keys:
-            if k in " " + t + " ":
+            # a whole word only: "ISE" sits inside advise, otherwise and
+            # mentor-wise, which once scoped those answers to ISE (#80)
+            # ("CSE5A" still counts; the short spaced aliases like " CS " keep
+            # digits out too, or the CS inside a USN would read as a department)
+            guard = "A-Z0-9" if k != k.strip() else "A-Z"
+            if re.search(rf"(?<![{guard}])" + re.escape(k.strip()) + rf"(?![{guard}])", t):
                 return code
     return None
 

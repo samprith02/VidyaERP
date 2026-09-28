@@ -750,15 +750,15 @@ def h_student(con, text, ent, st, tr, actor):
             "chips": ["SMS parents of critical cases", "Generate condonation list",
                       "Mentor-wise counselling report"]}
 
-    if re.search(r"risk|weak|at risk|dropout", t):
-        data = sa.risk(con)
-        return {"blocks": [B_text(f"**Academic risk radar** — {len(data)} students triggering ≥2 risk signals "
-                                  f"(attendance <70% + low CGPA/backlogs):"),
-                           B_table(["USN", "Name", "Class", "Att", "CGPA", "Backlogs", "Mentor"],
-                                   [[d["usn"], d["name"], f"{d['dept']}-{d['sem']}{d['section']}",
-                                     f"{d['attendance']}%", d["cgpa"], d["backlogs"],
-                                     fac_name(con, d["mentor"])] for d in data], dense=True)],
-                "agent": "StudentAgent"}
+    if re.search(r"risk|weak|dropout|early[- ]warning|counsell?ing|mentor[- ]?wise", t):
+        # the same tool the LLM calls (#79): it used to count the 25 rows it
+        # displayed, and report that as the number of students at risk
+        args = {"dept": ent["dept"], "sem": ent["sem"],
+                "by": "mentor" if re.search(r"counsell?ing|mentor[- ]?wise", t) else None}
+        res = tools.execute(con, st, text, "academic_risk", {k: v for k, v in args.items() if v})
+        _relay(tr, res, "academic_risk")
+        return {"blocks": res.get("blocks") or [B_text(_data_text(res.get("data")))], "agent": "RiskAgent",
+                "chips": res.get("chips")}
 
     q = "SELECT dept, sem, COUNT(*) n, ROUND(AVG(attendance),1) att, ROUND(AVG(cgpa),2) cg FROM students"
     a = []

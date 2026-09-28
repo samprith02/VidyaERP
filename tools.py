@@ -227,6 +227,60 @@ def t_attendance_defaulters(con, S, U, dept=None, sem=None, cutoff=75, **kw):
                       ("RiskAgent", "severity_bucketing", "critical <60 · warning 60-70 · borderline 70-75")]}
 
 
+def t_academic_risk(con, S, U, dept=None, sem=None, mentor=None, by=None, **kw):
+    """The early-warning list (#79): counted in full, shown in part, with the
+    signals behind every score and the weights they carry."""
+    mf = None
+    if mentor:
+        mf = one(con, "SELECT id, name FROM faculty WHERE id=?", (str(mentor).upper(),))
+        if not mf:
+            f, _e = _find_faculty(con, mentor)
+            mf = f
+        if not mf:
+            return {"data": {"error": f"No mentor matches '{mentor}'."}, "blocks": [], "trace": []}
+    data = StudentAgent().risk(con, dept.upper() if dept else None, int(sem) if sem else None,
+                               mf["id"] if mf else None)
+    band = {b: [d for d in data if d["band"] == b] for b, _f in agents.RISK_BANDS}
+    weights = " · ".join(f"{label} +{w}" for _k, label, w in agents.RISK_SIGNALS)
+    floors = ", ".join(f"{b} ≥ {f}" for b, f in agents.RISK_BANDS)
+    scope = " · ".join(x for x in (dept and dept.upper(), sem and f"sem {sem}",
+                                   mf and f"mentees of {mf['name']}") if x) or "the institution"
+    blocks = [B_cards([{"label": "High", "value": len(band["High"]), "tone": "bad"},
+                       {"label": "Medium", "value": len(band["Medium"]), "tone": "warn"},
+                       {"label": "Watch", "value": len(band["Watch"])},
+                       {"label": "Two or more signals", "value": sum(1 for d in data if len(d["signals"]) >= 2)}],
+                      title=f"Early warning — {scope}")]
+    if by == "mentor":
+        per = {}
+        for d in data:
+            per.setdefault(d["mentor"], []).append(d)
+        order = sorted(per.items(), key=lambda kv: (-sum(1 for d in kv[1] if d["band"] == "High"), -len(kv[1])))
+        blocks.append(B_table(["Mentor", "High", "Medium", "Watch", "Talk to first"],
+                              [[fac_name(con, m), sum(1 for d in ds if d["band"] == "High"),
+                                sum(1 for d in ds if d["band"] == "Medium"), sum(1 for d in ds if d["band"] == "Watch"),
+                                ", ".join(d["usn"] for d in ds[:3])] for m, ds in order],
+                              title="Mentor-wise counselling list", dense=True))
+    else:
+        blocks.append(B_table(["USN", "Name", "Class", "Score", "Band", "Signals", "Mentor"],
+                              [[d["usn"], d["name"], f"{d['dept']}-{d['sem']}{d['section']}", d["score"], d["band"],
+                                "; ".join(d["signals"]), fac_name(con, d["mentor"])] for d in data[:25]],
+                              title=f"Highest scores (25 of {len(data)} with any signal)" if len(data) > 25
+                              else f"{len(data)} student(s) with any signal", dense=True))
+    blocks.append(B_text(f"Rule-based early warning, not a prediction: there are no dropout or result outcomes in "
+                         f"these records to validate a model against (#30). Weights (policy): {weights}. "
+                         f"Bands: {floors}."))
+    return {"data": {"scope": scope, "high": len(band["High"]), "medium": len(band["Medium"]),
+                     "watch": len(band["Watch"]), "with_any_signal": len(data),
+                     "students": [{"usn": d["usn"], "name": d["name"], "score": d["score"], "band": d["band"],
+                                   "signals": d["signals"], "mentor": d["mentor"]} for d in data[:25]],
+                     "weights": {label: w for _k, label, w in agents.RISK_SIGNALS},
+                     "note": "rule-based early warning, not a trained prediction"},
+            "blocks": blocks,
+            "chips": ["Mentor-wise counselling report", "Attendance defaulters", "SEE eligibility check"],
+            "trace": [("RiskAgent", "early_warning", f"{len(data)} with a signal · {len(band['High'])} high · "
+                                                     f"{len(band['Medium'])} medium")]}
+
+
 def t_fee_summary(con, S, U, **kw):
     tot, byd = FinanceAgent().summary(con)
     return {"data": {"outstanding": tot["s"], "students_with_dues": tot["n"],
@@ -645,6 +699,10 @@ REGISTRY = [
     (t_student_lookup, "student_lookup", "One student by USN or name.", _p({"query": _S}, ["query"])),
     (t_attendance_defaulters, "attendance_defaulters",
      "Students below an attendance cutoff (default VTU 75%).", _p({"dept": _S, "sem": _I, "cutoff": _I})),
+    (t_academic_risk, "academic_risk",
+     "Early-warning list: every student scored on measured signals (attendance, subjects below 75%, backlogs, "
+     "CGPA, fee due, CIE) with stated weights and bands; by='mentor' gives the mentor-wise counselling list. "
+     "Rule-based, not a prediction.", _p({"dept": _S, "sem": _I, "mentor": _S, "by": _S})),
     (t_fee_summary, "fee_summary", "Outstanding fees overall and by department.", _p({})),
     (t_exam_schedule, "exam_schedule", "SEE examination calendar.", _p({"dept": _S, "sem": _I})),
     (t_exam_eligibility, "exam_eligibility",
@@ -705,7 +763,7 @@ TOOL_AGENT = {
     "faculty_timetable": "TimetableAgent", "find_free_faculty": "TimetableAgent",
     "find_free_rooms": "TimetableAgent", "faculty_profile": "FacultyAgent",
     "faculty_workload": "FacultyAgent", "student_lookup": "StudentAgent",
-    "attendance_defaulters": "StudentAgent", "fee_summary": "FinanceAgent",
+    "attendance_defaulters": "StudentAgent", "academic_risk": "RiskAgent", "fee_summary": "FinanceAgent",
     "exam_schedule": "ExamAgent", "exam_eligibility": "ExamAgent", "list_requests": "RequestAgent",
     "list_leaves": "HRAgent", "plan_absence_coverage": "SubstitutionAgent",
     "apply_coverage_plan": "SubstitutionAgent", "undo_last_change": "SubstitutionAgent",
@@ -778,7 +836,7 @@ TOOL_GROUPS = {
     "timetable.generate": ["plan_timetable_generation", "apply_timetable_generation",
                            "get_timetable", "faculty_workload"],
     "faculty.query":   ["faculty_profile", "faculty_workload", "faculty_timetable"],
-    "student.query":   ["student_lookup", "attendance_defaulters"],
+    "student.query":   ["student_lookup", "attendance_defaulters", "academic_risk"],
     "finance.query":   ["fee_summary", "list_requests"],
     "exam.query":      ["exam_schedule", "exam_eligibility", "attendance_defaulters"],
     "request.manage":  ["list_requests", "decide_request", "create_request"],

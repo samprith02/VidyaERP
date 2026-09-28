@@ -317,6 +317,7 @@ python tests/language_test.py  # 19 assertions, no server, no API cost
 python tests/cie_test.py       # 59 assertions, no server, no API cost
 python tests/nlu_test.py       # 30 assertions, no server, no API cost
 python tests/accreditation_test.py # 28 assertions, no server, no API cost
+python tests/risk_test.py      # 17 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)
@@ -456,6 +457,12 @@ and room scarcity must degrade rather than collapse.
 - **Attendance is a single independent draw per student** — `random.gauss(80, 12)` clamped to
   [46, 99] (`db.py`, students insert). It carries no correlation with CGPA, backlogs, subject or
   semester, so any "attendance risk" analytics are structurally shallow.
+- **The early-warning list is rule-based, not predictive (#79).** `StudentAgent.risk` scores
+  every student on measured signals with `agents.RISK_SIGNALS` weights and `RISK_BANDS` floors —
+  policy, pinned by `risk_test.py:1f` and printed with every list. It inherits the attendance
+  weakness above, and nothing in the data can validate it (no dropout or result outcomes), so
+  never call it a prediction; #30 stays open for that. It counts in full: it once ended in
+  `LIMIT 25` and the answer reported that as the number of students at risk.
 - **Per-subject attendance is derived, not observed.** Since 2026-09-25 `campus_data` fills the
   `attendance` table, reconciled so each student's hours-weighted mean reproduces
   `students.attendance` (±0.5, `campus_test.py:1f`). It refines the headline; it inherits its

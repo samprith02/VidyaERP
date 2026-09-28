@@ -120,8 +120,10 @@ is nothing to `pip install`. Restart the server and the badge flips to green.
 **The 61 tools the model can call** (a student, teacher or HOD is offered only their role's). 23 academic/admin:
   <img src="docs/charts/tools_by_module.svg" alt="Bar chart: 60 tools by module. core tools.py 18 reads and 5 writes; campus.py 14 reads and 11 writes; portal.py 6 reads and 3 writes; academics.py 1 read and 1 write; accreditation.py 1 read" width="760">
 **The 60 tools the model can call** (a student, teacher or HOD is offered only their role's). 23 academic/admin:
+  <img src="docs/charts/tools_by_module.svg" alt="Bar chart: 60 tools by module. core tools.py 19 reads and 5 writes; campus.py 14 reads and 11 writes; portal.py 6 reads and 3 writes; academics.py 1 read and 1 write" width="760">
+**The 60 tools the model can call** (a student, teacher or HOD is offered only their role's). 24 academic/admin:
 `institution_overview · get_timetable · faculty_timetable · find_free_faculty · find_free_rooms ·
-faculty_profile · faculty_workload · student_lookup · attendance_defaulters · fee_summary ·
+faculty_profile · faculty_workload · student_lookup · attendance_defaulters · academic_risk · fee_summary ·
 exam_schedule · exam_eligibility · list_requests · list_leaves · plan_absence_coverage ·
 apply_coverage_plan · plan_timetable_generation · apply_timetable_generation · undo_last_change ·
 makeup_schedule · decide_request · create_request · broadcast_notice`. 25 campus services (§5a):
@@ -187,6 +189,7 @@ The trace shows exactly which of these happened:
   <img src="docs/charts/tests.svg" alt="Bar chart: 753 assertions across 11 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24, language_test 19" width="760">
   <img src="docs/charts/tests.svg" alt="Bar chart: 804 assertions across 11 suites, all passing. mcp_parity 270, campus_test 126, auth_test 77, deploy_test 68, cie_test 59, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24" width="760">
   <img src="docs/charts/tests.svg" alt="Bar chart: 762 assertions across 11 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, accreditation_test 28, mesh_test 25, academics_test 24, nlu_test 24" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 751 assertions across 11 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24, risk_test 17" width="760">
 </p>
 
 ```bash
@@ -205,6 +208,7 @@ python3 tests/language_test.py # Kannada and Hindi input, never widening the wri
 python3 tests/cie_test.py     # CIE marks: seed, standing, validated gated entry, role scope: 59 assertions, no server, no API cost
 python3 tests/nlu_test.py     # date resolution, ISO dates included: 30 assertions, no server, no API cost
 python3 tests/accreditation_test.py # NAAC/NBA evidence recomputed, moving with the data, writing nothing: 28 assertions, no server, no API cost
+python3 tests/risk_test.py    # the early-warning list, counted in full and recomputed; departments as whole words: 17 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 python3 docs/charts/make_charts.py --tests   # re-measure everything and redraw this README's charts
