@@ -94,6 +94,10 @@
         <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M12 3 4 6v5c0 5.2 3.3 8.4 8 10 4.7-1.6 8-4.8 8-10V6l-8-3Z"/><path d="m9 12 2 2 4-5"/></svg></span>
         <span class="nav-label">Audit ledger</span>
       </button>
+      <button data-v="acc" title="Accreditation">
+        <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="m9.5 13.5-1.5 7.5 4-2 4 2-1.5-7.5M10 9l1.5 1.5L14.5 7.5"/></svg></span>
+        <span class="nav-label">Accreditation</span>
+      </button>
     </nav>
     <div class="side-foot">
       <div class="side-foot-row"><span class="dot"></span>Demo institution</div>
@@ -220,6 +224,7 @@
     <section class="view hidden" id="v-req"></section>
     <section class="view hidden" id="v-ovr"></section>
     <section class="view hidden" id="v-log"></section>
+    <section class="view hidden" id="v-acc"></section>
   </main>
 </div>
 
@@ -243,7 +248,8 @@ const VT={chat:['Assistant','Hand work to the agents; approve what they prepare'
   leave:['Faculty leave','Pending leave, priced against the real timetable'],lib:['Library','Catalogue, circulation and overdue fines'],
   hostel:['Hostels','Occupancy, allotment and maintenance'],bus:['Transport','Routes, seat loads and breakdown cover'],
   gate:['Gate passes','Outing and home-visit passes screened against policy'],plc:['Placements','Drives, eligibility and shortlists'],
-  docs:['Documents','No-dues clearance, certificates and Student 360']};
+  docs:['Documents','No-dues clearance, certificates and Student 360'],
+  acc:['Accreditation','NAAC and NBA evidence, with the gaps named']};
 
 /* ---------------- nav ---------------- */
 $$('#nav button').forEach(b=>b.onclick=()=>{
@@ -326,6 +332,7 @@ async function render(v){
   if(v==='gate')return renderGate(el);
   if(v==='plc')return renderPlc(el);
   if(v==='docs')return renderDocs(el);
+  if(v==='acc')return renderAcc(el);
 }
 const inr=n=>n>=1e7?'₹'+(n/1e7).toFixed(2)+' Cr':n>=1e5?'₹'+(n/1e5).toFixed(2)+' L':'₹'+(n||0).toLocaleString('en-IN');
 
@@ -842,6 +849,24 @@ async function renderPlc(el){
        <button class="btn sm ghost" id="drvgo" type="button">Who is eligible?</button>`)+
     `<div id="drvbox"></div><div class="pnl">${blocksHTML(r.blocks)}</div>`;
   $('#drvgo').onclick=async()=>{const x=await panel('drive_eligibility',{drive:$('#drv').value});$('#drvbox').innerHTML=`<div class="pnl">${blocksHTML(x.blocks)}</div>`;};
+}
+async function renderAcc(el){
+  // Reads only (/api/panel/accreditation_evidence): every figure comes with its
+  // source table, and what the records cannot show is listed, not estimated.
+  el.innerHTML=`<div class="toolbar"><div class="seg" role="tablist" aria-label="Framework">
+      <button class="btn sm" id="acN" aria-pressed="true">NAAC · institution</button>
+      <button class="btn sm ghost" id="acB" aria-pressed="false">NBA · by programme</button></div>
+    <button class="btn sm ghost" id="acP">Print</button></div><div class="pnl" id="abox"></div>`;
+  let seq=0;
+  const draw=async fw=>{
+    const my=++seq;
+    $('#acN').classList.toggle('ghost',fw!=='NAAC');$('#acB').classList.toggle('ghost',fw!=='NBA');
+    $('#acN').setAttribute('aria-pressed',fw==='NAAC');$('#acB').setAttribute('aria-pressed',fw==='NBA');
+    const r=await panel('accreditation_evidence',{framework:fw});
+    if(my===seq)$('#abox').innerHTML=blocksHTML(r.blocks);
+  };
+  $('#acN').onclick=()=>draw('NAAC');$('#acB').onclick=()=>draw('NBA');$('#acP').onclick=()=>window.print();
+  draw('NAAC');
 }
 async function renderDocs(el){
   const r=await panel('certificate_register');

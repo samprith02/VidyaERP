@@ -118,6 +118,8 @@ is nothing to `pip install`. Restart the server and the badge flips to green.
 </p>
 
 **The 61 tools the model can call** (a student, teacher or HOD is offered only their role's). 23 academic/admin:
+  <img src="docs/charts/tools_by_module.svg" alt="Bar chart: 60 tools by module. core tools.py 18 reads and 5 writes; campus.py 14 reads and 11 writes; portal.py 6 reads and 3 writes; academics.py 1 read and 1 write; accreditation.py 1 read" width="760">
+**The 60 tools the model can call** (a student, teacher or HOD is offered only their role's). 23 academic/admin:
 `institution_overview · get_timetable · faculty_timetable · find_free_faculty · find_free_rooms ·
 faculty_profile · faculty_workload · student_lookup · attendance_defaulters · fee_summary ·
 exam_schedule · exam_eligibility · list_requests · list_leaves · plan_absence_coverage ·
@@ -133,6 +135,10 @@ request_gate_pass · request_certificate · my_mentees · my_leaves · apply_lea
 academic records: `faculty_availability · set_faculty_availability` (standing availability) and
 `cie_marks · record_cie_marks` (internal marks, §5d).
 **21 of the 61 are writes, and every one is gated.**
+request_gate_pass · request_certificate · my_mentees · my_leaves · apply_leave · dept_overview`. And 2
+for standing faculty availability: `faculty_availability · set_faculty_availability`.
+And 1 for accreditation evidence (§5e): `accreditation_evidence`.
+**20 of the 60 are writes, and every one is gated.**
 
 **Write-guard, proven by test:** `tests/mock_llm.py` includes a *rogue agent* endpoint that tries
 to call `apply_coverage_plan` with no admin approval. PolicyGuard returns `{"BLOCKED": ...}`,
@@ -180,6 +186,7 @@ The trace shows exactly which of these happened:
   <img src="docs/charts/tests.svg" alt="Bar chart: 739 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, nlu_test 29, mesh_test 25, academics_test 24" width="760">
   <img src="docs/charts/tests.svg" alt="Bar chart: 753 assertions across 11 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24, language_test 19" width="760">
   <img src="docs/charts/tests.svg" alt="Bar chart: 804 assertions across 11 suites, all passing. mcp_parity 270, campus_test 126, auth_test 77, deploy_test 68, cie_test 59, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 762 assertions across 11 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, accreditation_test 28, mesh_test 25, academics_test 24, nlu_test 24" width="760">
 </p>
 
 ```bash
@@ -197,6 +204,7 @@ python3 tests/nlu_test.py     # date resolution, ISO dates included: 24 assertio
 python3 tests/language_test.py # Kannada and Hindi input, never widening the write gate: 19 assertions, no server, no API cost
 python3 tests/cie_test.py     # CIE marks: seed, standing, validated gated entry, role scope: 59 assertions, no server, no API cost
 python3 tests/nlu_test.py     # date resolution, ISO dates included: 30 assertions, no server, no API cost
+python3 tests/accreditation_test.py # NAAC/NBA evidence recomputed, moving with the data, writing nothing: 28 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 python3 docs/charts/make_charts.py --tests   # re-measure everything and redraw this README's charts
@@ -471,6 +479,29 @@ Every module has its own page in the console (Autopilot, Faculty Leave, Library,
 Transport, Gate Passes, Placements, Documents). Those pages render what the owning agent's
 **read** tools return via `/api/panel/{tool}`, which lists reads only and passes an empty turn,
 so a page can never commit anything; its buttons hand the job to the agent in the chat.
+
+### 5e. Accreditation evidence: NAAC and NBA from the live records (`accreditation.py`)
+
+Every cycle an IQAC builds its NAAC and NBA evidence by hand from a dozen registers. The
+**IQACAgent** computes what the records can support and, in the same answer, names what they cannot:
+
+- **NAAC** (“NAAC evidence pack”): criterion-wise metrics, each with the tables it came from:
+  student : teacher ratio against AICTE's 20 : 1, doctorates, cadre against 1 : 2 : 6, enrolment
+  against intake, attendance, room utilisation, library holdings and circulation, placement of
+  outgoing students, reserved-category share, hostel grievances, the areas of operation this
+  system runs, and the lab periods where a section outnumbers the seats (#20, stated as evidence).
+- **NBA** (“NBA evidence for CSE”): the same figures by programme, with the 20 : 1 flag.
+- **Gaps are listed, never filled.** Pass percentage (no results yet, #66), publications,
+  scholarships, CO-PO attainment and the rest appear as *not evidenced*, with the reason.
+
+Metrics are grouped by criterion and named rather than numbered, because NAAC's numbering differs
+between manuals and cycles. `tests/accreditation_test.py` recomputes the figures independently,
+checks that each one moves when the records do (a figure that never varies is a typed-in
+constant), and that the pack writes nothing.
+
+<p align="center">
+  <img src="docs/img/accreditation.png" alt="Accreditation page: NAAC evidence pack with 27 metrics evidenced, 17 gaps named, 6 of 7 criteria covered; each metric row shows its value, the AICTE norm where one applies, and its source table" width="760">
+</p>
 
 ### 5c. Everyone signs in: students, faculty and HODs get their own portal
 
@@ -895,6 +926,9 @@ VidyaERP/
 ├── access.py           per-role tool policy: default deny, rules that only ever narrow
 ├── portal.py           self-service tools for students, faculty and HODs
 ├── academics.py        standing faculty availability (#19) and CIE marks (#32): seeds, reads, gated writes
+├── tools.py            the 60 tool schemas + the single dispatch point (gate + role policy)
+├── academics.py        standing faculty availability: seed, read and gated write (#19)
+├── accreditation.py    NAAC / NBA evidence from the records, gaps named (#29); reads only
 ├── llm_agent.py        the LLM reasoning loop (plan → call tools → answer), with failover
 ├── mcp_server.py       MCP surface over stdio JSON-RPC: same tools, same gate, no SDK
 ├── requirements.txt    FastAPI + Uvicorn. That is the entire dependency list
@@ -917,6 +951,7 @@ VidyaERP/
     ├── deploy_test.py  deployment claims: key never leaks, /health reads the DB, gate holds
     ├── nlu_test.py     date resolution: all 7x7 weekday pairs pinned, ISO dates read as ISO
     ├── cie_test.py     CIE marks: standing maths, entry validation, the gate, who may read and enter
+    ├── accreditation_test.py  NAAC/NBA figures recomputed independently; gaps never filled
     ├── campus_test.py  campus rules pinned case by case, routing kept, core data untouched
     ├── mesh_test.py    the fault channel: failures reported, pinned on their owner, holds are not faults
     ├── auth_test.py    sign-in, every route's gate, per-role policy, self-service writes, session binding
@@ -929,6 +964,8 @@ Console pages: **Assistant** (with the live agent mesh and the execution log), A
 Agent mesh, Overview, Master timetable (override-aware grid, make-ups and live solver), Faculty,
 Students, Internal marks, Faculty leave, Library, Hostels, Transport, Gate passes, Placements, Documents,
 Approval inbox, Schedule changes, Audit ledger.
+Students, Faculty leave, Library, Hostels, Transport, Gate passes, Placements, Documents,
+Approval inbox, Schedule changes, Audit ledger, Accreditation.
 
 <details>
 <summary>How the screenshots and charts were made</summary>
@@ -988,6 +1025,7 @@ The NLU + planning layer is deliberately isolated. To go LLM-native:
 
 SEE results and SGPA processing (the follow-on to the CIE marks of §5d), parent WhatsApp agent (#28), NAAC/NBA evidence-pack
 generator (#29), predictive dropout model feeding the RiskAgent (#30), and Kannada/Hindi input for
+CIE marks entry and results processing (#32), parent WhatsApp agent (#28), predictive dropout model feeding the RiskAgent (#30), and Kannada/Hindi input for
 support staff (#31). Open issues carry the rest, including the known limitations.
 
 ---

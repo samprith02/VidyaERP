@@ -3,7 +3,7 @@ VidyaERP :: Orchestrator (Supervisor agent)
 Routes an utterance through the agent mesh and composes the response payload.
 """
 import re, json, datetime as dt
-import nlu, campus, tools, portal, academics
+import nlu, campus, tools, portal, academics, accreditation
 from nlu import TODAY, day_of
 from agents import *
 from agents import _span, plabel
@@ -104,6 +104,8 @@ def handle(con, text, sid="default", role="admin", actor="admin@vidyatech"):
         fn = lambda c, x, e, s, t, a: h_campus(c, x, e, s, t, a, intent)
     if intent in academics.INTENTS:
         fn = lambda c, x, e, s, t, a: h_campus(c, x, e, s, t, a, intent, academics.rule_route)
+    if intent in accreditation.INTENTS:
+        fn = lambda c, x, e, s, t, a: h_campus(c, x, e, s, t, a, intent, accreditation.rule_route)
     # "full profile of Dr ..." scores for student.360 on wording alone; without a
     # USN it was never about a student
     if intent == "student.360" and not ent["usn"]:
