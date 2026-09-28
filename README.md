@@ -164,6 +164,7 @@ The trace shows exactly which of these happened:
 <p align="center">
   <img src="docs/charts/tests.svg" alt="Bar chart: 737 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 33, mesh_test 25, academics_test 24, nlu_test 24" width="760">
   <img src="docs/charts/tests.svg" alt="Bar chart: 747 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, nlu_test 37, makeup_test 30, mesh_test 25, academics_test 24" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 740 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, nlu_test 30, mesh_test 25, academics_test 24" width="760">
 </p>
 
 ```bash
@@ -778,7 +779,7 @@ keeps every day contiguous.
 <table>
 <tr>
 <td width="50%"><img src="docs/charts/solver_scarcity.svg" alt="Columns: share of 456 periods placed as lab rooms are removed. 6 rooms 100%, 5 100%, 4 99.1%, 3 97.8%, 2 95.6%, 1 93.2%"></td>
-<td width="50%"><img src="docs/charts/solver_seeds.svg" alt="Columns: solve time for ten seeds, all between about 0.8 and 1.0 seconds on this machine, every seed placing 456 of 456"></td>
+<td width="50%"><img src="docs/charts/solver_seeds.svg" alt="Columns: solve time for ten seeds, every one under a second on this machine, every seed placing 456 of 456"></td>
 </tr>
 </table>
 

@@ -396,6 +396,11 @@ and room scarcity must degrade rather than collapse.
   includes Sunday — the parser's no-Sunday rule is about classes, and a weekend home visit is
   Sat → Sun. "home" no longer sends a home-visit request to the home screen (#62).
   `nlu_test.py` section 6 pins both.
+- **An NLU keyword must start a word (#68).** `nlu.classify` used plain substrings, so `cie` fired
+  inside "Computer *Science*" and the broadcast rule's `^inform` matched "*Inform*ation Science
+  sem 5 timetable" — the ISE department's own name drafted a circular. `nlu._kw_rx` anchors every
+  keyword at a word start; `WHOLE_WORD` verbs (`inform`, `drive`) must also end at one. A new
+  keyword that is the start of an unrelated noun belongs in `WHOLE_WORD`. `nlu_test.py` section 0.
 - **A booked make-up holds its teacher for every planner (#54).** `busy_faculty` counts
   `makeup_sessions`. Before this, only other make-up searches saw a booking, and plan B made a
   teacher a swap partner at the hour they owed their own make-up (`makeup_test.py:6h`).
