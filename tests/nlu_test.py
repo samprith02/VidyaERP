@@ -194,6 +194,8 @@ check("3x-d asking to approve gate passes is not filing a new one",
       proute("student", "approve all gate passes")[0] == "decide_gate_passes"
       and "decide_gate_passes" not in access.POLICY["student"])
 check("3x-e 'exam fees' is still a dues question", proute("student", "exam fees due")[0] == "no_dues_status")
+check("3x-f ...and 'internal exam marks' is not the exam schedule",
+      proute("student", "my internal exam marks")[0] != "exam_schedule")
 
 
 # --------------------------------------------------------- 4 · ISO dates (#55)

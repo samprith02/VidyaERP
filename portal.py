@@ -508,7 +508,8 @@ def route(con, text, P, ent):
             m = re.search(r"\bfor\s+(?:a |an |my |the )?([a-z0-9][a-z0-9 \-&]{2,50})$", t)
             return "request_certificate", {"kind": cert_kind(text) or "Bonafide", "purpose": m.group(1) if m else ""}
         # before the timetable: "Exam schedule" matched its "schedule" (#77)
-        if re.search(r"\bexams?\b|\bsee\b|hall ticket", t) and not re.search(r"fee|dues", t):
+        # ("exam fees" is a dues question and "internal exam marks" a marks one)
+        if re.search(r"\bexams?\b|\bsee\b|hall ticket", t) and not re.search(r"fee|dues|marks|internal", t):
             return "exam_schedule", {}
 
         if re.search(r"no[- ]?dues|dues|fees?\b|clearance", t):
@@ -518,8 +519,6 @@ def route(con, text, P, ent):
             return "my_placement", {}
         if re.search(r"time ?table|classes|schedule|period", t):
             return "get_timetable", {"date": (nlu.parse_date(text)[0] or TODAY).isoformat()}
-        if re.search(r"exam|see\b|hall ticket", t):
-            return "exam_schedule", {}
         if re.search(r"library|book", t):
             q = re.sub(r"\b(search|find|library|books?|for|on|about|do you have|any|the|a)\b", " ", t).strip()
             return "library_search", {"query": q or "engineering"}

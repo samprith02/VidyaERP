@@ -5,7 +5,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![Dependencies: 2](https://img.shields.io/badge/dependencies-2-brightgreen.svg)](requirements.txt)
-[![Tests: 739 assertions](https://img.shields.io/badge/tests-739_assertions_passing-brightgreen.svg)](#tests)
+[![Tests: 740 assertions](https://img.shields.io/badge/tests-740_assertions_passing-brightgreen.svg)](#tests)
 [![Tools: 59, 20 gated](https://img.shields.io/badge/tools-59_·_20_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
 [![Data: synthetic](https://img.shields.io/badge/data-100%25_synthetic-lightgrey.svg)](NOTICE)
 
@@ -40,7 +40,7 @@ LLM client included, and the console is plain HTML with three local files (`stat
 
 | | | | |
 |:--|:--|:--|:--|
-| **16** specialist agents | **59** tools · **20** writes, every one gated | **739** test assertions, 0 failing | **2** dependencies |
+| **16** specialist agents | **59** tools · **20** writes, every one gated | **740** test assertions, 0 failing | **2** dependencies |
 | **271** absences swept: the top plan fully covers **268** | **456 / 456** periods placed by the solver, 0 clashes | **91%** less tool payload per LLM turn | **0** external assets in the console |
 
 Every number above is measured by [`docs/charts/make_charts.py`](docs/charts/make_charts.py) and
@@ -162,7 +162,7 @@ The trace shows exactly which of these happened:
 ### Tests
 
 <p align="center">
-  <img src="docs/charts/tests.svg" alt="Bar chart: 739 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, nlu_test 29, mesh_test 25, academics_test 24" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 740 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, nlu_test 30, mesh_test 25, academics_test 24" width="760">
 </p>
 
 ```bash
@@ -175,7 +175,7 @@ python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits ve
 python3 tests/academics_test.py # standing faculty availability, honoured by every planner: 24 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
 python3 tests/deploy_test.py  # deployment readiness: 68 assertions, no server, no API cost
-python3 tests/nlu_test.py     # date resolution, ISO dates included: 29 assertions, no server, no API cost
+python3 tests/nlu_test.py     # date resolution, ISO dates included: 30 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 python3 docs/charts/make_charts.py --tests   # re-measure everything and redraw this README's charts
