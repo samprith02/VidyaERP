@@ -183,6 +183,48 @@ check("5d a range like '2-3 days' is still not read as a date",
       nlu.parse_date("next monday for 2-3 days", FRI)[0] == dt.date(2026, 9, 7))
 check("5e no weekday word, no conflict", nlu.date_conflict("absent on 15 sep", d2) is None)
 
+# ------------------------------------------------ 6 · "for <weekday>" (#61)
+print("\n6 · 'for Saturday' is Saturday, in the parser and in the portal")
+print("-" * 78)
+import portal  # noqa: E402
+
+bad = [f"{DAYS[ref.weekday()]} + 'for {name}'" for ref in WEEK for i, name in enumerate(FULL[:6])
+       if nlu.parse_date(f"gate pass for {name} 2pm", today=ref)[0] != expected(ref, i)]
+# Defect: only on/this/next/coming named a day, so "for Saturday" parsed to
+# nothing and the portal filed the gate pass for today, with no warning.
+check("6a 'for <weekday>' resolves to the next occurrence for all 7x6 pairs", not bad, str(bad[:3]))
+check("6b the weekday must be a whole word: 'for months' / 'for mondays' are not dates",
+      nlu.parse_date("absent for months", FRI) == (None, None)
+      and nlu.parse_date("unavailable for mondays", FRI) == (None, None))
+ST = {"role": "student", "usn": "4VP24CS009"}
+tool, a = portal.route(None, "Request a gate pass for Saturday 2pm to 7pm for an outing", ST, {})
+check("6c the issue's own sentence stages Sat 05 Sep, 14:00 to 19:00",
+      tool == "request_gate_pass" and a["out_at"] == "2026-09-05 2pm" and a["return_by"] == "2026-09-05 7pm", str(a))
+check("6d and its reason is the purpose, not the date", a["reason"] == "an outing", repr(a["reason"]))
+_, a = portal.route(None, "gate pass Saturday 2pm to 7pm", ST, {})
+check("6e a bare weekday is a day too", a["out_at"] == "2026-09-05 2pm" and a["reason"] == "", str(a))
+_, a = portal.route(None, "outing on sunday 3pm", ST, {})
+check("6f a Sunday outing is Sunday (the parser's no-Sunday rule is for classes, not passes)",
+      a["out_at"] == "2026-09-06 3pm", str(a))
+_, a = portal.route(None, "gate pass for monday 10am to wed", ST, {})
+check("6g 'to <weekday>' is the return day, not the day out",
+      a["out_at"] == "2026-09-07 10am" and a["return_by"].startswith("2026-09-09"), str(a))
+tool, a = portal.route(None, "home visit wed 10am to sat 5pm", ST, {})
+# Defect found writing 6i: "home" sent every home-visit request to the dashboard.
+check("6i a home visit is a gate pass, not the home screen",
+      tool == "request_gate_pass" and a["kind"] == "Home visit", f"{tool} {a}")
+check("6j ... and a bare day out with a 'to <weekday>' return reads both days",
+      a.get("out_at") == "2026-09-09 10am" and a.get("return_by") == "2026-09-12 5pm", str(a))
+check("6k 'home' alone is still the home screen", portal.route(None, "home", ST, {})[0] == "my_home")
+_, a = portal.route(None, "gate pass 4pm to sat 6pm", ST, {})
+check("6l with no day out named, the return weekday does not become the day out",
+      a["out_at"] == "2026-09-04 4pm" and a["return_by"] == "2026-09-05 6pm", str(a))
+_, a = portal.route(None, "home visit on saturday 9am to sunday 6pm", ST, {})
+check("6m a weekend home visit returns on Sunday, not with no return at all",
+      a["out_at"] == "2026-09-05 9am" and a["return_by"] == "2026-09-06 6pm", str(a))
+_, a = portal.route(None, "gate pass 2pm", ST, {})
+check("6h no day named still means today", a["out_at"] == "2026-09-04 2pm", str(a))
+
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")
 for f in FAILED:

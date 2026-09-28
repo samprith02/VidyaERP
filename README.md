@@ -163,6 +163,7 @@ The trace shows exactly which of these happened:
 
 <p align="center">
   <img src="docs/charts/tests.svg" alt="Bar chart: 737 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 33, mesh_test 25, academics_test 24, nlu_test 24" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 747 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, nlu_test 37, makeup_test 30, mesh_test 25, academics_test 24" width="760">
 </p>
 
 ```bash
@@ -175,7 +176,7 @@ python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits ve
 python3 tests/academics_test.py # standing faculty availability, honoured by every planner: 24 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
 python3 tests/deploy_test.py  # deployment readiness: 68 assertions, no server, no API cost
-python3 tests/nlu_test.py     # date resolution, ISO dates included: 24 assertions, no server, no API cost
+python3 tests/nlu_test.py     # date resolution, ISO dates included: 37 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 python3 docs/charts/make_charts.py --tests   # re-measure everything and redraw this README's charts

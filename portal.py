@@ -473,13 +473,27 @@ AGENT_OF = {"my_home": "StudentAgent", "my_requests": "RequestAgent", "my_placem
 
 
 # ============================================================== routing
+def _pass_reason(text):
+    """The purpose clause of a gate-pass request. The LAST 'for' is the purpose:
+    in 'for Saturday 2pm to 7pm for an outing' the first one is the date (#61).
+    A clause that is only a day or a time is not a reason."""
+    m = re.search(r".*\b(?:for|to attend|because)\s+(.+)$", text, re.I | re.S)
+    r = m.group(1).strip() if m else ""
+    if nlu.WEEKDAY_WORD.match(r.lower()) or re.match(r"\d", r) or re.match(r"(?:to|tomorrow|today)\b", r.lower()):
+        return ""
+    return r[:120]
+
+
 def route(con, text, P, ent):
     """Rule-engine routing for a non-admin: utterance -> (tool, args), or
     (None, None) for help. Every tool it can name still passes access.py."""
     t = text.lower()
     role = P["role"]
     usn = ent.get("usn")
-    if re.search(r"\b(?:my day|home|dashboard|overview of me|good morning)\b", t) and "department" not in t:
+    # "home" is also half of "home visit" - a gate-pass kind that could never be
+    # requested while this matched first (#61).
+    if re.search(r"\b(?:my day|home|dashboard|overview of me|good morning)\b", t) and "department" not in t \
+            and not re.search(r"gate ?pass|outing|out ?pass|home visit|go(?:ing)? home", t):
         return "my_home", {}
     if re.search(r"make-?up|extra class|extra hour|rescheduled class", t):
         return "makeup_schedule", {}
@@ -488,17 +502,26 @@ def route(con, text, P, ent):
             k = ("Home visit" if re.search(r"home", t) else "Medical" if re.search(r"medical|doctor|hospital", t) else
                  "Emergency" if "emergency" in t else "Early leave" if re.search(r"early|after lunch", t) else "Outing")
             times = re.findall(r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\b\d{1,2}:\d{2}\b", t)
-            d, _l = nlu.parse_date(text)
-            ds = (d or TODAY).isoformat()
             rng = re.search(r"\bto\s+(mon|tue|wed|thu|fri|sat|sun)[a-z]*", t)
+            d, _l = nlu.parse_date(text)
+            if not d:
+                # A bare weekday ("gate pass Saturday 2pm") is still a day, and
+                # falling back to today silently filed it for the wrong one (#61).
+                # The "to <weekday>" return day is not the day out.
+                bare = nlu.WEEKDAY_WORD.search(t[:rng.start()] if rng else t)
+                # Sunday counts here: an outing on Sunday is exactly what a pass is for.
+                d = nlu.next_occurrence(bare.group(1)) if bare else None
+            ds = (d or TODAY).isoformat()
             back = None
             if rng:
-                bd, _ = nlu.parse_date("on " + rng.group(1))
-                back = f"{bd.isoformat()} {times[1] if len(times) > 1 else '6pm'}" if bd else None
+                # the first such weekday on or after the day out; "sat to sun" is
+                # a weekend, and the parser's no-Sunday rule would drop the return
+                bd = nlu.next_occurrence(rng.group(1), (d or TODAY) - dt.timedelta(days=1))
+                back = f"{bd.isoformat()} {times[1] if len(times) > 1 else '6pm'}"
             return "request_gate_pass", {
                 "kind": k, "out_at": f"{ds} {times[0] if times else '2pm'}",
                 "return_by": back or (f"{ds} {times[1]}" if len(times) > 1 else ""),
-                "reason": (re.search(r"\b(?:for|to attend|because)\s+(.+)$", text, re.I) or [None, ""])[1][:120],
+                "reason": _pass_reason(text),
                 "parent_consent": bool(re.search(r"parents? (?:know|agreed|consent|approved|permission|are ok)", t))}
         if re.search(r"certificate|bonafide|\bnoc\b|no[- ]?dues? cert|transfer cert", t) and not re.search(r"status|position", t):
             m = re.search(r"\bfor\s+(?:a |an |my |the )?([a-z0-9][a-z0-9 \-&]{2,50})$", t)
