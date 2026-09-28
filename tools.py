@@ -252,14 +252,31 @@ def t_exam_schedule(con, S, U, dept=None, sem=None, **kw):
 
 def t_exam_eligibility(con, S, U, dept=None, sem=None, **kw):
     bad = ExamAgent().ineligible(con, dept.upper() if dept else None, int(sem) if sem else None)
+    # The second bar a student must clear for the SEE: the CIE minimum, per
+    # course (#32). Before the last components are in it is a projection, and
+    # says so; "Cannot reach" is already certain.
+    cie = academics.cie_risk(con, dept.upper() if dept else None, int(sem) if sem else None)
+    certain = sum(1 for c in cie if c["status"] == "Cannot reach")
+    blocks = [B_table(["USN", "Name", "Class", "Attendance", "Fee due"],
+                      [[d["usn"], d["name"], f"{d['dept']}-{d['sem']}{d['section']}",
+                        f"{d['attendance']}%", inr(d["fee_due"])] for d in bad[:20]],
+                      title="Below VTU 75% bar", dense=True)]
+    if cie:
+        blocks.append(B_table(["USN", "Name", "Class", "Course", "Secured", "Projected", "Standing"],
+                              [[c["usn"], c["name"], c["cls"], c["subject"], f"{c['secured']:g}",
+                                f"{c['projected']:g}", c["status"]] for c in cie[:20]],
+                              title=f"Below the CIE minimum ({academics.CIE_MIN}/{academics.CIE_MAX}), "
+                                    f"or on course to be — {len(cie)} student-course pair(s)", dense=True))
     return {"data": {"ineligible": len(bad),
                      "students": [{"usn": d["usn"], "name": d["name"], "attendance": d["attendance"]}
-                                  for d in bad[:25]]},
-            "blocks": [B_table(["USN", "Name", "Class", "Attendance", "Fee due"],
-                               [[d["usn"], d["name"], f"{d['dept']}-{d['sem']}{d['section']}",
-                                 f"{d['attendance']}%", inr(d["fee_due"])] for d in bad[:20]],
-                               title="Below VTU 75% bar", dense=True)],
-            "trace": [("ExamAgent", "eligibility_check", f"{len(bad)} blocked")]}
+                                  for d in bad[:25]],
+                     "cie_at_risk": len(cie), "cie_cannot_reach": certain,
+                     "cie_students": [{"usn": c["usn"], "subject": c["subject"], "projected": c["projected"],
+                                       "status": c["status"]} for c in cie[:25]]},
+            "blocks": blocks,
+            "trace": [("ExamAgent", "eligibility_check", f"{len(bad)} blocked"),
+                      ("ExamAgent", "cie_check", f"{len(cie)} course(s) below the CIE minimum on current form, "
+                                                 f"{certain} certain")]}
 
 
 def t_list_requests(con, S, U, status="Pending", **kw):

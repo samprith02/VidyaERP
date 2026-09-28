@@ -33,7 +33,7 @@ key into `.env` (gitignored) and the LLM agent takes over — same guardrails ei
 ## Architecture in one pass
 
 `app.py` routes → `orchestrator.py` (rule engine) **or** `llm_agent.py` (model plans and calls
-tools) → `tools.py` (59 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
+tools) → `tools.py` (61 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
 + `portal.py` (the specialists). Everyone signs in first (`auth.py`).
 
 | Piece | Where | Note |
@@ -44,7 +44,7 @@ tools) → `tools.py` (59 tool schemas, PolicyGuard-wrapped, role policy enforce
 | Auditor | `agents.py` (`class Auditor`) | immutable ledger of who asked, which agent acted, what changed |
 | Campus services | `campus.py` | library, hostel, transport, gate pass, placement, documents, leave review, Student 360, Ops radar — tools + `rule_route` |
 | Campus data | `campus_data.py` | their tables + seed, own `Random`; `ensure()` is additive to an old DB |
-| Academics | `academics.py` | standing faculty availability (#19): seed, read tool, gated write, `rule_route` |
+| Academics | `academics.py` | standing faculty availability (#19) and CIE marks (#32): seeds, read tools, gated writes, `rule_route` |
 | Sign-in | `auth.py` | principals from the data, PBKDF2, hashed session tokens, `gate()` for every route |
 | Role policy | `access.py` | default-deny per role; rules that NARROW arguments or refuse |
 | Self-service | `portal.py` | student / faculty / HOD tools + rule routing; acts only for `S["user"]` |
@@ -60,8 +60,8 @@ the exception on the rule side: `orchestrator.h_campus` picks a tool with `campu
 runs it through `tools.execute`, so for them all three callers share one path. The parity that is
 actually enforced is between the **LLM agent and MCP** — both reach `tools.execute` and cannot
 differ, which is what `tests/mcp_parity.py` asserts.
-`tools.select_tools()` narrows 59 tools to 3–8 per utterance (a non-admin is offered exactly their role's menu) —
-−91% tool-schema bytes on the README's 40 example requests (`docs/charts/results.json`; this replaces an
+`tools.select_tools()` narrows 61 tools to 3–8 per utterance (a non-admin is offered exactly their role's menu) —
+−92% tool-schema bytes on the README's 40 example requests (`docs/charts/results.json`; this replaces an
 older, unsourced −64%). Free tiers are stingy and this is what keeps multi-hop turns
 inside the budget.
 
@@ -69,10 +69,10 @@ inside the budget.
 
 ## Rules that matter here
 
-- **Writes are guarded, and the guard is in code, not in the prompt.** *Twenty* write tools —
+- **Writes are guarded, and the guard is in code, not in the prompt.** *Twenty-one* write tools —
   `tools.GATED_WRITES`: the five core ones (`apply_coverage_plan`, `apply_timetable_generation`,
   `decide_request`, `create_request`, `broadcast_notice`), the eleven in `campus.GATED_WRITES`, the
-  three in `portal.GATED_WRITES` and the one in `academics.GATED_WRITES` (parity-probed in
+  three in `portal.GATED_WRITES` and the two in `academics.GATED_WRITES` (parity-probed in
   `mcp_parity.py` section 18)
   — refuse to commit without explicit admin approval *in the current turn*
   (`guard.approved_this_turn`, re-exported as `tools.approved_this_turn`). `tests/mock_llm.py` has a
@@ -301,8 +301,8 @@ ships a timetable back.
 
 ```bash
 python tests/solver_test.py    # 44 assertions, no server, no API cost
-python tests/mcp_parity.py     # 263 assertions, no server, no API cost
-python tests/campus_test.py    # 122 assertions, no server, no API cost
+python tests/mcp_parity.py     # 270 assertions, no server, no API cost
+python tests/campus_test.py    # 126 assertions, no server, no API cost
 python tests/mesh_test.py      # 25 assertions, no server, no API cost (6a-6c need node)
 python tests/auth_test.py      # 77 assertions, no server, no API cost
 python tests/makeup_test.py    # 33 assertions, no server, no API cost
@@ -312,6 +312,7 @@ python tests/deploy_test.py    # 68 assertions, no server, no API cost
 python tests/nlu_test.py       # 37 assertions, no server, no API cost
 python tests/nlu_test.py       # 24 assertions, no server, no API cost
 python tests/language_test.py  # 19 assertions, no server, no API cost
+python tests/cie_test.py       # 59 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)
@@ -460,6 +461,14 @@ and room scarcity must degrade rather than collapse.
 - **The gate-pass, circulation and placement rules are policy constants** (`CURFEW`,
   `OUTING_CLASS_HOURS_BAR`, `LOAN_LIMIT`, `FINE_PER_DAY`, `DREAM_MULTIPLE`), stated in the console
   and pinned by tests. They are one college's plausible policy, not findings.
+- **The CIE scheme is a policy constant, and so is "at risk" (#32).** `academics.CIE_SCHEME` /
+  `CIE_MIN` (average of two IA tests /25 + assignment /25; lab record /30 + lab test /20; 20/50 to sit
+  the SEE) are one college's plausible policy, printed under every CIE answer. *Projected* extends
+  the rate so far, so before the assignment is in, "at risk" means an IA average below 40%. The
+  seeded marks are drawn from CGPA and per-subject attendance (`cie_test.py:1g` asserts r > 0.3),
+  which means they inherit the attendance weakness above. The teacher of record is whoever takes
+  most of a course's periods in the *current* timetable, so a rebuild moves the register with it.
+  SEE results and SGPA are not modelled yet.
 - **Campus notifications are recorded, not delivered.** Like every notice here, they land in the
   `notifications` table; there is no SMS/email gateway.
 - **The fee-structure certificate uses synthetic fee heads** (`campus.FEE_HEADS`), and every

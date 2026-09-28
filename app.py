@@ -382,7 +382,7 @@ def kpis():
 PANELS = {"ops_radar", "library_overview", "library_overdue", "library_search", "hostel_status",
           "hostel_complaints", "transport_status", "gate_pass_queue", "placement_overview",
           "drive_eligibility", "certificate_register", "no_dues_status", "student_360",
-          "review_pending_leaves", "faculty_availability"}
+          "review_pending_leaves", "faculty_availability", "cie_marks"}
 
 
 @app.get("/api/panel/{name}")

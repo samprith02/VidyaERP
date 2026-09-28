@@ -93,6 +93,15 @@ def own_teaching(con, P, a):
     return a, None
 
 
+def own_courses(con, P, a):
+    """A teacher's CIE marks: only the courses they are the teacher of record
+    for - the tool refuses any other course with this filled in (#32)."""
+    if a.get("teacher") and (not _fac(con, a["teacher"]) or _fac(con, a["teacher"])["id"] != P["fid"]):
+        return None, "You can only see and enter marks for the courses you teach."
+    a["teacher"] = P["fid"]
+    return a, None
+
+
 def dept_fac(con, P, a, key="name"):
     """HOD: any colleague in the department, themselves by default."""
     if not a.get(key):
@@ -134,6 +143,7 @@ STUDENT = {
     "student_360": self_usn, "no_dues_status": self_usn,
     "get_timetable": own_class, "exam_schedule": own_dept_sem, "library_search": ALLOW,
     "makeup_schedule": own_class,
+    "cie_marks": self_usn,
 }
 FACULTY = {
     "my_home": ALLOW, "my_requests": ALLOW, "my_mentees": ALLOW, "my_leaves": ALLOW, "apply_leave": ALLOW,
@@ -141,6 +151,7 @@ FACULTY = {
     "get_timetable": dept_class, "exam_schedule": ALLOW, "library_search": ALLOW, "find_free_rooms": ALLOW,
     "makeup_schedule": own_teaching,
     "faculty_availability": lambda con, P, a: self_fac(con, P, a, "faculty"),
+    "cie_marks": own_courses, "record_cie_marks": own_courses,
 }
 HOD = {
     **FACULTY,
@@ -156,6 +167,8 @@ HOD = {
     "decide_leave": dept_leave,
     "plan_absence_coverage": lambda con, P, a: dept_fac(con, P, a, "faculty_name"),
     "apply_coverage_plan": ALLOW,          # only ever commits the HOD's own staged plan
+    # the whole department's marks, and corrections to them
+    "cie_marks": lambda con, P, a: own_dept(con, P, a), "record_cie_marks": lambda con, P, a: own_dept(con, P, a),
 }
 POLICY = {"student": STUDENT, "faculty": FACULTY, "hod": HOD}
 

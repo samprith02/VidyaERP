@@ -393,7 +393,8 @@ for t, want in NEW.items():
     check(f"9b new: “{t}” → {want}", top(t) == want, top(t))
 AGENT_INTENT = {"RequestAgent": "request.manage", "HRAgent": "leave.review", "GatePassAgent": "gatepass",
                 "LibraryAgent": "library", "HostelAgent": "hostel", "TransportAgent": "transport",
-                "PlacementAgent": "placement", "DocumentAgent": "document", "ExamAgent": "exam.query"}
+                "PlacementAgent": "placement", "DocumentAgent": "document",
+                "ExamAgent": ("exam.query", "cie")}       # eligibility, and CIE marks (#32)
 radar_cmds = []
 # a FRESH seed, because sections 2-8 above cleared most of what the radar
 # reports - and never the live college.db, whose state depends on usage
@@ -405,7 +406,8 @@ for b in rad["blocks"]:
 check("9c the radar finds work on a fresh day", len(radar_cmds) >= 8, str(len(radar_cmds)))
 for i in radar_cmds:
     want = AGENT_INTENT.get(i["agent"])
-    check(f"9d radar command routes to its agent: “{i['command'][:48]}”", top(i["command"]) == want,
+    check(f"9d radar command routes to its agent: “{i['command'][:48]}”",
+          top(i["command"]) in (want if isinstance(want, tuple) else (want,)),
           f"{top(i['command'])} ≠ {want}")
     check(f"9e radar command proposes, never commits: “{i['command'][:48]}”",
           not tools.approved_this_turn(i["command"]))

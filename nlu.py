@@ -112,6 +112,11 @@ INTENTS = {
     "availability": {
         "kw": [("availability", 8), ("standing", 4), ("every week", 4), ("visiting faculty", 6)],
         "desc": "Standing weekly windows a teacher cannot be timetabled in (#19)"},
+    "cie": {
+        "kw": [("internal marks", 9), ("internal assessment", 9), ("ia marks", 8), ("ia1", 7),
+               ("ia2", 7), ("ia 1", 7), ("ia 2", 7), ("ia test", 8), ("assignment marks", 7), ("lab record", 6),
+               ("marks entry", 9), ("marks", 4)],
+        "desc": "Internal marks: entry, standing, students at risk of the CIE minimum (#32)"},
 }
 
 CONFIRM_YES = ["yes", "yeah", "yep", "ok", "okay", "approve", "apply", "confirm", "go ahead",
@@ -159,6 +164,11 @@ PRIORITY = [
     (r"\bavailability\b|\bavailable again\b|"
      r"\b(?:not available|unavailable|can(?:no|')?t teach|cannot teach|busy)\b[^.?!]{0,40}"
      r"\b(?:every|each|weekly|(?:mon|tues|wednes|thurs|fri|satur)days)\b", "availability", 22),
+    # "cie" as a whole word: a keyword would fire inside "science" and "efficient" (#32)
+    (r"\bcie\b", "cie", 9),
+    # entering marks is a CIE write, whatever else the sentence mentions (#32)
+    (r"\b(?:enter|record|upload|update|correct|change|fill|post)\b[^.?!]{0,40}\bmarks?\b|"
+     r"\b(?:ia ?[12]|cie|internal)\b[^.?!]{0,30}\b4vp\d{2}[a-z]{2}\d{3}\s*[:=-]?\s*(?:\d|ab)", "cie", 20),
     (r"\bautopilot\b|\bneeds? (?:my )?attention\b|\baction items?\b|\bops radar\b|"
      r"\bwhat should i (?:do|act on|focus on|look at)\b|\bto-?do list\b", "ops.radar", 18),
     (r"(?:\b360\b|everything about|full profile|complete profile|subject[- ]wise attendance)"

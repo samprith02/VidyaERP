@@ -484,6 +484,10 @@ def _pass_reason(text):
     return r[:120]
 
 
+CIE_RX = re.compile(r"\bcie\b|internal (?:marks|assessment)|\bia ?[12]\b|\bia (?:test|marks)|\bmarks?\b|"
+                    r"lab record|lab test|assignment")
+
+
 def route(con, text, P, ent):
     """Rule-engine routing for a non-admin: utterance -> (tool, args), or
     (None, None) for help. Every tool it can name still passes access.py."""
@@ -539,6 +543,10 @@ def route(con, text, P, ent):
             return "no_dues_status", {"usn": usn} if usn else {}
         if re.search(r"placement|drive|eligible|offer|company|recruit", t):
             return "my_placement", {}
+        if CIE_RX.search(t):
+            # a USN is passed on, so access.py refuses someone else's instead of
+            # quietly answering with the student's own
+            return "cie_marks", {"usn": usn} if usn else {}
         if re.search(r"time ?table|classes|schedule|period", t):
             return "get_timetable", {"date": (nlu.parse_date(text)[0] or TODAY).isoformat()}
         if re.search(r"exam|see\b|hall ticket", t):
@@ -561,6 +569,9 @@ def route(con, text, P, ent):
         return "apply_leave", {"from_date": (a or TODAY + dt.timedelta(days=1)).isoformat(),
                                "to_date": (b or a or TODAY + dt.timedelta(days=1)).isoformat(),
                                "kind": k, "reason": rs.group(1) if rs else ""}
+    if CIE_RX.search(t):
+        import academics                       # lazily: academics imports this module's _staged
+        return academics.cie_route(con, text, ent, admin=False)
     if role == "hod":
         if re.search(r"department|dept overview|my dept|overview|who(?:'s| is| else is)? on leave|away today", t):
             return "dept_overview", {}
@@ -611,10 +622,11 @@ def route(con, text, P, ent):
 HELP = {
     "student": [["My day", "“Good morning” · “My attendance”"], ["Gate pass", "“Gate pass for Saturday 2pm to 7pm, parents know”"],
                 ["Certificates", "“Request a bonafide certificate for passport”"], ["Fees & dues", "“My no-dues status”"],
-                ["Placements", "“Am I eligible for any drive?”"], ["Timetable & exams", "“My timetable” · “Exam schedule”"],
+                ["Placements", "“Am I eligible for any drive?”"], ["Internal marks", "“My internal marks”"], ["Timetable & exams", "“My timetable” · “Exam schedule”"],
                 ["Library", "“Library books on machine learning”"], ["Tracking", "“My requests”"]],
     "faculty": [["My day", "“Good morning”"], ["Leave", "“Apply for casual leave on 10 sep for a family function”"],
-                ["Mentees", "“My mentees”"], ["Timetable", "“My timetable” · “CSE sem 5 A timetable”"],
+                ["Mentees", "“My mentees”"],
+                ["Internal marks", "“Internal marks of my courses” · “Enter IA2 marks for BCS501: 4VP24CS001 18, …”"], ["Timetable", "“My timetable” · “CSE sem 5 A timetable”"],
                 ["Rooms", "“Free rooms at period 4”"], ["Tracking", "“My leave” · “My requests”"]],
 }
 HELP["hod"] = [["Department", "“Department overview”"], ["Leave", "“Pending leave applications” · “Approve leave 4”"],
