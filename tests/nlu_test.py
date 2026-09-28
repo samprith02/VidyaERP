@@ -154,6 +154,48 @@ check("3h a label comes back with the date",
       "the console echoes this back, which is what catches a wrong week early")
 
 
+# ------------------------------------ 3x · the portal's own examples route where they say (#77)
+print("\n3x · every example the portal suggests reaches a tool its role may call")
+print("-" * 78)
+import re as _re                                                   # noqa: E402
+import access                                                      # noqa: E402
+import portal                                                      # noqa: E402
+
+PRINC = {"student": {"role": "student", "usn": "4VP24CS009", "dept": "CSE", "sem": 5, "section": "A"},
+         "faculty": {"role": "faculty", "fid": "F002", "dept": "CSE"},
+         "hod": {"role": "hod", "fid": "F001", "dept": "CSE"}}
+
+
+def proute(role, q):
+    ent = {"usn": nlu.extract_usn(q), "dept": nlu.extract_dept(q), "sem": nlu.extract_sem(q),
+           "section": nlu.extract_section(q), "periods": nlu.extract_periods(q), "date": nlu.parse_date(q)[0],
+           "faculty": None}
+    return portal.route(None, q, PRINC[role], ent)
+
+
+stray = []
+for role, rows_ in portal.HELP.items():
+    for _area, ex in rows_:
+        for q in _re.findall(r"“([^”]+)”", ex):
+            tool, _a = proute(role, q)
+            if tool not in access.POLICY[role] and not (role == "hod" and q.startswith("Dr. X")):
+                stray.append(f"{role}: {q!r} -> {tool}")
+check("3x-a every HELP example routes to a tool the role is allowed", not stray, str(stray))
+want = {"Exam schedule": "exam_schedule", "My timetable": "get_timetable", "My attendance": "student_360",
+        "My no-dues status": "no_dues_status", "Gate pass for Saturday 2pm to 7pm, parents know": "request_gate_pass"}
+got = {q: proute("student", q)[0] for q in want}
+# Defect: "Exam schedule" - the portal's own example - matched the timetable's
+# "schedule" and showed the timetable.
+check("3x-b the student examples reach the tool they name", got == want, str(got))
+check("3x-c another student's USN is passed on (so access.py refuses it), not dropped",
+      proute("student", "Everything about 4VP24CS010") == ("student_360", {"usn": "4VP24CS010"})
+      and proute("student", "no dues of 4VP24CS010") == ("no_dues_status", {"usn": "4VP24CS010"}))
+check("3x-d asking to approve gate passes is not filing a new one",
+      proute("student", "approve all gate passes")[0] == "decide_gate_passes"
+      and "decide_gate_passes" not in access.POLICY["student"])
+check("3x-e 'exam fees' is still a dues question", proute("student", "exam fees due")[0] == "no_dues_status")
+
+
 # --------------------------------------------------------- 4 · ISO dates (#55)
 print("\n4 · an ISO date is the date it says")
 print("-" * 78)
