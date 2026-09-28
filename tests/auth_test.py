@@ -15,6 +15,7 @@ What this holds down:
 import datetime as dt
 import hashlib
 import json
+import re
 import os
 import sys
 import tempfile
@@ -335,6 +336,73 @@ for role in ("student", "faculty", "hod"):
 S_llm = {"pending": None, "history": [], "ctx": {}, "user": P["student"]}
 check("5i the LLM's first hop is offered only the student's tools",
       {s["function"]["name"] for s in tools.select_tools("show me everything", S_llm)[0]} == set(access.POLICY["student"]))
+
+# --------------------------- 6 · request decisions: one path, the ceiling enforced (#70, #71)
+print("\n6 · every decision path applies the Registrar's delegation and refuses a decided request")
+print("-" * 78)
+from agents import PolicyGuard                                     # noqa: E402
+
+CAP = PolicyGuard.APPROVAL_CEILING
+
+
+def status(rid):
+    return one(con, "SELECT status FROM requests WHERE id=?", (rid,))["status"]
+
+
+def new_request(amount, title):
+    return con.execute("""INSERT INTO requests(kind,raised_by,role,target,title,details,amount,status,priority,
+                          created_at,sla_hrs) VALUES('Infrastructure','HOD-CSE','HOD','Principal',?,'',?,'Pending',
+                          'Medium','2026-09-03',48)""", (title, amount)).lastrowid
+
+
+big = new_request(CAP + 700_000, "AV system above the delegation")
+con.commit()
+before = {r["id"]: r["status"] for r in rows(con, "SELECT id, status FROM requests")}
+out = orch.handle(con, "approve all under 1 lakh", "dec1", "admin", "registrar")
+after = {r["id"]: r["status"] for r in rows(con, "SELECT id, status FROM requests")}
+changed = {k: after[k] for k in after if after[k] != before[k]}
+# Defect (#70): the "1" of "1 lakh" was read as a request id, and REQ-0001 - a
+# medical leave - was approved on its own.
+check("6a 'approve all under 1 lakh' is a bulk approval, not REQ-0001",
+      1 not in changed or one(con, "SELECT amount FROM requests WHERE id=1")["amount"] <= 100_000
+      and len(changed) > 1 and all(v == "Approved" for v in changed.values()), str(changed))
+check("6b ...and approves only requests at or under ₹1,00,000",
+      all(one(con, "SELECT amount FROM requests WHERE id=?", (k,))["amount"] <= 100_000 for k in changed), str(changed))
+out = orch.handle(con, "approve all under 5000", "dec0", "admin", "registrar")
+check("6b2 a bare rupee figure is a cap too: 'approve all under 5000' is bulk, not REQ-5000",
+      "Bulk-approved" in json.dumps(out["blocks"]), json.dumps(out["blocks"])[:140])
+out = orch.handle(con, "approve all under 50 crore", "dec2", "admin", "registrar")
+# Defect (#71): the ceiling was printed in the trace and never compared.
+check("6c a bulk cap above the delegation is clamped to it: the ₹12 L request stays pending", status(big) == "Pending")
+check("6c2 ...and the answer says so, rather than calling the asked-for cap respected",
+      "stays for the Principal" in json.dumps(out["blocks"])
+      and any(t["agent"] == "PolicyGuard" and t["status"] == "warn" for t in out["trace"]), json.dumps(out["blocks"])[:200])
+bd = next((t["detail"] for t in out["trace"] if t["action"] == "bulk_decision"), "")
+nums = [int(x) for x in re.findall(r"\d+", bd)[:2]]
+check("6c3 ...because the clamped cap never selects a request the delegation would refuse",
+      len(nums) == 2 and nums[0] == nums[1], bd)
+out = orch.handle(con, f"approve {big}", "dec3", "admin", "registrar")
+check("6d the rule engine refuses to approve it - a guard warning, not a failure",
+      status(big) == "Pending" and any(t["agent"] == "PolicyGuard" and t["status"] == "warn" for t in out["trace"])
+      and not any(t["status"] == "error" for t in out["trace"]), json.dumps(out["trace"])[-240:])
+r = call("admin", "decide_request", {"request_id": big, "decision": "approve"}, U="yes, approve it")
+check("6e so does the tool the LLM and MCP use - DENIED, and failure_of sees no failure",
+      status(big) == "Pending" and "DENIED" in r["data"] and tools.failure_of(r) is None, str(r["data"])[:140])
+bad = A.decide(big, "approve", Req(P["admin"]))
+check("6f and so do the inbox buttons", status(big) == "Pending" and getattr(bad, "status_code", 200) == 403)
+check("6g a rejection needs no delegation", A.decide(big, "reject", Req(P["admin"])) == {"ok": True, "status": "Rejected"})
+again = A.decide(big, "approve", Req(P["admin"]))
+check("6h a decided request is not decided again", status(big) == "Rejected" and getattr(again, "status_code", 200) == 409)
+small = new_request(1000, "probe")
+con.commit()
+check("6i an unknown decision word is refused, not taken as reject",
+      getattr(A.decide(small, "maybe", Req(P["admin"])), "status_code", 200) == 400 and status(small) == "Pending")
+check("6j a request that does not exist is not 'ok'", getattr(A.decide(99999, "reject", Req(P["admin"])),
+                                                              "status_code", 200) == 409)
+led = one(con, "SELECT * FROM audit WHERE action='request.decide' ORDER BY id DESC LIMIT 1")
+check("6k every decision is audited old -> new under the signed-in account",
+      led and led["actor"] == "registrar" and json.loads(led["payload"])["now"] == "Rejected"
+      and json.loads(led["payload"])["id"] == big, str(led and dict(led)))
 
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")

@@ -91,6 +91,9 @@ def B_bars(items, title=None, unit=""):
 class PolicyGuard:
     """RBAC + scope + safety. Admin persona has institution-wide read, gated write."""
     WRITE_INTENTS = {"absence.cover", "request.manage", "notify.broadcast"}
+    # The Registrar's financial delegation (#71): a request above it is the
+    # Principal's to approve. A policy constant, enforced in RequestAgent.decide.
+    APPROVAL_CEILING = 500_000
     ROLE_SCOPE = {
         "admin":     {"read": "*", "write": {"timetable_override", "approve_request", "broadcast",
                                              "raise_request", "leave_decision"}},
@@ -1125,9 +1128,33 @@ class RequestAgent:
         con.commit()
         return cur.lastrowid
 
-    def decide(self, con, rid, decision):
-        con.execute("UPDATE requests SET status=? WHERE id=?", (decision, rid))
+    def decide(self, con, rid, decision, actor="registrar"):
+        """The one way a request is decided - the chat tool, the rule engine
+        (single and bulk) and the inbox buttons all come here (#71).
+
+        Refuses a request that does not exist, one already decided, and an
+        approval above PolicyGuard.APPROVAL_CEILING. Writes only a Pending row,
+        re-reads it, and audits old -> new with who decided.
+        -> (row after, None, False), or (None, reason, denied) where denied is
+        True for the ceiling - PolicyGuard refusing, not the agent failing."""
+        if decision not in ("Approved", "Rejected"):
+            return None, f"'{decision}' is not a decision — approve or reject.", False
+        r = one(con, "SELECT * FROM requests WHERE id=?", (rid,))
+        if not r:
+            return None, f"No request with ID {rid}.", False
+        if r["status"] != "Pending":
+            return None, f"REQ-{rid:04d} was already {r['status'].lower()}; a decided request is not re-decided here.", False
+        cap = PolicyGuard.APPROVAL_CEILING
+        if decision == "Approved" and (r["amount"] or 0) > cap:
+            return None, (f"REQ-{rid:04d} is for ₹{r['amount']:,}, above the Registrar's ₹{cap:,} delegation — "
+                          f"it needs the Principal's approval."), True
+        con.execute("UPDATE requests SET status=? WHERE id=? AND status='Pending'", (decision, rid))
         con.commit()
+        back = one(con, "SELECT * FROM requests WHERE id=?", (rid,))
+        Auditor().log(con, actor, self.name, "request.decide",
+                      {"id": rid, "was": r["status"], "now": back["status"], "amount": r["amount"]},
+                      "Applied" if back["status"] == decision else "Failed")
+        return back, (None if back["status"] == decision else f"REQ-{rid:04d} re-read as {back['status']}."), False
 
 
 class NotifyAgent:

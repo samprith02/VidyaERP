@@ -629,7 +629,9 @@ async function renderReq(el){
         <button class="btn sm no" onclick="dec(${x.id},'reject')">Reject</button>`:''}</td></tr>`).join('')}
     </tbody></table></div>`;
 }
-async function dec(id,d){await api(`/api/requests/${id}/${d}`,{method:'POST'});render('req');loadBadges()}
+async function dec(id,d){const r=await api(`/api/requests/${id}/${d}`,{method:'POST'});
+  if(r&&r.error)alert(r.error);  // the ceiling, or a request already decided (#71)
+  render('req');loadBadges()}
 
 async function renderOvr(el){
   const o=await api('/api/overrides'), n=await api('/api/notifications');

@@ -147,6 +147,12 @@ inside the budget.
   by driving the portal in a browser. The Registrar's tools keep the older rule on purpose
   ("approve 3" is an instruction). Self-service tools read the person from `S["user"]`, never from
   an argument.
+- **A request is decided in one place: `RequestAgent.decide` (#70, #71).** The chat tool, the rule
+  engine (single and bulk) and the inbox buttons all call it. It refuses a missing or decided
+  request and an approval above `PolicyGuard.APPROVAL_CEILING` (₹5,00,000 — a `DENIED`/warn, the
+  guard working), re-reads, and audits old → new under the account. The ceiling used to exist only
+  as trace text ("ceiling respected") on every path. Never print a guard's verdict you did not
+  compute; `auth_test.py` section 6.
 - **`VIDYAERP_ADMIN_TOKEN`** remains the non-session way into the two operator endpoints — an open
   approval endpoint would hand the MCP write gate to whoever found it.
 - **The real environment beats `.env`.** `llm.py`'s config reads `os.environ` first and `.env`
@@ -287,7 +293,7 @@ python tests/solver_test.py    # 44 assertions, no server, no API cost
 python tests/mcp_parity.py     # 263 assertions, no server, no API cost
 python tests/campus_test.py    # 122 assertions, no server, no API cost
 python tests/mesh_test.py      # 25 assertions, no server, no API cost (6a-6c need node)
-python tests/auth_test.py      # 77 assertions, no server, no API cost
+python tests/auth_test.py      # 91 assertions, no server, no API cost
 python tests/makeup_test.py    # 30 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost

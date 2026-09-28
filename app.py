@@ -506,9 +506,17 @@ def requests_(status: str = ""):
 
 
 @app.post("/api/requests/{rid}/{decision}")
-def decide(rid: int, decision: str):
-    RequestAgent().decide(con, rid, "Approved" if decision == "approve" else "Rejected")
-    return {"ok": True}
+def decide(rid: int, decision: str, request: Request):
+    """The inbox buttons. The click is the Registrar's decision; the same
+    RequestAgent.decide as the chat applies the ceiling, refuses a decided
+    request, re-reads and audits it under the signed-in account (#71)."""
+    dec = {"approve": "Approved", "reject": "Rejected"}.get(decision)
+    if not dec:
+        return JSONResponse({"error": f"'{decision}' is not a decision — approve or reject."}, status_code=400)
+    r, why, denied = RequestAgent().decide(con, rid, dec, actor=request.state.user["id"])
+    if why:
+        return JSONResponse({"error": why}, status_code=403 if denied else 409)
+    return {"ok": True, "status": r["status"]}
 
 
 @app.get("/api/overrides")

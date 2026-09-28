@@ -546,18 +546,24 @@ def t_decide_request(con, S, U, request_id=None, decision="approve", **kw):
                                     "in this turn."}, "blocks": [],
                 "trace": [("PolicyGuard", "write_blocked", "no approval in turn")]}
     rid = int(re.sub(r"\D", "", str(request_id or 0)) or 0)
-    r = one(con, "SELECT * FROM requests WHERE id=?", (rid,))
-    if not r:
-        return {"data": {"error": f"No request with id {rid}."}, "blocks": [], "trace": []}
     dec = "Approved" if str(decision).lower().startswith("app") else "Rejected"
-    RequestAgent().decide(con, rid, dec)
+    r, why, denied = RequestAgent().decide(con, rid, dec, actor=((S or {}).get("user") or {}).get("id", "registrar"))
+    if denied:
+        return {"data": {"DENIED": why}, "blocks": [B_text(why)],
+                "trace": [("PolicyGuard", "delegation_limit", why, "warn")]}
+    if why:
+        return {"data": {"error": why}, "blocks": [B_text(why)], "trace": []}
+    cap = agents.PolicyGuard.APPROVAL_CEILING
     NotifyAgent().dispatch(con, [{"audience": r["raised_by"], "channel": "App + email",
                                   "title": f"Your request '{r['title']}' was {dec.lower()}",
                                   "body": f"Decision by Admin on {TODAY.isoformat()}."}])
     return {"data": {"id": rid, "title": r["title"], "decision": dec, "amount": r["amount"]},
             "blocks": [], "refresh": True,
-            "trace": [("PolicyGuard", "delegation_limit", "admin ceiling ₹5,00,000 respected"),
-                      ("RequestAgent", "decision", f"REQ-{rid:04d} → {dec}")]}
+            "trace": [("PolicyGuard", "delegation_limit",
+                       f"₹{r['amount'] or 0:,} within the ₹{cap:,} delegation" if dec == "Approved"
+                       else "a rejection needs no delegation"),
+                      ("RequestAgent", "decision", f"REQ-{rid:04d} → {dec}"),
+                      ("RequestAgent", "verify", f"REQ-{rid:04d} re-read as {r['status']}", "ok")]}
 
 
 def t_create_request(con, S, U, kind="General", title="", details="", target="Principal",
