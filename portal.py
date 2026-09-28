@@ -498,6 +498,10 @@ def route(con, text, P, ent):
     if re.search(r"make-?up|extra class|extra hour|rescheduled class", t):
         return "makeup_schedule", {}
     if role == "student":
+        # deciding passes is the warden's: routed to the tool that decides them,
+        # which access.py refuses for a student - not filed as a new pass (#77)
+        if re.search(r"\b(?:approve|reject|decide|sanction)\b.*\b(?:gate ?pass|out ?pass)", t):
+            return "decide_gate_passes", {}
         if re.search(r"gate ?pass|outing|out ?pass|home visit|go home|leave (?:the )?campus", t):
             k = ("Home visit" if re.search(r"home", t) else "Medical" if re.search(r"medical|doctor|hospital", t) else
                  "Emergency" if "emergency" in t else "Early leave" if re.search(r"early|after lunch", t) else "Outing")
@@ -526,8 +530,13 @@ def route(con, text, P, ent):
         if re.search(r"certificate|bonafide|\bnoc\b|no[- ]?dues? cert|transfer cert", t) and not re.search(r"status|position", t):
             m = re.search(r"\bfor\s+(?:a |an |my |the )?([a-z0-9][a-z0-9 \-&]{2,50})$", t)
             return "request_certificate", {"kind": cert_kind(text) or "Bonafide", "purpose": m.group(1) if m else ""}
+        # before the timetable: "Exam schedule" matched its "schedule" (#77)
+        if re.search(r"\bexams?\b|\bsee\b|hall ticket", t) and not re.search(r"fee|dues", t):
+            return "exam_schedule", {}
+
         if re.search(r"no[- ]?dues|dues|fees?\b|clearance", t):
-            return "no_dues_status", {}
+            # a named USN is passed on, so access.py refuses someone else's (#77)
+            return "no_dues_status", {"usn": usn} if usn else {}
         if re.search(r"placement|drive|eligible|offer|company|recruit", t):
             return "my_placement", {}
         if re.search(r"time ?table|classes|schedule|period", t):
@@ -540,7 +549,7 @@ def route(con, text, P, ent):
         if re.search(r"request|status|my pass|application", t):
             return "my_requests", {}
         if re.search(r"attendance|cgpa|marks|record|profile|backlog|360|everything", t):
-            return "student_360", {}
+            return "student_360", {"usn": usn} if usn else {}
         return None, None
     # faculty and HOD
     if re.search(r"\b(?:apply|applying|take|need|want)\b.*\bleave\b|\bleave (?:on|from|for)\b|\bi(?:'m| am| will be) (?:absent|on leave)", t) \
