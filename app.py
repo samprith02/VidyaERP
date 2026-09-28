@@ -111,6 +111,15 @@ def resolve_build(env=None, root=None):
 COMMIT, BRANCH, COMMIT_SOURCE = resolve_build()
 
 
+def _who(request):
+    """The ledger's actor for a console or operator write: the signed-in
+    account, or 'operator-token' for the admin-token path. Never a name from
+    the request body - the ledger records who acted, not who they said they
+    were (#73)."""
+    user = getattr(getattr(request, "state", None), "user", None)
+    return user["id"] if user else "operator-token"
+
+
 def _denied(request):
     """None if the caller may use an operator endpoint, else a 401 response.
 
@@ -346,7 +355,7 @@ def mcp_approval(request: Request, payload: dict = Body(default={})):
     beside it, so a code minted here is only useful to an MCP client running
     against this same instance - see the MCP section of the README.
     """
-    return _denied(request) or mcp_server.mint_approval(con, payload.get("actor", "admin@vidyatech"))
+    return _denied(request) or mcp_server.mint_approval(con, _who(request))
 
 
 @app.get("/api/kpis")
@@ -448,7 +457,7 @@ def generate_stream(scope: str = "class", dept: str = "CSE", sem: int = 5,
 
 
 @app.post("/api/timetable/generate/apply")
-def generate_apply(payload: dict = Body(default={})):
+def generate_apply(request: Request, payload: dict = Body(default={})):
     """Commit a generated timetable. Re-solves with the same seed, then verifies."""
     a = _gen_args(payload)
     inp = solver.build_input(con, **a)
@@ -457,7 +466,7 @@ def generate_apply(payload: dict = Body(default={})):
     problems = solver.verify(con, scope=a["scope"], dept=a["dept"], sem=a["sem"],
                              section=a["section"])
     target = "the whole college" if a["scope"] == "all" else f"{a['dept']}-{a['sem']}{a['section']}"
-    Auditor().log(con, payload.get("actor", "admin"), "TimetableAgent", "timetable.generate",
+    Auditor().log(con, _who(request), "TimetableAgent", "timetable.generate",
                   {**a, "placed": res["placed"], "total": res["total"], "ms": res["ms"]},
                   "Applied" if not problems else f"Applied with {len(problems)} problem(s)")
     return {"ok": not problems, "target": target, "placed": res["placed"], "total": res["total"],

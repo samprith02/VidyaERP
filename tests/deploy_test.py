@@ -383,6 +383,26 @@ _app_doc = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
 check("4k the docs say demo mode publishes every password",
       "every password is published" in _app_doc.lower() and "public demo" in _app_doc.lower())
 
+# The ledger records who acted, not who the request body says acted (#73).
+_ac = db.connect()
+A.mcp_approval(SignedIn("admin"), {"actor": "someone-else"})
+_minted = _ac.execute("SELECT actor FROM audit WHERE action='approval.mint' ORDER BY id DESC LIMIT 1").fetchone()
+check("4l a minted MCP approval is logged under the signed-in account, not a name in the body",
+      _minted and _minted[0] == "x", str(_minted and tuple(_minted)))
+A.ADMIN_TOKEN = "s3cret-operator-token"
+try:
+    A.mcp_approval(FakeRequest({"X-Admin-Token": "s3cret-operator-token"}), {"actor": "someone-else"})
+finally:
+    A.ADMIN_TOKEN = ""
+_minted = _ac.execute("SELECT actor FROM audit WHERE action='approval.mint' ORDER BY id DESC LIMIT 1").fetchone()
+check("4m ...and under 'operator-token' when the token was used", _minted and _minted[0] == "operator-token",
+      str(_minted and tuple(_minted)))
+A.generate_apply(SignedIn("admin"), {"scope": "class", "dept": "CSE", "sem": 5, "section": "A", "actor": "someone-else"})
+_gen = _ac.execute("SELECT actor FROM audit WHERE action='timetable.generate' ORDER BY id DESC LIMIT 1").fetchone()
+check("4n an applied timetable is logged under the signed-in account", _gen and _gen[0] == "x",
+      str(_gen and tuple(_gen)))
+_ac.close()
+
 
 # ================================================== 5 · it boots from nothing
 print("\n5 · a cold start needs no configuration")

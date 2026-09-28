@@ -291,7 +291,7 @@ python tests/auth_test.py      # 77 assertions, no server, no API cost
 python tests/makeup_test.py    # 30 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
-python tests/deploy_test.py    # 68 assertions, no server, no API cost
+python tests/deploy_test.py    # 71 assertions, no server, no API cost
 python tests/nlu_test.py       # 24 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
