@@ -33,7 +33,7 @@ key into `.env` (gitignored) and the LLM agent takes over — same guardrails ei
 ## Architecture in one pass
 
 `app.py` routes → `orchestrator.py` (rule engine) **or** `llm_agent.py` (model plans and calls
-tools) → `tools.py` (59 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
+tools) → `tools.py` (60 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
 + `portal.py` (the specialists). Everyone signs in first (`auth.py`).
 
 | Piece | Where | Note |
@@ -60,7 +60,7 @@ the exception on the rule side: `orchestrator.h_campus` picks a tool with `campu
 runs it through `tools.execute`, so for them all three callers share one path. The parity that is
 actually enforced is between the **LLM agent and MCP** — both reach `tools.execute` and cannot
 differ, which is what `tests/mcp_parity.py` asserts.
-`tools.select_tools()` narrows 59 tools to 3–8 per utterance (a non-admin is offered exactly their role's menu) —
+`tools.select_tools()` narrows 60 tools to 3–8 per utterance (a non-admin is offered exactly their role's menu) —
 −91% tool-schema bytes on the README's 40 example requests (`docs/charts/results.json`; this replaces an
 older, unsourced −64%). Free tiers are stingy and this is what keeps multi-hop turns
 inside the budget.
@@ -293,6 +293,7 @@ python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 68 assertions, no server, no API cost
 python tests/nlu_test.py       # 24 assertions, no server, no API cost
+python tests/risk_test.py      # 17 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)
@@ -421,6 +422,12 @@ and room scarcity must degrade rather than collapse.
 - **Attendance is a single independent draw per student** — `random.gauss(80, 12)` clamped to
   [46, 99] (`db.py`, students insert). It carries no correlation with CGPA, backlogs, subject or
   semester, so any "attendance risk" analytics are structurally shallow.
+- **The early-warning list is rule-based, not predictive (#79).** `StudentAgent.risk` scores
+  every student on measured signals with `agents.RISK_SIGNALS` weights and `RISK_BANDS` floors —
+  policy, pinned by `risk_test.py:1f` and printed with every list. It inherits the attendance
+  weakness above, and nothing in the data can validate it (no dropout or result outcomes), so
+  never call it a prediction; #30 stays open for that. It counts in full: it once ended in
+  `LIMIT 25` and the answer reported that as the number of students at risk.
 - **Per-subject attendance is derived, not observed.** Since 2026-09-25 `campus_data` fills the
   `attendance` table, reconciled so each student's hours-weighted mean reproduces
   `students.attendance` (±0.5, `campus_test.py:1f`). It refines the headline; it inherits its

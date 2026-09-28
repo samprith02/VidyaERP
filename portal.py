@@ -554,6 +554,9 @@ def route(con, text, P, ent):
             return "faculty_timetable", {"name": ent["faculty"]["id"]}
         if ent.get("faculty") and ent["faculty"]["id"] != P["fid"]:
             return "faculty_profile", {"name": ent["faculty"]["id"]}
+    # the early-warning list (#79): a teacher's mentees, an HOD's department (access.py narrows)
+    if re.search(r"\brisk\b|early[- ]warning|counsell?ing|dropout", t):
+        return "academic_risk", {"by": "mentor"} if re.search(r"mentor[- ]?wise|counsell?ing list", t) else {}
     if re.search(r"mentee|mentoring|my students", t):
         return "my_mentees", {}
     if re.search(r"my leave|leave history|leave status", t):

@@ -93,6 +93,16 @@ def own_teaching(con, P, a):
     return a, None
 
 
+def own_mentees(con, P, a):
+    """A teacher's early-warning list is their mentees' (#79)."""
+    if a.get("mentor") and str(a["mentor"]).upper() != P["fid"]:
+        f = _fac(con, a["mentor"])
+        if not f or f["id"] != P["fid"]:
+            return None, "You can only see your own mentees."
+    a["mentor"] = P["fid"]
+    return a, None
+
+
 def dept_fac(con, P, a, key="name"):
     """HOD: any colleague in the department, themselves by default."""
     if not a.get(key):
@@ -140,6 +150,7 @@ FACULTY = {
     "faculty_timetable": self_fac, "faculty_profile": self_fac,
     "get_timetable": dept_class, "exam_schedule": ALLOW, "library_search": ALLOW, "find_free_rooms": ALLOW,
     "makeup_schedule": own_teaching,
+    "academic_risk": lambda con, P, a: own_mentees(con, P, a),
     "faculty_availability": lambda con, P, a: self_fac(con, P, a, "faculty"),
 }
 HOD = {
@@ -148,6 +159,7 @@ HOD = {
     "makeup_schedule": lambda con, P, a: own_dept(con, P, a),
     "faculty_timetable": dept_fac, "faculty_profile": dept_fac,
     "faculty_workload": own_dept, "attendance_defaulters": own_dept, "exam_eligibility": own_dept,
+    "academic_risk": lambda con, P, a: own_dept(con, P, a),   # the whole department, mentor-wise too
     "find_free_faculty": own_dept,
     "faculty_availability": lambda con, P, a: own_dept(con, P, a),
     "student_360": lambda con, P, a: dept_student(con, P, a, "usn"),
