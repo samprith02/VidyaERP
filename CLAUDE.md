@@ -105,7 +105,7 @@ inside the budget.
   (`language_test.py:1g`), and ಹೌದು / हाँ / haan with a proposal pending get an explanation, not a
   commit. Do not add native confirmations to `CONFIRM_YES` or `guard.APPROVAL_RX`. Leave out
   romanised forms that are common names ("Indu" = today). Write Kannada/Hindi source with the file
-  tools: the shell turned `ऀ` escapes into literal characters once.
+  tools: the shell turned `\u0900` escapes into literal characters once.
 - **Radar commands must never contain approval words.** An Ops-radar button sends its sentence as
   the admin's turn; if it said "approve", one click would commit. `campus_test.py:9e` checks every
   one. Same reason `#ask=` deep links carrying approval words are only pre-filled (`10d` keeps the
