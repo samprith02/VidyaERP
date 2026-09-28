@@ -824,16 +824,26 @@ def h_request(con, text, ent, st, tr, actor):
     ra = RequestAgent()
     t = text.lower()
 
-    m = re.search(r"\b(?:approve|reject)\b.*?\b(?:req(?:uest)?[- ]?)?(\d{1,4})\b", t)
+    cap_max = PolicyGuard.APPROVAL_CEILING
+    bulk = re.search(r"bulk approve|approve all", t)
+    # A number with a unit after it is an amount, never a request id: "approve
+    # all under 1 lakh" once approved REQ-0001 on its own (#70). Bulk is decided
+    # first for the same reason.
+    m = None if bulk else re.search(r"\b(?:approve|reject)\b.*?\b(?:req(?:uest)?[- ]?)?(\d{1,4})\b"
+                                    r"(?!\s*(?:lakh|lac|l\b|k\b|crore|cr\b|,\d|rupees|rs))", t)
     if m and re.search(r"approve|reject", t):
         rid = int(m.group(1))
-        r = one(con, "SELECT * FROM requests WHERE id=?", (rid,))
-        if not r:
-            return {"blocks": [B_text(f"No request with ID **{rid}** in the inbox.")], "agent": "RequestAgent"}
         dec = "Approved" if "approve" in t else "Rejected"
-        ra.decide(con, rid, dec)
-        tr.add("PolicyGuard", "authority_check", f"admin may {dec.lower()} '{r['kind']}' requests up to ₹5,00,000")
+        r, why, denied = ra.decide(con, rid, dec, actor)
+        if why:
+            tr.add("PolicyGuard" if denied else "RequestAgent", "delegation_limit" if denied else "decision",
+                   why, status="warn" if denied else "error")
+            return {"blocks": [B_text(why)], "agent": "RequestAgent",
+                    "chips": ["Show remaining pending approvals"]}
+        tr.add("PolicyGuard", "delegation_limit", f"₹{r['amount'] or 0:,} within the ₹{cap_max:,} delegation"
+               if dec == "Approved" else "a rejection needs no delegation")
         tr.add("RequestAgent", "decision", f"REQ-{rid:04d} → {dec}")
+        tr.add("RequestAgent", "verify", f"REQ-{rid:04d} re-read as {r['status']}")
         NotifyAgent().dispatch(con, [{"audience": r["raised_by"], "channel": "App + email",
                                       "title": f"Your request '{r['title']}' was {dec.lower()}",
                                       "body": f"Decision by Admin on {TODAY.isoformat()}."}])
@@ -843,22 +853,31 @@ def h_request(con, text, ent, st, tr, actor):
                 "agent": "RequestAgent", "refresh": True,
                 "chips": ["Show remaining pending approvals"]}
 
-    if re.search(r"bulk approve|approve all", t):
-        m = re.search(r"(?:under|below|less than|<)\s*(?:₹|rs\.?)?\s*([\d,]+)\s*(lakh|l\b|k\b)?", t)
-        cap = 50000
+    if bulk:
+        m = re.search(r"(?:under|below|less than|upto|up to|<)\s*(?:₹|rs\.?)?\s*([\d,]+)\s*"
+                      r"(lakh|lac|l\b|k\b|crore|cr\b)?", t)
+        asked = 50000
         if m:
-            cap = int(m.group(1).replace(",", ""))
-            if m.group(2) in ("lakh", "l"): cap *= 100000
-            if m.group(2) == "k": cap *= 1000
+            asked = int(m.group(1).replace(",", ""))
+            if m.group(2) in ("lakh", "lac", "l"): asked *= 100000
+            if m.group(2) == "k": asked *= 1000
+            if m.group(2) in ("crore", "cr"): asked *= 10000000
+        # the sentence may ask for less than the delegation, never for more (#71)
+        cap = min(asked, cap_max)
         pend = [r for r in ra.inbox(con) if r["amount"] <= cap]
-        for r in pend:
-            ra.decide(con, r["id"], "Approved")
-        tr.add("PolicyGuard", "delegation_limit", f"admin auto-approval ceiling ₹{cap:,} respected")
-        tr.add("RequestAgent", "bulk_decision", f"{len(pend)} request(s) approved in one transaction")
+        done = [r for r in pend if not ra.decide(con, r["id"], "Approved", actor)[1]]
+        tr.add("PolicyGuard", "delegation_limit", f"bulk cap ₹{cap:,}" + (
+            f" (asked ₹{asked:,}; the Registrar's delegation is ₹{cap_max:,})" if asked > cap_max else ""),
+               status="warn" if asked > cap_max else "ok")
+        tr.add("RequestAgent", "bulk_decision", f"{len(done)} of {len(pend)} request(s) approved and re-read")
+        pend = done
         val = sum(r["amount"] for r in pend)
         return {"blocks": [B_text(f"Bulk-approved **{len(pend)} request(s)** at or below {inr(cap)}"
                                   + (f", committing {inr(val)} of budget." if val else
-                                     " (all zero-value administrative items).")),
+                                     " (all zero-value administrative items).")
+                                  + (f" You asked for up to {inr(asked)}; anything above the Registrar's "
+                                     f"{inr(cap_max)} delegation stays for the Principal." if asked > cap_max
+                                     else "")),
                            B_table(["ID", "Type", "Title", "Amount"],
                                    [[f"REQ-{r['id']:04d}", r["kind"], r["title"],
                                      inr(r["amount"]) if r["amount"] else "—"] for r in pend])],

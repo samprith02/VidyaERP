@@ -165,6 +165,7 @@ The trace shows exactly which of these happened:
   <img src="docs/charts/tests.svg" alt="Bar chart: 737 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 33, mesh_test 25, academics_test 24, nlu_test 24" width="760">
   <img src="docs/charts/tests.svg" alt="Bar chart: 747 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, nlu_test 37, makeup_test 30, mesh_test 25, academics_test 24" width="760">
   <img src="docs/charts/tests.svg" alt="Bar chart: 740 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, nlu_test 30, mesh_test 25, academics_test 24" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 748 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 91, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24" width="760">
 </p>
 
 ```bash
@@ -548,7 +549,10 @@ commit a write on your click.
 - **RBAC scopes**: admin = institution-wide; HOD = department; faculty = self.
 - **HITL gate**: every write intent (`absence.cover`, `request.manage`, `notify.broadcast`) returns
   a proposal, never a commit.
-- **Delegation ceilings**: bulk approval respects a rupee cap; high-value requests route to Principal.
+- **Delegation ceilings**: the Registrar approves up to ₹5,00,000 (`PolicyGuard.APPROVAL_CEILING`); above it,
+  every path (chat, rule engine, bulk, inbox buttons) refuses and names the Principal. A bulk cap is
+  clamped to the ceiling, a decided request is never re-decided, and each decision is re-read and
+  audited old → new under the signed-in account.
 - **Immutable audit ledger**: actor, agent, action, payload, outcome, timestamp. Exportable for
   NAAC / NBA / ISO audits.
 - **No silent guessing**: weak entity matches ask instead of acting.
