@@ -240,6 +240,14 @@ def parse_date(text, today=None):
         delta = (idx - today.weekday()) % 7 or 7
         d = today + dt.timedelta(days=delta)
         return d, target
+    # "gate pass for Saturday", "timetable for Monday" (#61). Stricter than the
+    # `on` branch: the weekday must be a whole word, so "for months" and
+    # "for Mondays" (a standing pattern, not a date) do not match. Like `on`,
+    # no Sunday - the college does not run on Sunday.
+    m = re.search(r"\bfor\s+(monday|mon|tuesday|tues|tue|wednesday|wed|thursday|thurs|thur|thu|"
+                  r"friday|fri|saturday|sat)\b", t)
+    if m:
+        return next_occurrence(m.group(1), today), DAY_FULL[m.group(1)]
     m = re.search(r"(?<![\d/-])\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b(?![/-]\d)", t)
     if m:
         day, mon = int(m.group(1)), int(m.group(2))
@@ -278,6 +286,14 @@ def _explicit_date(t, today):
 
 WEEKDAY_WORD = re.compile(r"\b(monday|mon|tuesday|tues|tue|wednesday|wed|thursday|thurs|thur|thu|"
                           r"friday|fri|saturday|sat|sunday|sun)\b")
+
+
+def next_occurrence(word, today=None):
+    """The next date falling on weekday `word` ('sat', 'Saturday'); today never
+    counts as the next one. Sunday included - callers decide whether it is a day."""
+    today = today or TODAY
+    idx = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].index(DAY_FULL[word.lower()])
+    return today + dt.timedelta(days=(idx - today.weekday()) % 7 or 7)
 
 
 def date_conflict(text, d):

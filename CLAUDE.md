@@ -292,7 +292,7 @@ python tests/makeup_test.py    # 30 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 68 assertions, no server, no API cost
-python tests/nlu_test.py       # 24 assertions, no server, no API cost
+python tests/nlu_test.py       # 37 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)
@@ -386,6 +386,12 @@ and room scarcity must degrade rather than collapse.
 - **An ISO date is parsed before the Indian dd-mm form (#55).** Without that branch, the dd-mm
   pattern matched the `09-08` inside `2026-09-08` and returned 9 August, a Sunday, so the reply
   was "no coverage needed". `nlu_test.py` section 4 pins it.
+- **"for Saturday" is a date too (#61), and a gate pass may be on Sunday.** `parse_date` reads
+  `for <weekday>` (whole words only: "for months" and "for Mondays" are not dates). The portal's
+  gate-pass route falls back to a bare weekday and resolves it with `nlu.next_occurrence`, which
+  includes Sunday — the parser's no-Sunday rule is about classes, and a weekend home visit is
+  Sat → Sun. "home" no longer sends a home-visit request to the home screen (#62).
+  `nlu_test.py` section 6 pins both.
 - **A booked make-up holds its teacher for every planner (#54).** `busy_faculty` counts
   `makeup_sessions`. Before this, only other make-up searches saw a booking, and plan B made a
   teacher a swap partner at the hour they owed their own make-up (`makeup_test.py:6h`).
