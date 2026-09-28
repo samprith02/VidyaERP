@@ -1,7 +1,7 @@
 """Measure the system and draw the README's charts. Standard library only.
 
     python docs/charts/make_charts.py            # measure + draw (about a minute)
-    python docs/charts/make_charts.py --tests    # also run the ten no-server suites
+    python docs/charts/make_charts.py --tests    # also run the eleven no-server suites
 
 Every number in docs/charts/*.svg comes from running the code in this repo
 against the seeded institution; nothing is typed in by hand. The measurements
@@ -334,7 +334,8 @@ column_chart("solver_scarcity.svg", "Take lab rooms away: it degrades, it does n
 # ============================================ 3. the tool surface and router
 print("\n3 · tools and the router")
 mod_of = {n: tools.FUNCS[n].__module__ for n in tools.FUNCS}
-MOD = {"tools": "core (tools.py)", "campus": "campus.py", "portal": "portal.py", "academics": "academics.py"}
+MOD = {"tools": "core (tools.py)", "campus": "campus.py", "portal": "portal.py", "academics": "academics.py",
+       "accreditation": "accreditation.py"}
 by_mod = collections.defaultdict(lambda: [0, 0])
 for n, m in mod_of.items():
     by_mod[m][1 if n in tools.GATED_WRITES else 0] += 1
@@ -486,9 +487,9 @@ column_chart("faculty_load.svg", "How loaded is each teacher?",
 
 # =========================================================== 5. the suites
 SUITES = ["mcp_parity", "campus_test", "auth_test", "deploy_test", "ranking_test", "solver_test",
-          "makeup_test", "mesh_test", "academics_test", "nlu_test"]
+          "makeup_test", "mesh_test", "academics_test", "nlu_test", "accreditation_test"]
 if "--tests" in sys.argv:
-    print("\n5 · running the ten no-server suites")
+    print("\n5 · running the eleven no-server suites")
     got = []
     for name in SUITES:
         t0 = time.perf_counter()

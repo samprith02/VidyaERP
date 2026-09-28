@@ -71,6 +71,10 @@ INTENTS = {
                ("placement", 4), ("trend", 3), ("brief me", 5), ("status of college", 5),
                ("risk", 3), ("insight", 4)],
         "desc": "Institution analytics, NAAC/NBA metrics, risk radar"},
+    # ---- accreditation.py ----
+    "accreditation": {
+        "kw": [("evidence pack", 8), ("self study report", 8), ("criterion-wise", 6), ("criteria-wise", 6)],
+        "desc": "NAAC / NBA evidence computed from the records, with the gaps named (#29)"},
     # ---- campus services (campus.py) ----
     "ops.radar": {
         "kw": [("autopilot", 8), ("needs my attention", 8), ("need my attention", 8),
@@ -126,6 +130,8 @@ PRIORITY = [
      r"available faculty|free (?:room|slot|hall|classroom)|room availability|which rooms)\b",
      "timetable.view", 12),
     (r"\b(?:work ?load|teaching load|utilis|utiliz|over ?loaded)\b", "faculty.query", 12),
+    # whole words: "nba" sits inside "unbalanced" (#29)
+    (r"\b(?:naac|nba|accreditation|accreditations|iqac|aqar|ssr)\b", "accreditation", 18),
     (r"\b(?:is|are|will be)\s+absent\b|\bon leave (?:tomorrow|today|on|from)\b|"
      r"\barrange (?:a )?(?:substitute|cover|coverage|proxy)\b", "absence.cover", 14),
     (r"\b(?:who(?:'s| is| are)?\s+on leave|list .*leaves?|leave (?:this week|calendar|ledger)|"

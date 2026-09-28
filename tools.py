@@ -10,7 +10,7 @@ Write-tools are wrapped by PolicyGuard: they refuse to commit unless the admin
 gave explicit approval **in the current turn**. The model cannot talk its way past this.
 """
 import re, datetime as dt
-import nlu, db, solver, agents, campus, portal, access, academics
+import nlu, db, solver, agents, campus, portal, access, academics, accreditation
 from nlu import TODAY, day_of
 from agents import (rows, one, fac_name, subj_name, plabel, _span, PERIOD_SPAN,
                     SubstitutionAgent, TimetableAgent, FacultyAgent, StudentAgent,
@@ -669,6 +669,8 @@ REGISTRY += campus.REGISTRY
 REGISTRY += portal.REGISTRY
 # Standing faculty availability (#19): academics.py.
 REGISTRY += academics.REGISTRY
+# NAAC / NBA evidence (#29): accreditation.py. Reads only.
+REGISTRY += accreditation.REGISTRY
 
 FUNCS = {name: fn for fn, name, _d, _s in REGISTRY}
 
@@ -687,7 +689,8 @@ TOOL_AGENT = {
     "makeup_schedule": "SubstitutionAgent",
     "plan_timetable_generation": "TimetableAgent", "apply_timetable_generation": "TimetableAgent",
     "decide_request": "RequestAgent", "create_request": "RequestAgent",
-    "broadcast_notice": "NotifyAgent", **campus.AGENT_OF, **portal.AGENT_OF, **academics.AGENT_OF}
+    "broadcast_notice": "NotifyAgent", **campus.AGENT_OF, **portal.AGENT_OF, **academics.AGENT_OF,
+    **accreditation.AGENT_OF}
 
 
 def agent_of(name):
@@ -761,6 +764,7 @@ TOOL_GROUPS = {
                         "placement_overview"],
     **campus.TOOL_GROUPS,
     **academics.TOOL_GROUPS,
+    **accreditation.TOOL_GROUPS,
 }
 CORE = ["ops_radar", "institution_overview", "get_timetable", "faculty_profile", "student_lookup",
         "list_requests", "plan_absence_coverage"]

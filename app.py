@@ -374,6 +374,8 @@ PANELS = {"ops_radar", "library_overview", "library_overdue", "library_search", 
           "hostel_complaints", "transport_status", "gate_pass_queue", "placement_overview",
           "drive_eligibility", "certificate_register", "no_dues_status", "student_360",
           "review_pending_leaves", "faculty_availability"}
+# the accreditation evidence pack (#29) reads only, like every panel
+PANELS.add("accreditation_evidence")
 
 
 @app.get("/api/panel/{name}")
