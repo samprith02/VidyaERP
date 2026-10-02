@@ -383,6 +383,26 @@ _app_doc = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
 check("4k the docs say demo mode publishes every password",
       "every password is published" in _app_doc.lower() and "public demo" in _app_doc.lower())
 
+# The ledger records who acted, not who the request body says acted (#73).
+_ac = db.connect()
+A.mcp_approval(SignedIn("admin"), {"actor": "someone-else"})
+_minted = _ac.execute("SELECT actor FROM audit WHERE action='approval.mint' ORDER BY id DESC LIMIT 1").fetchone()
+check("4l a minted MCP approval is logged under the signed-in account, not a name in the body",
+      _minted and _minted[0] == "x", str(_minted and tuple(_minted)))
+A.ADMIN_TOKEN = "s3cret-operator-token"
+try:
+    A.mcp_approval(FakeRequest({"X-Admin-Token": "s3cret-operator-token"}), {"actor": "someone-else"})
+finally:
+    A.ADMIN_TOKEN = ""
+_minted = _ac.execute("SELECT actor FROM audit WHERE action='approval.mint' ORDER BY id DESC LIMIT 1").fetchone()
+check("4m ...and under 'operator-token' when the token was used", _minted and _minted[0] == "operator-token",
+      str(_minted and tuple(_minted)))
+A.generate_apply(SignedIn("admin"), {"scope": "class", "dept": "CSE", "sem": 5, "section": "A", "actor": "someone-else"})
+_gen = _ac.execute("SELECT actor FROM audit WHERE action='timetable.generate' ORDER BY id DESC LIMIT 1").fetchone()
+check("4n an applied timetable is logged under the signed-in account", _gen and _gen[0] == "x",
+      str(_gen and tuple(_gen)))
+_ac.close()
+
 
 # ================================================== 5 · it boots from nothing
 print("\n5 · a cold start needs no configuration")
@@ -408,6 +428,50 @@ check("5d requirements.txt is still two packages",
            if l.strip() and not l.startswith("#")]) == 2,
       "a third dependency landed — CLAUDE.md says think hard first")
 os.remove(cold)
+
+
+# ======================================= 6 · wrong-typed input is a 400, not a 500 (#90)
+print("\n6 · wrong-typed input is refused in words")
+print("-" * 78)
+# Found 2026-10-02 by probing a running instance: {"username": 5} on the
+# public login endpoint, {"text": 5} on /api/chat, a non-numeric sem and an
+# unparseable date each raised inside the handler and came back as a bare 500.
+import asyncio                                                     # noqa: E402
+from types import SimpleNamespace as NS                            # noqa: E402
+
+
+def refused(fn, *a, **k):
+    """The BadInput message a handler raises, or None if it does not."""
+    try:
+        fn(*a, **k)
+    except A.BadInput as e:
+        return str(e)
+    except Exception:                    # any other exception is the 500 this section exists to prevent
+        return None
+    return None
+
+
+anon = NS(client=None, cookies={}, state=NS(user=None))
+reg = NS(client=None, cookies={}, state=NS(user={"id": "registrar", "role": "admin"}))
+check("6a login: a non-text username is a 400, before anything is looked up",
+      refused(A.login, anon, {"username": 5, "password": 5}) == "'username' must be text.")
+check("6b chat: non-text 'text' is a 400", refused(A.chat, reg, {"text": 5}) == "'text' must be text."
+      and refused(A.chat, reg, {"text": ["a"]}))
+check("6c password reset: a non-text username is a 400", refused(A.reset_password, {"username": 5}))
+check("6d timetable: an unparseable date is a 400, a real one is served",
+      refused(A.timetable, date="2026-13-45") and refused(A.timetable, date="notadate")
+      and A.timetable(date="2026-09-07")["type"] == "grid")
+check("6e generator: a non-numeric sem or a section that does not run is a 400 (#89)",
+      refused(A._gen_args, {"sem": "x"}) and "NOPE-5A" in (refused(A._gen_args, {"dept": "NOPE"}) or "")
+      and refused(A._gen_args, {"seed": "x"}))
+check("6f generator: lower-case arguments resolve to the real section",
+      A._gen_args({"dept": "cse", "sem": "5", "section": "a"})["dept"] == "CSE")
+r = asyncio.run(A._bad_input(None, A.BadInput("why")))
+check("6g BadInput is registered and becomes a 400 carrying the sentence",
+      A.app.exception_handlers.get(A.BadInput) is A._bad_input and r.status_code == 400
+      and json.loads(r.body) == {"error": "why"})
+check("6h missing or null is still empty text, not an error",
+      A._text({}, "x") == "" and A._text({"x": None}, "x") == "")
 
 
 print("-" * 78)

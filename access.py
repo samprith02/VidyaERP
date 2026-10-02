@@ -93,6 +93,25 @@ def own_teaching(con, P, a):
     return a, None
 
 
+def own_courses(con, P, a):
+    """A teacher's CIE marks: only the courses they are the teacher of record
+    for - the tool refuses any other course with this filled in (#32)."""
+    if a.get("teacher") and (not _fac(con, a["teacher"]) or _fac(con, a["teacher"])["id"] != P["fid"]):
+        return None, "You can only see and enter marks for the courses you teach."
+    a["teacher"] = P["fid"]
+    return a, None
+
+
+def own_mentees(con, P, a):
+    """A teacher's early-warning list is their mentees' (#79)."""
+    if a.get("mentor") and str(a["mentor"]).upper() != P["fid"]:
+        f = _fac(con, a["mentor"])
+        if not f or f["id"] != P["fid"]:
+            return None, "You can only see your own mentees."
+    a["mentor"] = P["fid"]
+    return a, None
+
+
 def dept_fac(con, P, a, key="name"):
     """HOD: any colleague in the department, themselves by default."""
     if not a.get(key):
@@ -127,20 +146,48 @@ def dept_leave(con, P, a):
     return a, None
 
 
+SELF_WORDS = {"", "me", "my", "mine", "myself", "self", "i"}
+
+
+def own_loans(con, P, a):
+    """Library loans (#91): a student or a teacher sees their own; a HOD also
+    any student or colleague in the department. Narrows to "me" by default."""
+    me = P.get("usn") or P.get("fid")
+    ref = str(a.get("member") or "").strip()
+    s = _stu(con, ref) if ref.lower() not in SELF_WORDS else None
+    f = _fac(con, ref) if ref.lower() not in SELF_WORDS and not s else None
+    who = (s and s["usn"]) or (f and f["id"])
+    if ref.lower() in SELF_WORDS or ref.upper() == me or who == me:
+        a["member"] = me
+        return a, None
+    if P["role"] == "hod" and (s or f):
+        if (s or f)["dept"] != P["dept"]:
+            return None, f"{who} is not in {P['dept']}."
+        a["member"] = who
+        return a, None
+    if P["role"] == "hod":
+        return None, f"No student or colleague in {P['dept']} matches '{ref}'."
+    return None, "You can only see your own library loans."
+
+
 # ------------------------------------------------------------- the policy
 STUDENT = {
     "my_home": ALLOW, "my_requests": ALLOW, "my_placement": ALLOW,
     "request_gate_pass": ALLOW, "request_certificate": ALLOW,
     "student_360": self_usn, "no_dues_status": self_usn,
     "get_timetable": own_class, "exam_schedule": own_dept_sem, "library_search": ALLOW,
-    "makeup_schedule": own_class,
+    "makeup_schedule": own_class, "library_loans": own_loans,
+    "cie_marks": self_usn,
 }
 FACULTY = {
     "my_home": ALLOW, "my_requests": ALLOW, "my_mentees": ALLOW, "my_leaves": ALLOW, "apply_leave": ALLOW,
     "faculty_timetable": self_fac, "faculty_profile": self_fac,
     "get_timetable": dept_class, "exam_schedule": ALLOW, "library_search": ALLOW, "find_free_rooms": ALLOW,
+    "library_loans": own_loans,
     "makeup_schedule": own_teaching,
+    "academic_risk": lambda con, P, a: own_mentees(con, P, a),
     "faculty_availability": lambda con, P, a: self_fac(con, P, a, "faculty"),
+    "cie_marks": own_courses, "record_cie_marks": own_courses,
 }
 HOD = {
     **FACULTY,
@@ -148,6 +195,7 @@ HOD = {
     "makeup_schedule": lambda con, P, a: own_dept(con, P, a),
     "faculty_timetable": dept_fac, "faculty_profile": dept_fac,
     "faculty_workload": own_dept, "attendance_defaulters": own_dept, "exam_eligibility": own_dept,
+    "academic_risk": lambda con, P, a: own_dept(con, P, a),   # the whole department, mentor-wise too
     "find_free_faculty": own_dept,
     "faculty_availability": lambda con, P, a: own_dept(con, P, a),
     "student_360": lambda con, P, a: dept_student(con, P, a, "usn"),
@@ -156,6 +204,8 @@ HOD = {
     "decide_leave": dept_leave,
     "plan_absence_coverage": lambda con, P, a: dept_fac(con, P, a, "faculty_name"),
     "apply_coverage_plan": ALLOW,          # only ever commits the HOD's own staged plan
+    # the whole department's marks, and corrections to them
+    "cie_marks": lambda con, P, a: own_dept(con, P, a), "record_cie_marks": lambda con, P, a: own_dept(con, P, a),
 }
 POLICY = {"student": STUDENT, "faculty": FACULTY, "hod": HOD}
 

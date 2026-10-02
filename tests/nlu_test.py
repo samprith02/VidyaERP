@@ -56,6 +56,26 @@ def check(name, cond, detail=""):
         print(f"  FAIL {name}  {detail}")
 
 
+# ------------------------------------------------ 0 · keywords are words (#68)
+print("\n0 · a keyword starts a word; a department's name is not an instruction")
+print("-" * 78)
+ROUTE = {"Information Science sem 5 timetable": "timetable.view",
+         "Information science department faculty workload": "faculty.query",
+         "Computer Science department overview": "analytics.kpi",
+         "Inform all students about the fest": "notify.broadcast",
+         "Recruitment drives this month": "placement"}
+for q, want in ROUTE.items():
+    got = (nlu.classify(q) or [("none",)])[0][0]
+    # Defect: "Information ..." drafted a circular (the broadcast rule had no
+    # boundary after "inform"), and "cie" inside "Science" won the exam tie.
+    check(f"0a “{q}” → {want}", got == want, got)
+inside = [(kw, w) for cfg in nlu.INTENTS.values() for kw, _s in cfg["kw"]
+          for w in ("science", "scientific", "efficient", "information", "methodology", "ambalpady", "driver")
+          if kw.strip() != w and nlu._kw_rx(kw).search(f" {w} ")]
+check("0b no keyword fires inside the institution's own words (science, information, methodology, "
+      "a bus stop, driver)", not inside, str(inside))
+
+
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 FULL = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 # One real week, so every weekday gets a turn as "today".
@@ -154,6 +174,50 @@ check("3h a label comes back with the date",
       "the console echoes this back, which is what catches a wrong week early")
 
 
+# ------------------------------------ 3x · the portal's own examples route where they say (#77)
+print("\n3x · every example the portal suggests reaches a tool its role may call")
+print("-" * 78)
+import re as _re                                                   # noqa: E402
+import access                                                      # noqa: E402
+import portal                                                      # noqa: E402
+
+PRINC = {"student": {"role": "student", "usn": "4VP24CS009", "dept": "CSE", "sem": 5, "section": "A"},
+         "faculty": {"role": "faculty", "fid": "F002", "dept": "CSE"},
+         "hod": {"role": "hod", "fid": "F001", "dept": "CSE"}}
+
+
+def proute(role, q):
+    ent = {"usn": nlu.extract_usn(q), "dept": nlu.extract_dept(q), "sem": nlu.extract_sem(q),
+           "section": nlu.extract_section(q), "periods": nlu.extract_periods(q), "date": nlu.parse_date(q)[0],
+           "faculty": None}
+    return portal.route(None, q, PRINC[role], ent)
+
+
+stray = []
+for role, rows_ in portal.HELP.items():
+    for _area, ex in rows_:
+        for q in _re.findall(r"“([^”]+)”", ex):
+            tool, _a = proute(role, q)
+            if tool not in access.POLICY[role] and not (role == "hod" and q.startswith("Dr. X")):
+                stray.append(f"{role}: {q!r} -> {tool}")
+check("3x-a every HELP example routes to a tool the role is allowed", not stray, str(stray))
+want = {"Exam schedule": "exam_schedule", "My timetable": "get_timetable", "My attendance": "student_360",
+        "My no-dues status": "no_dues_status", "Gate pass for Saturday 2pm to 7pm, parents know": "request_gate_pass"}
+got = {q: proute("student", q)[0] for q in want}
+# Defect: "Exam schedule" - the portal's own example - matched the timetable's
+# "schedule" and showed the timetable.
+check("3x-b the student examples reach the tool they name", got == want, str(got))
+check("3x-c another student's USN is passed on (so access.py refuses it), not dropped",
+      proute("student", "Everything about 4VP24CS010") == ("student_360", {"usn": "4VP24CS010"})
+      and proute("student", "no dues of 4VP24CS010") == ("no_dues_status", {"usn": "4VP24CS010"}))
+check("3x-d asking to approve gate passes is not filing a new one",
+      proute("student", "approve all gate passes")[0] == "decide_gate_passes"
+      and "decide_gate_passes" not in access.POLICY["student"])
+check("3x-e 'exam fees' is still a dues question", proute("student", "exam fees due")[0] == "no_dues_status")
+check("3x-f ...and 'internal exam marks' is not the exam schedule",
+      proute("student", "my internal exam marks")[0] != "exam_schedule")
+
+
 # --------------------------------------------------------- 4 · ISO dates (#55)
 print("\n4 · an ISO date is the date it says")
 print("-" * 78)
@@ -182,6 +246,48 @@ check("5c a weekday that disagrees is reported, so the caller can ask",
 check("5d a range like '2-3 days' is still not read as a date",
       nlu.parse_date("next monday for 2-3 days", FRI)[0] == dt.date(2026, 9, 7))
 check("5e no weekday word, no conflict", nlu.date_conflict("absent on 15 sep", d2) is None)
+
+# ------------------------------------------------ 6 · "for <weekday>" (#61)
+print("\n6 · 'for Saturday' is Saturday, in the parser and in the portal")
+print("-" * 78)
+import portal  # noqa: E402
+
+bad = [f"{DAYS[ref.weekday()]} + 'for {name}'" for ref in WEEK for i, name in enumerate(FULL[:6])
+       if nlu.parse_date(f"gate pass for {name} 2pm", today=ref)[0] != expected(ref, i)]
+# Defect: only on/this/next/coming named a day, so "for Saturday" parsed to
+# nothing and the portal filed the gate pass for today, with no warning.
+check("6a 'for <weekday>' resolves to the next occurrence for all 7x6 pairs", not bad, str(bad[:3]))
+check("6b the weekday must be a whole word: 'for months' / 'for mondays' are not dates",
+      nlu.parse_date("absent for months", FRI) == (None, None)
+      and nlu.parse_date("unavailable for mondays", FRI) == (None, None))
+ST = {"role": "student", "usn": "4VP24CS009"}
+tool, a = portal.route(None, "Request a gate pass for Saturday 2pm to 7pm for an outing", ST, {})
+check("6c the issue's own sentence stages Sat 05 Sep, 14:00 to 19:00",
+      tool == "request_gate_pass" and a["out_at"] == "2026-09-05 2pm" and a["return_by"] == "2026-09-05 7pm", str(a))
+check("6d and its reason is the purpose, not the date", a["reason"] == "an outing", repr(a["reason"]))
+_, a = portal.route(None, "gate pass Saturday 2pm to 7pm", ST, {})
+check("6e a bare weekday is a day too", a["out_at"] == "2026-09-05 2pm" and a["reason"] == "", str(a))
+_, a = portal.route(None, "outing on sunday 3pm", ST, {})
+check("6f a Sunday outing is Sunday (the parser's no-Sunday rule is for classes, not passes)",
+      a["out_at"] == "2026-09-06 3pm", str(a))
+_, a = portal.route(None, "gate pass for monday 10am to wed", ST, {})
+check("6g 'to <weekday>' is the return day, not the day out",
+      a["out_at"] == "2026-09-07 10am" and a["return_by"].startswith("2026-09-09"), str(a))
+tool, a = portal.route(None, "home visit wed 10am to sat 5pm", ST, {})
+# Defect found writing 6i: "home" sent every home-visit request to the dashboard.
+check("6i a home visit is a gate pass, not the home screen",
+      tool == "request_gate_pass" and a["kind"] == "Home visit", f"{tool} {a}")
+check("6j ... and a bare day out with a 'to <weekday>' return reads both days",
+      a.get("out_at") == "2026-09-09 10am" and a.get("return_by") == "2026-09-12 5pm", str(a))
+check("6k 'home' alone is still the home screen", portal.route(None, "home", ST, {})[0] == "my_home")
+_, a = portal.route(None, "gate pass 4pm to sat 6pm", ST, {})
+check("6l with no day out named, the return weekday does not become the day out",
+      a["out_at"] == "2026-09-04 4pm" and a["return_by"] == "2026-09-05 6pm", str(a))
+_, a = portal.route(None, "home visit on saturday 9am to sunday 6pm", ST, {})
+check("6m a weekend home visit returns on Sunday, not with no return at all",
+      a["out_at"] == "2026-09-05 9am" and a["return_by"] == "2026-09-06 6pm", str(a))
+_, a = portal.route(None, "gate pass 2pm", ST, {})
+check("6h no day named still means today", a["out_at"] == "2026-09-04 2pm", str(a))
 
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")

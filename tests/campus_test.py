@@ -393,7 +393,8 @@ for t, want in NEW.items():
     check(f"9b new: “{t}” → {want}", top(t) == want, top(t))
 AGENT_INTENT = {"RequestAgent": "request.manage", "HRAgent": "leave.review", "GatePassAgent": "gatepass",
                 "LibraryAgent": "library", "HostelAgent": "hostel", "TransportAgent": "transport",
-                "PlacementAgent": "placement", "DocumentAgent": "document", "ExamAgent": "exam.query"}
+                "PlacementAgent": "placement", "DocumentAgent": "document",
+                "ExamAgent": ("exam.query", "cie")}       # eligibility, and CIE marks (#32)
 radar_cmds = []
 # a FRESH seed, because sections 2-8 above cleared most of what the radar
 # reports - and never the live college.db, whose state depends on usage
@@ -405,7 +406,8 @@ for b in rad["blocks"]:
 check("9c the radar finds work on a fresh day", len(radar_cmds) >= 8, str(len(radar_cmds)))
 for i in radar_cmds:
     want = AGENT_INTENT.get(i["agent"])
-    check(f"9d radar command routes to its agent: “{i['command'][:48]}”", top(i["command"]) == want,
+    check(f"9d radar command routes to its agent: “{i['command'][:48]}”",
+          top(i["command"]) in (want if isinstance(want, tuple) else (want,)),
           f"{top(i['command'])} ≠ {want}")
     check(f"9e radar command proposes, never commits: “{i['command'][:48]}”",
           not tools.approved_this_turn(i["command"]))
@@ -428,6 +430,34 @@ orch.handle(cr, "Send overdue library reminders", sid)
 out = orch.handle(cr, "yes", sid)
 check("9i 'yes' commits through tools.execute", one(cr, "SELECT COUNT(*) n FROM notifications")["n"] > n_notes
       and orch.sess(sid)["pending"] is None, str([b.get("md", b["type"]) for b in out["blocks"]])[:140])
+
+# A broadcast that names its audience stays a broadcast whatever its message
+# mentions (#87). Measured before the fix: 6 of these 8 went to the campus
+# service named in the message, and the library one staged overdue reminders.
+BROADCASTS = ["Broadcast to all students: the library closes at 6 pm today",
+              "Notify all hostel students that the mess will be closed on Sunday",
+              "Inform all CSE students that the placement drive for Infosys is postponed",
+              "Announce to all students that the bus to Mysuru route is cancelled tomorrow",
+              "Notify all students that library books are due Friday",
+              "Alert all 5th sem students that gate passes are suspended this weekend",
+              "Send a notice to all faculty: exam duty list is out",
+              "Broadcast: fee payment deadline extended to 30 Sep",
+              "Notify: bus route 4 is cancelled tomorrow",
+              "Broadcast: the library is closed on Saturday"]
+for t in BROADCASTS:
+    check(f"9j a broadcast is a broadcast: “{t[:52]}”", top(t) == "notify.broadcast", top(t))
+sid = "campus-bc"
+orch.SESS.pop(sid, None)
+orch.handle(cr, "Notify all students that library books are due Friday", sid)
+p = orch.sess(sid)["pending"] or {}
+check("9k ...and the rule engine stages the notice, not the overdue reminders a 'yes' would commit",
+      p.get("kind") == "broadcast_draft" and "library books are due friday" in p["msgs"][0]["body"].lower(),
+      str(p)[:160])
+orch.SESS.pop(sid, None)
+KEEP = {"Send overdue library reminders": "library", "Notify riders of route 4 about the breakdown": "transport",
+        "Alert the warden about hostel complaints": "hostel", "approve gate pass 12": "gatepass"}
+for t, want in KEEP.items():
+    check(f"9l no audience phrase, still its service: “{t}” → {want}", top(t) == want, top(t))
 cr.close()
 os.remove(pr)
 
@@ -452,6 +482,81 @@ check("10f no source file contains a stray backspace character", not bs, str(bs)
 m = re.search(r"const APPROVING=/(.+?)/i;", html)
 check("10d the deep-link guard mirrors guard.APPROVAL_RX exactly",
       m and m.group(1) == tools.APPROVAL_RX.pattern, m and m.group(1)[:60])
+
+# ===================================================== 11 · one member's loans (#91)
+print("\n11 · which book has a student borrowed")
+print("-" * 78)
+# Reported 2026-10-02: a HOD asking which book a student had borrowed got the
+# whole Student 360 back (attendance, CGPA, fees...), because no read tool could
+# answer it. On the Registrar's rule engine it was worse: the fine question fell
+# to smalltalk and "when does the book borrowed by <USN> need to be returned?"
+# staged return_book, a write that checks the books in.
+la = campus.LibraryAgent()
+held = one(con, """SELECT member, COUNT(*) n FROM book_loans WHERE returned_on IS NULL AND member_kind='Student'
+                   GROUP BY member HAVING n >= 2 ORDER BY member LIMIT 1""")
+U9 = held["member"]
+r = run("library_loans", {"member": U9})
+mine = la.active(con, U9)
+check("11a the tool lists each loan by title, with issue date, due date, status and fine",
+      [x["title"] for x in r["data"]["loans"]] == [l["title"] for l in mine]
+      and all(set(x) >= {"book", "issued_on", "due_on", "status", "fine", "days_overdue"} for x in r["data"]["loans"]),
+      str(r["data"])[:160])
+check("11b its fines are the circulation desk's fines, to the rupee",
+      r["data"]["total_fine"] == sum(la.fine(l) for l in mine)
+      and r["data"]["total_fine"] == sum(o["fine_due"] for o in la.overdue(con) if o["member"] == U9))
+check("11c it carries nothing else: no attendance, CGPA or fees",
+      not re.search(r"attendance|cgpa|fee", json.dumps(r).lower()), json.dumps(r)[:160])
+free = one(con, """SELECT usn FROM students WHERE usn NOT IN (SELECT member FROM book_loans WHERE returned_on IS NULL)
+                   ORDER BY usn LIMIT 1""")["usn"]
+r = run("library_loans", {"member": free})
+check("11d a member with nothing out is told so", r["data"]["loans"] == [] and "no books on loan" in r["blocks"][0]["md"])
+fl = one(con, "SELECT member FROM book_loans WHERE returned_on IS NULL AND member_kind='Faculty' LIMIT 1")
+check("11e a staff id is a member too", fl is None or run("library_loans", {"member": fl["member"]})["data"]["member"]
+      == fl["member"])
+check("11f an unknown member is an error, not an empty list",
+      tools.failure_of(run("library_loans", {"member": "4VP99ZZ999"})))
+check("11g it is a read: not gated, owned by the LibraryAgent",
+      "library_loans" not in tools.GATED_WRITES and tools.agent_of("library_loans") == "LibraryAgent")
+
+ASKS = [f"{U9} can you tell me which book he has borrowed", f"how much fine does {U9} have?",
+        f"when does the book borrowed by {U9} need to be returned?", f"show me all books borrowed by {U9}",
+        f"which book did {U9} borrow?"]
+for q in ASKS:
+    sid = "loans-q"
+    orch.SESS.pop(sid, None)
+    out = orch.handle(con, q, sid)
+    ran = [s["detail"] for s in out["trace"] if s["agent"] == "ToolRouter"] + \
+          [s["action"] for s in out["trace"] if s["agent"] == "LibraryAgent"]
+    check(f"11h Registrar: “{q[:50]}” reads the loans and stages nothing",
+          "member_loans" in ran and orch.sess(sid)["pending"] is None, f"{out.get('intent')} {ran}")
+orch.SESS.pop("loans-q", None)
+sid = "loans-w"
+orch.SESS.pop(sid, None)
+orch.handle(con, f"Return {mine[0]['book_id']} for {U9}", sid)
+check("11i an ORDER to return still proposes the write", (orch.sess(sid)["pending"] or {}).get("tool") == "return_book")
+orch.SESS.pop(sid, None)
+ent9 = {"usn": U9, "dept": None, "faculty": None}
+check("11i2 ...even when it names overdue books: an order is not a question",
+      campus.rule_route(con, "library", f"Return the overdue books of {U9}", ent9)[0] == "return_book")
+check("11i3 ...and a polite question that ORDERS an issue is still an issue",
+      campus.rule_route(con, "library", f"Can you issue BK0012 to {free}?", {**ent9, "usn": free})[0] == "issue_book")
+check("11j 'show me the details of <USN>' is a student lookup, not smalltalk",
+      top(f"show me the details of {U9}") == "student.query", top(f"show me the details of {U9}"))
+sid = "loans-c"
+orch.SESS.pop(sid, None)
+orch.handle(con, f"show me the details of {U9}", sid)
+out = orch.handle(con, "which book has he borrowed?", sid)
+co = [s for s in out["trace"] if s["action"] == "coreference"]
+check("11k a follow-up's 'he' is the student named in the previous turn",
+      co and U9 in co[0]["detail"] and any(s["action"] == "member_loans" and U9 in s["detail"] for s in out["trace"]),
+      str([s["action"] for s in out["trace"]]))
+orch.SESS.pop(sid, None)
+out = orch.handle(con, "which book has he borrowed?", "loans-none")
+check("11l with no student named before, 'he' is not guessed",
+      not any(s["action"] == "coreference" for s in out["trace"]))
+orch.SESS.pop("loans-none", None)
+offered = {s["function"]["name"] for s in tools.select_tools(f"which book has {U9} borrowed", S())[0]}
+check("11m the language model is offered the loans tool for the question", "library_loans" in offered, str(offered))
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")
 for f in FAILED:

@@ -10,7 +10,7 @@ Write-tools are wrapped by PolicyGuard: they refuse to commit unless the admin
 gave explicit approval **in the current turn**. The model cannot talk its way past this.
 """
 import re, datetime as dt
-import nlu, db, solver, agents, campus, portal, access, academics
+import nlu, db, solver, agents, campus, portal, access, academics, accreditation, notify_gateway
 from nlu import TODAY, day_of
 from agents import (rows, one, fac_name, subj_name, plabel, _span, PERIOD_SPAN,
                     SubstitutionAgent, TimetableAgent, FacultyAgent, StudentAgent,
@@ -227,6 +227,60 @@ def t_attendance_defaulters(con, S, U, dept=None, sem=None, cutoff=75, **kw):
                       ("RiskAgent", "severity_bucketing", "critical <60 · warning 60-70 · borderline 70-75")]}
 
 
+def t_academic_risk(con, S, U, dept=None, sem=None, mentor=None, by=None, **kw):
+    """The early-warning list (#79): counted in full, shown in part, with the
+    signals behind every score and the weights they carry."""
+    mf = None
+    if mentor:
+        mf = one(con, "SELECT id, name FROM faculty WHERE id=?", (str(mentor).upper(),))
+        if not mf:
+            f, _e = _find_faculty(con, mentor)
+            mf = f
+        if not mf:
+            return {"data": {"error": f"No mentor matches '{mentor}'."}, "blocks": [], "trace": []}
+    data = StudentAgent().risk(con, dept.upper() if dept else None, int(sem) if sem else None,
+                               mf["id"] if mf else None)
+    band = {b: [d for d in data if d["band"] == b] for b, _f in agents.RISK_BANDS}
+    weights = " · ".join(f"{label} +{w}" for _k, label, w in agents.RISK_SIGNALS)
+    floors = ", ".join(f"{b} ≥ {f}" for b, f in agents.RISK_BANDS)
+    scope = " · ".join(x for x in (dept and dept.upper(), sem and f"sem {sem}",
+                                   mf and f"mentees of {mf['name']}") if x) or "the institution"
+    blocks = [B_cards([{"label": "High", "value": len(band["High"]), "tone": "bad"},
+                       {"label": "Medium", "value": len(band["Medium"]), "tone": "warn"},
+                       {"label": "Watch", "value": len(band["Watch"])},
+                       {"label": "Two or more signals", "value": sum(1 for d in data if len(d["signals"]) >= 2)}],
+                      title=f"Early warning — {scope}")]
+    if by == "mentor":
+        per = {}
+        for d in data:
+            per.setdefault(d["mentor"], []).append(d)
+        order = sorted(per.items(), key=lambda kv: (-sum(1 for d in kv[1] if d["band"] == "High"), -len(kv[1])))
+        blocks.append(B_table(["Mentor", "High", "Medium", "Watch", "Talk to first"],
+                              [[fac_name(con, m), sum(1 for d in ds if d["band"] == "High"),
+                                sum(1 for d in ds if d["band"] == "Medium"), sum(1 for d in ds if d["band"] == "Watch"),
+                                ", ".join(d["usn"] for d in ds[:3])] for m, ds in order],
+                              title="Mentor-wise counselling list", dense=True))
+    else:
+        blocks.append(B_table(["USN", "Name", "Class", "Score", "Band", "Signals", "Mentor"],
+                              [[d["usn"], d["name"], f"{d['dept']}-{d['sem']}{d['section']}", d["score"], d["band"],
+                                "; ".join(d["signals"]), fac_name(con, d["mentor"])] for d in data[:25]],
+                              title=f"Highest scores (25 of {len(data)} with any signal)" if len(data) > 25
+                              else f"{len(data)} student(s) with any signal", dense=True))
+    blocks.append(B_text(f"Rule-based early warning, not a prediction: there are no dropout or result outcomes in "
+                         f"these records to validate a model against (#30). Weights (policy): {weights}. "
+                         f"Bands: {floors}."))
+    return {"data": {"scope": scope, "high": len(band["High"]), "medium": len(band["Medium"]),
+                     "watch": len(band["Watch"]), "with_any_signal": len(data),
+                     "students": [{"usn": d["usn"], "name": d["name"], "score": d["score"], "band": d["band"],
+                                   "signals": d["signals"], "mentor": d["mentor"]} for d in data[:25]],
+                     "weights": {label: w for _k, label, w in agents.RISK_SIGNALS},
+                     "note": "rule-based early warning, not a trained prediction"},
+            "blocks": blocks,
+            "chips": ["Mentor-wise counselling report", "Attendance defaulters", "SEE eligibility check"],
+            "trace": [("RiskAgent", "early_warning", f"{len(data)} with a signal · {len(band['High'])} high · "
+                                                     f"{len(band['Medium'])} medium")]}
+
+
 def t_fee_summary(con, S, U, **kw):
     tot, byd = FinanceAgent().summary(con)
     return {"data": {"outstanding": tot["s"], "students_with_dues": tot["n"],
@@ -252,14 +306,31 @@ def t_exam_schedule(con, S, U, dept=None, sem=None, **kw):
 
 def t_exam_eligibility(con, S, U, dept=None, sem=None, **kw):
     bad = ExamAgent().ineligible(con, dept.upper() if dept else None, int(sem) if sem else None)
+    # The second bar a student must clear for the SEE: the CIE minimum, per
+    # course (#32). Before the last components are in it is a projection, and
+    # says so; "Cannot reach" is already certain.
+    cie = academics.cie_risk(con, dept.upper() if dept else None, int(sem) if sem else None)
+    certain = sum(1 for c in cie if c["status"] == "Cannot reach")
+    blocks = [B_table(["USN", "Name", "Class", "Attendance", "Fee due"],
+                      [[d["usn"], d["name"], f"{d['dept']}-{d['sem']}{d['section']}",
+                        f"{d['attendance']}%", inr(d["fee_due"])] for d in bad[:20]],
+                      title="Below VTU 75% bar", dense=True)]
+    if cie:
+        blocks.append(B_table(["USN", "Name", "Class", "Course", "Secured", "Projected", "Standing"],
+                              [[c["usn"], c["name"], c["cls"], c["subject"], f"{c['secured']:g}",
+                                f"{c['projected']:g}", c["status"]] for c in cie[:20]],
+                              title=f"Below the CIE minimum ({academics.CIE_MIN}/{academics.CIE_MAX}), "
+                                    f"or on course to be — {len(cie)} student-course pair(s)", dense=True))
     return {"data": {"ineligible": len(bad),
                      "students": [{"usn": d["usn"], "name": d["name"], "attendance": d["attendance"]}
-                                  for d in bad[:25]]},
-            "blocks": [B_table(["USN", "Name", "Class", "Attendance", "Fee due"],
-                               [[d["usn"], d["name"], f"{d['dept']}-{d['sem']}{d['section']}",
-                                 f"{d['attendance']}%", inr(d["fee_due"])] for d in bad[:20]],
-                               title="Below VTU 75% bar", dense=True)],
-            "trace": [("ExamAgent", "eligibility_check", f"{len(bad)} blocked")]}
+                                  for d in bad[:25]],
+                     "cie_at_risk": len(cie), "cie_cannot_reach": certain,
+                     "cie_students": [{"usn": c["usn"], "subject": c["subject"], "projected": c["projected"],
+                                       "status": c["status"]} for c in cie[:25]]},
+            "blocks": blocks,
+            "trace": [("ExamAgent", "eligibility_check", f"{len(bad)} blocked"),
+                      ("ExamAgent", "cie_check", f"{len(cie)} course(s) below the CIE minimum on current form, "
+                                                 f"{certain} certain")]}
 
 
 def t_list_requests(con, S, U, status="Pending", **kw):
@@ -445,18 +516,24 @@ def t_makeup_schedule(con, S, U, dept=None, sem=None, section=None, faculty=None
             "trace": [("SubstitutionAgent", "makeup_schedule", f"{len(out)} session(s) held")]}
 
 
-def _gen_scope(scope, dept, sem, section):
+def _gen_scope(con, scope, dept, sem, section):
     scope = "all" if str(scope).lower().startswith("all") else "class"
-    if scope == "class" and not (dept and sem and section):
+    if scope == "all":
+        return ("all", None, None, None), None
+    if not (dept and sem and section):
         return None, {"error": "Regenerating one section needs dept, sem and section. "
                                "Pass scope='all' to rebuild the whole college."}
-    return (scope, dept, int(sem) if sem else None, section), None
+    # A section that does not run was "rebuilt" as 0 of 0 and verified clean (#89).
+    cls, why = solver.resolve_class(con, dept, sem, section)
+    if why:
+        return None, {"error": why}
+    return ("class", *cls), None
 
 
 def t_plan_timetable_generation(con, S, U, scope="class", dept=None, sem=None, section=None,
                                 seed=7, **kw):
     """Build a timetable from scratch and REPORT it. Writes nothing."""
-    parsed, err = _gen_scope(scope, dept, sem, section)
+    parsed, err = _gen_scope(con, scope, dept, sem, section)
     if err:
         return {"data": err, "blocks": [], "trace": []}
     scope, dept, sem, section = parsed
@@ -546,18 +623,24 @@ def t_decide_request(con, S, U, request_id=None, decision="approve", **kw):
                                     "in this turn."}, "blocks": [],
                 "trace": [("PolicyGuard", "write_blocked", "no approval in turn")]}
     rid = int(re.sub(r"\D", "", str(request_id or 0)) or 0)
-    r = one(con, "SELECT * FROM requests WHERE id=?", (rid,))
-    if not r:
-        return {"data": {"error": f"No request with id {rid}."}, "blocks": [], "trace": []}
     dec = "Approved" if str(decision).lower().startswith("app") else "Rejected"
-    RequestAgent().decide(con, rid, dec)
+    r, why, denied = RequestAgent().decide(con, rid, dec, actor=((S or {}).get("user") or {}).get("id", "registrar"))
+    if denied:
+        return {"data": {"DENIED": why}, "blocks": [B_text(why)],
+                "trace": [("PolicyGuard", "delegation_limit", why, "warn")]}
+    if why:
+        return {"data": {"error": why}, "blocks": [B_text(why)], "trace": []}
+    cap = agents.PolicyGuard.APPROVAL_CEILING
     NotifyAgent().dispatch(con, [{"audience": r["raised_by"], "channel": "App + email",
                                   "title": f"Your request '{r['title']}' was {dec.lower()}",
                                   "body": f"Decision by Admin on {TODAY.isoformat()}."}])
     return {"data": {"id": rid, "title": r["title"], "decision": dec, "amount": r["amount"]},
             "blocks": [], "refresh": True,
-            "trace": [("PolicyGuard", "delegation_limit", "admin ceiling ₹5,00,000 respected"),
-                      ("RequestAgent", "decision", f"REQ-{rid:04d} → {dec}")]}
+            "trace": [("PolicyGuard", "delegation_limit",
+                       f"₹{r['amount'] or 0:,} within the ₹{cap:,} delegation" if dec == "Approved"
+                       else "a rejection needs no delegation"),
+                      ("RequestAgent", "decision", f"REQ-{rid:04d} → {dec}"),
+                      ("RequestAgent", "verify", f"REQ-{rid:04d} re-read as {r['status']}", "ok")]}
 
 
 def t_create_request(con, S, U, kind="General", title="", details="", target="Principal",
@@ -622,6 +705,10 @@ REGISTRY = [
     (t_student_lookup, "student_lookup", "One student by USN or name.", _p({"query": _S}, ["query"])),
     (t_attendance_defaulters, "attendance_defaulters",
      "Students below an attendance cutoff (default VTU 75%).", _p({"dept": _S, "sem": _I, "cutoff": _I})),
+    (t_academic_risk, "academic_risk",
+     "Early-warning list: every student scored on measured signals (attendance, subjects below 75%, backlogs, "
+     "CGPA, fee due, CIE) with stated weights and bands; by='mentor' gives the mentor-wise counselling list. "
+     "Rule-based, not a prediction.", _p({"dept": _S, "sem": _I, "mentor": _S, "by": _S})),
     (t_fee_summary, "fee_summary", "Outstanding fees overall and by department.", _p({})),
     (t_exam_schedule, "exam_schedule", "SEE examination calendar.", _p({"dept": _S, "sem": _I})),
     (t_exam_eligibility, "exam_eligibility",
@@ -669,6 +756,8 @@ REGISTRY += campus.REGISTRY
 REGISTRY += portal.REGISTRY
 # Standing faculty availability (#19): academics.py.
 REGISTRY += academics.REGISTRY
+# NAAC / NBA evidence (#29): accreditation.py. Reads only.
+REGISTRY += accreditation.REGISTRY
 
 FUNCS = {name: fn for fn, name, _d, _s in REGISTRY}
 
@@ -680,14 +769,15 @@ TOOL_AGENT = {
     "faculty_timetable": "TimetableAgent", "find_free_faculty": "TimetableAgent",
     "find_free_rooms": "TimetableAgent", "faculty_profile": "FacultyAgent",
     "faculty_workload": "FacultyAgent", "student_lookup": "StudentAgent",
-    "attendance_defaulters": "StudentAgent", "fee_summary": "FinanceAgent",
+    "attendance_defaulters": "StudentAgent", "academic_risk": "RiskAgent", "fee_summary": "FinanceAgent",
     "exam_schedule": "ExamAgent", "exam_eligibility": "ExamAgent", "list_requests": "RequestAgent",
     "list_leaves": "HRAgent", "plan_absence_coverage": "SubstitutionAgent",
     "apply_coverage_plan": "SubstitutionAgent", "undo_last_change": "SubstitutionAgent",
     "makeup_schedule": "SubstitutionAgent",
     "plan_timetable_generation": "TimetableAgent", "apply_timetable_generation": "TimetableAgent",
     "decide_request": "RequestAgent", "create_request": "RequestAgent",
-    "broadcast_notice": "NotifyAgent", **campus.AGENT_OF, **portal.AGENT_OF, **academics.AGENT_OF}
+    "broadcast_notice": "NotifyAgent", **campus.AGENT_OF, **portal.AGENT_OF, **academics.AGENT_OF,
+    **accreditation.AGENT_OF}
 
 
 def agent_of(name):
@@ -735,10 +825,17 @@ def execute(con, S, U, name, args=None):
         if why:
             return {"data": {"DENIED": why}, "blocks": [B_text(f"{why}")],
                     "trace": [("PolicyGuard", "access_denied", f"{P['role']} {P['id']} → {name}: {why}", "warn")]}
+    # Deliveries made during the call are reported on its trace (#26): a gateway
+    # that is down blinks NotifyAgent red without touching the write's own result.
+    notify_gateway.begin()
     try:
-        return fn(con, S, U, **(args or {}))
+        res = fn(con, S, U, **(args or {}))
     except Exception as e:
-        return {"data": {"error": f"{type(e).__name__}: {e}"}, "blocks": [], "trace": []}
+        res = {"data": {"error": f"{type(e).__name__}: {e}"}, "blocks": [], "trace": []}
+    steps = notify_gateway.end()
+    if steps and isinstance(res, dict):
+        res["trace"] = list(res.get("trace") or []) + steps
+    return res
 
 
 # ====================================================== dynamic tool selection
@@ -752,7 +849,7 @@ TOOL_GROUPS = {
     "timetable.generate": ["plan_timetable_generation", "apply_timetable_generation",
                            "get_timetable", "faculty_workload"],
     "faculty.query":   ["faculty_profile", "faculty_workload", "faculty_timetable"],
-    "student.query":   ["student_lookup", "attendance_defaulters"],
+    "student.query":   ["student_lookup", "attendance_defaulters", "academic_risk"],
     "finance.query":   ["fee_summary", "list_requests"],
     "exam.query":      ["exam_schedule", "exam_eligibility", "attendance_defaulters"],
     "request.manage":  ["list_requests", "decide_request", "create_request"],
@@ -761,6 +858,7 @@ TOOL_GROUPS = {
                         "placement_overview"],
     **campus.TOOL_GROUPS,
     **academics.TOOL_GROUPS,
+    **accreditation.TOOL_GROUPS,
 }
 CORE = ["ops_radar", "institution_overview", "get_timetable", "faculty_profile", "student_lookup",
         "list_requests", "plan_absence_coverage"]
@@ -790,7 +888,8 @@ def select_tools(text, session=None, limit=9):
         # construction, so no narrowing is needed. execute() refuses anything
         # else anyway; this only keeps the model from wasting a hop on it.
         return [BY_NAME[n] for n in menu if n in BY_NAME], menu
-    picked, ranked = [], nlu.classify(text or "")
+    # a Kannada or Hindi request is narrowed on its English reading (#31)
+    picked, ranked = [], nlu.classify(nlu.normalize(text or "")[0])
     for intent, score, _hits in ranked[:2]:
         for name in TOOL_GROUPS.get(intent, []):
             if name not in picked:

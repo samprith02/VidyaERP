@@ -3,7 +3,7 @@ VidyaERP :: Orchestrator (Supervisor agent)
 Routes an utterance through the agent mesh and composes the response payload.
 """
 import re, json, datetime as dt
-import nlu, campus, tools, portal, academics
+import nlu, campus, tools, portal, academics, accreditation, notify_gateway
 from nlu import TODAY, day_of
 from agents import *
 from agents import _span, plabel
@@ -41,6 +41,18 @@ def handle(con, text, sid="default", role="admin", actor="admin@vidyatech"):
     tr = Trace()
     guard, auditor = PolicyGuard(), Auditor()
     tr.add("Supervisor", "receive", f'"{text[:90]}"')
+    # Kannada / Hindi (#31): read in English from here on, so every rule below
+    # is unchanged; the trace says what was translated, the ledger keeps the words.
+    said, (text, lex) = text, nlu.normalize(text)
+    if lex:
+        tr.add("EntityResolver", "translate", " · ".join(f"{f} → {e}" for f, e in lex[:6]))
+    if st.get("pending") and nlu.NATIVE_YES.search(said) and not nlu.is_yes(text):
+        # a confirmation in another language commits nothing, and says why
+        tr.add("PolicyGuard", "write_blocked", "confirmation not in English · proposal kept", status="warn")
+        return {"blocks": [B_text("Nothing has been written. To confirm, please say **yes** in English: "
+                                  "the write gate reads only that, on purpose.")],
+                "agent": "PolicyGuard", "intent": "hitl", "confidence": 90, "trace": tr.items,
+                "chips": ["Yes, go ahead", "No, discard it"]}
 
     # A student, teacher or HOD never reaches the handlers below: those read
     # the institution directly. Their turns go through portal routing and
@@ -49,7 +61,7 @@ def handle(con, text, sid="default", role="admin", actor="admin@vidyatech"):
     if P and P.get("role") != "admin":
         out = portal_turn(con, text, st, tr, P)
         out["trace"] = tr.items
-        auditor.log(con, P["id"], out.get("agent", "Supervisor"), out.get("intent", "portal"), {"q": text},
+        auditor.log(con, P["id"], out.get("agent", "Supervisor"), out.get("intent", "portal"), {"q": said},
                     "answered")
         return out
 
@@ -57,7 +69,7 @@ def handle(con, text, sid="default", role="admin", actor="admin@vidyatech"):
     if st["pending"]:
         res = resolve_pending(con, text, st, tr, actor)
         if res:
-            auditor.log(con, actor, "Supervisor", "hitl_resolution", {"text": text}, "committed")
+            auditor.log(con, actor, "Supervisor", "hitl_resolution", {"text": said}, "committed")
             return res
 
     ranked = nlu.classify(text)
@@ -78,6 +90,8 @@ def handle(con, text, sid="default", role="admin", actor="admin@vidyatech"):
     ent["date"], ent["date_label"] = d, dlbl
     f, fscore = nlu.match_faculty(text, fac_rows)
     ent["faculty"] = f
+    if ent["usn"] or intent in COREF_INTENTS:
+        _corefer(st, ent, text, tr)
     detail = " · ".join(f"{k}={v['name'] if k=='faculty' else v}" for k, v in ent.items()
                         if v not in (None, [], ""))
     tr.add("EntityResolver", "extract", detail or "no explicit entities — using defaults")
@@ -92,6 +106,8 @@ def handle(con, text, sid="default", role="admin", actor="admin@vidyatech"):
         fn = lambda c, x, e, s, t, a: h_campus(c, x, e, s, t, a, intent)
     if intent in academics.INTENTS:
         fn = lambda c, x, e, s, t, a: h_campus(c, x, e, s, t, a, intent, academics.rule_route)
+    if intent in accreditation.INTENTS:
+        fn = lambda c, x, e, s, t, a: h_campus(c, x, e, s, t, a, intent, accreditation.rule_route)
     # "full profile of Dr ..." scores for student.360 on wording alone; without a
     # USN it was never about a student
     if intent == "student.360" and not ent["usn"]:
@@ -102,7 +118,7 @@ def handle(con, text, sid="default", role="admin", actor="admin@vidyatech"):
     out["trace"] = tr.items
     out["intent"] = intent
     out["confidence"] = conf
-    auditor.log(con, actor, out.get("agent", "Supervisor"), intent, {"q": text}, "answered")
+    auditor.log(con, actor, out.get("agent", "Supervisor"), intent, {"q": said}, "answered")
     st["history"].append({"q": text, "intent": intent})
     return out
 
@@ -176,8 +192,9 @@ def resolve_pending(con, text, st, tr, actor):
         v = sub.verify_plan(con, plan["id"], p["date"], sub.last_commit)
         tr.add("Auditor", "verify", sub.verify_line(v), status="ok" if v["ok"] else "error")
         msgs = notif.draft_absence(con, faculty, date, plan)
-        notif.dispatch(con, msgs)
-        tr.add("NotifyAgent", "dispatch", f"{len(msgs)} notification(s) queued (students, faculty, HOD)")
+        sent = notif.dispatch(con, msgs)
+        tr.add("NotifyAgent", "dispatch", f"{len(msgs)} notification(s) recorded (students, faculty, HOD)")
+        _delivered(tr, sent)
         # auto-log a leave record if none
         exists = one(con, "SELECT 1 FROM leaves WHERE faculty=? AND from_date<=? AND to_date>=?",
                      (faculty["id"], p["date"], p["date"]))
@@ -242,12 +259,11 @@ def resolve_pending(con, text, st, tr, actor):
             return {"blocks": [B_text("Broadcast cancelled — nothing was sent.")], "trace": tr.items,
                     "agent": "NotifyAgent", "intent": "notify.broadcast", "confidence": 90}
         if nlu.is_yes(text):
-            NotifyAgent().dispatch(con, p["msgs"])
+            sent = NotifyAgent().dispatch(con, p["msgs"])
             st["pending"] = None
-            tr.add("NotifyAgent", "dispatch", f"{len(p['msgs'])} channel(s) fired")
-            return {"blocks": [B_text(f"Sent to **{p['msgs'][0]['audience']}** over "
-                                      f"{p['msgs'][0]['channel']}. Delivery receipts will appear in "
-                                      f"Notifications.")],
+            tr.add("NotifyAgent", "dispatch", f"{len(p['msgs'])} notice(s) recorded")
+            _delivered(tr, sent)
+            return {"blocks": [B_text(notify_gateway.sentence(sent, p["msgs"][0]["audience"]))],
                     "trace": tr.items, "agent": "NotifyAgent", "intent": "notify.broadcast",
                     "confidence": 95, "refresh": True}
         return None
@@ -279,6 +295,54 @@ def resolve_pending(con, text, st, tr, actor):
 
     # undo
     return None
+
+
+def _delivered(tr, out):
+
+    """The rule engine's own dispatches report delivery the way tools.execute does (#26)."""
+
+    s = notify_gateway.step(out)
+
+    if s:
+
+        tr.add(*s)
+
+
+PRONOUN_RX = re.compile(r"\b(?:he|she|him|his|her|hers|they|them|their)\b", re.I)
+
+COREF_INTENTS = {"library", "student.360", "student.query"}
+
+
+
+
+
+def _corefer(st, ent, text, tr):
+
+    """Remember the last student a turn named; let "he"/"she" mean them (#91).
+
+
+
+    "which book has he borrowed?" after "show me the details of <USN>" had no
+
+    USN and searched the catalogue for the sentence. Only a USN is carried, and
+
+    only from this same session; access.py still decides what it may show.
+
+    """
+
+    if ent.get("usn"):
+
+        st["ctx"]["last_usn"] = ent["usn"]
+
+        return
+
+    m = PRONOUN_RX.search(text)
+
+    if m and st["ctx"].get("last_usn"):
+
+        ent["usn"] = st["ctx"]["last_usn"]
+
+        tr.add("EntityResolver", "coreference", f"'{m.group(0)}' → {ent['usn']} (named earlier in this session)")
 
 
 def _relay(tr, res, tool):
@@ -324,6 +388,7 @@ def portal_turn(con, text, st, tr, P):
            "date": nlu.parse_date(text)[0],
            "faculty": nlu.match_faculty(text, rows(con, "SELECT id,name,dept,designation,expertise,max_load "
                                                          "FROM faculty"))[0]}
+    _corefer(st, ent, text, tr)
     tool, args = portal.route(con, text, P, ent)
     if not tool:
         tr.add("Router", "no_confident_intent", "showing what this account can do", status="warn")
@@ -340,10 +405,12 @@ def portal_turn(con, text, st, tr, P):
 
 
 def _portal_chips(P):
-    return {"student": ["My day", "My timetable", "Request a gate pass for Saturday 2pm to 7pm",
+    return {"student": ["My day", "My timetable", "My internal marks", "Request a gate pass for Saturday 2pm to 7pm",
                         "My no-dues status", "My requests"],
-            "faculty": ["My day", "My timetable", "My mentees", "Apply for casual leave on 10 sep", "My leave"],
-            "hod": ["Department overview", "Pending leave applications", "Faculty workload", "My day"]}.get(
+            "faculty": ["My day", "My timetable", "Internal marks of my courses", "My mentees",
+                        "Apply for casual leave on 10 sep", "My leave"],
+            "hod": ["Department overview", "Pending leave applications", "Department internal marks",
+                    "Faculty workload", "My day"]}.get(
         P["role"], ["My day"])
 
 
@@ -734,15 +801,15 @@ def h_student(con, text, ent, st, tr, actor):
             "chips": ["SMS parents of critical cases", "Generate condonation list",
                       "Mentor-wise counselling report"]}
 
-    if re.search(r"risk|weak|at risk|dropout", t):
-        data = sa.risk(con)
-        return {"blocks": [B_text(f"**Academic risk radar** — {len(data)} students triggering ≥2 risk signals "
-                                  f"(attendance <70% + low CGPA/backlogs):"),
-                           B_table(["USN", "Name", "Class", "Att", "CGPA", "Backlogs", "Mentor"],
-                                   [[d["usn"], d["name"], f"{d['dept']}-{d['sem']}{d['section']}",
-                                     f"{d['attendance']}%", d["cgpa"], d["backlogs"],
-                                     fac_name(con, d["mentor"])] for d in data], dense=True)],
-                "agent": "StudentAgent"}
+    if re.search(r"risk|weak|dropout|early[- ]warning|counsell?ing|mentor[- ]?wise", t):
+        # the same tool the LLM calls (#79): it used to count the 25 rows it
+        # displayed, and report that as the number of students at risk
+        args = {"dept": ent["dept"], "sem": ent["sem"],
+                "by": "mentor" if re.search(r"counsell?ing|mentor[- ]?wise", t) else None}
+        res = tools.execute(con, st, text, "academic_risk", {k: v for k, v in args.items() if v})
+        _relay(tr, res, "academic_risk")
+        return {"blocks": res.get("blocks") or [B_text(_data_text(res.get("data")))], "agent": "RiskAgent",
+                "chips": res.get("chips")}
 
     q = "SELECT dept, sem, COUNT(*) n, ROUND(AVG(attendance),1) att, ROUND(AVG(cgpa),2) cg FROM students"
     a = []
@@ -824,41 +891,60 @@ def h_request(con, text, ent, st, tr, actor):
     ra = RequestAgent()
     t = text.lower()
 
-    m = re.search(r"\b(?:approve|reject)\b.*?\b(?:req(?:uest)?[- ]?)?(\d{1,4})\b", t)
+    cap_max = PolicyGuard.APPROVAL_CEILING
+    bulk = re.search(r"bulk approve|approve all", t)
+    # A number with a unit after it is an amount, never a request id: "approve
+    # all under 1 lakh" once approved REQ-0001 on its own (#70). Bulk is decided
+    # first for the same reason.
+    m = None if bulk else re.search(r"\b(?:approve|reject)\b.*?\b(?:req(?:uest)?[- ]?)?(\d{1,4})\b"
+                                    r"(?!\s*(?:lakh|lac|l\b|k\b|crore|cr\b|,\d|rupees|rs))", t)
     if m and re.search(r"approve|reject", t):
         rid = int(m.group(1))
-        r = one(con, "SELECT * FROM requests WHERE id=?", (rid,))
-        if not r:
-            return {"blocks": [B_text(f"No request with ID **{rid}** in the inbox.")], "agent": "RequestAgent"}
         dec = "Approved" if "approve" in t else "Rejected"
-        ra.decide(con, rid, dec)
-        tr.add("PolicyGuard", "authority_check", f"admin may {dec.lower()} '{r['kind']}' requests up to ₹5,00,000")
+        r, why, denied = ra.decide(con, rid, dec, actor)
+        if why:
+            tr.add("PolicyGuard" if denied else "RequestAgent", "delegation_limit" if denied else "decision",
+                   why, status="warn" if denied else "error")
+            return {"blocks": [B_text(why)], "agent": "RequestAgent",
+                    "chips": ["Show remaining pending approvals"]}
+        tr.add("PolicyGuard", "delegation_limit", f"₹{r['amount'] or 0:,} within the ₹{cap_max:,} delegation"
+               if dec == "Approved" else "a rejection needs no delegation")
         tr.add("RequestAgent", "decision", f"REQ-{rid:04d} → {dec}")
-        NotifyAgent().dispatch(con, [{"audience": r["raised_by"], "channel": "App + email",
+        tr.add("RequestAgent", "verify", f"REQ-{rid:04d} re-read as {r['status']}")
+        _delivered(tr, NotifyAgent().dispatch(con, [{"audience": r["raised_by"], "channel": "App + email",
                                       "title": f"Your request '{r['title']}' was {dec.lower()}",
-                                      "body": f"Decision by Admin on {TODAY.isoformat()}."}])
+                                      "body": f"Decision by Admin on {TODAY.isoformat()}."}]))
         return {"blocks": [B_text(f"**REQ-{rid:04d} — {r['title']}** marked **{dec}**. "
                                   f"{r['raised_by']} has been notified and the ledger updated"
                                   f"{', budget head debited ' + inr(r['amount']) if dec=='Approved' and r['amount'] else ''}.")],
                 "agent": "RequestAgent", "refresh": True,
                 "chips": ["Show remaining pending approvals"]}
 
-    if re.search(r"bulk approve|approve all", t):
-        m = re.search(r"(?:under|below|less than|<)\s*(?:₹|rs\.?)?\s*([\d,]+)\s*(lakh|l\b|k\b)?", t)
-        cap = 50000
+    if bulk:
+        m = re.search(r"(?:under|below|less than|upto|up to|<)\s*(?:₹|rs\.?)?\s*([\d,]+)\s*"
+                      r"(lakh|lac|l\b|k\b|crore|cr\b)?", t)
+        asked = 50000
         if m:
-            cap = int(m.group(1).replace(",", ""))
-            if m.group(2) in ("lakh", "l"): cap *= 100000
-            if m.group(2) == "k": cap *= 1000
+            asked = int(m.group(1).replace(",", ""))
+            if m.group(2) in ("lakh", "lac", "l"): asked *= 100000
+            if m.group(2) == "k": asked *= 1000
+            if m.group(2) in ("crore", "cr"): asked *= 10000000
+        # the sentence may ask for less than the delegation, never for more (#71)
+        cap = min(asked, cap_max)
         pend = [r for r in ra.inbox(con) if r["amount"] <= cap]
-        for r in pend:
-            ra.decide(con, r["id"], "Approved")
-        tr.add("PolicyGuard", "delegation_limit", f"admin auto-approval ceiling ₹{cap:,} respected")
-        tr.add("RequestAgent", "bulk_decision", f"{len(pend)} request(s) approved in one transaction")
+        done = [r for r in pend if not ra.decide(con, r["id"], "Approved", actor)[1]]
+        tr.add("PolicyGuard", "delegation_limit", f"bulk cap ₹{cap:,}" + (
+            f" (asked ₹{asked:,}; the Registrar's delegation is ₹{cap_max:,})" if asked > cap_max else ""),
+               status="warn" if asked > cap_max else "ok")
+        tr.add("RequestAgent", "bulk_decision", f"{len(done)} of {len(pend)} request(s) approved and re-read")
+        pend = done
         val = sum(r["amount"] for r in pend)
         return {"blocks": [B_text(f"Bulk-approved **{len(pend)} request(s)** at or below {inr(cap)}"
                                   + (f", committing {inr(val)} of budget." if val else
-                                     " (all zero-value administrative items).")),
+                                     " (all zero-value administrative items).")
+                                  + (f" You asked for up to {inr(asked)}; anything above the Registrar's "
+                                     f"{inr(cap_max)} delegation stays for the Principal." if asked > cap_max
+                                     else "")),
                            B_table(["ID", "Type", "Title", "Amount"],
                                    [[f"REQ-{r['id']:04d}", r["kind"], r["title"],
                                      inr(r["amount"]) if r["amount"] else "—"] for r in pend])],

@@ -197,13 +197,14 @@ DROP TABLE IF EXISTS departments; DROP TABLE IF EXISTS faculty; DROP TABLE IF EX
 DROP TABLE IF EXISTS subjects; DROP TABLE IF EXISTS rooms; DROP TABLE IF EXISTS timetable;
 DROP TABLE IF EXISTS leaves; DROP TABLE IF EXISTS overrides; DROP TABLE IF EXISTS requests;
 DROP TABLE IF EXISTS notifications; DROP TABLE IF EXISTS audit; DROP TABLE IF EXISTS exams;
-DROP TABLE IF EXISTS attendance; DROP TABLE IF EXISTS placements;
+DROP TABLE IF EXISTS attendance; DROP TABLE IF EXISTS placements; DROP TABLE IF EXISTS cie_marks;
 DROP TABLE IF EXISTS books; DROP TABLE IF EXISTS book_loans; DROP TABLE IF EXISTS hostel_rooms;
 DROP TABLE IF EXISTS hostel_allocations; DROP TABLE IF EXISTS hostel_complaints;
 DROP TABLE IF EXISTS bus_routes; DROP TABLE IF EXISTS bus_stops; DROP TABLE IF EXISTS transport_riders;
 DROP TABLE IF EXISTS gate_passes; DROP TABLE IF EXISTS placement_drives;
 DROP TABLE IF EXISTS student_offers; DROP TABLE IF EXISTS drive_registrations;
 DROP TABLE IF EXISTS certificates;
+DROP TABLE IF EXISTS makeup_sessions; DROP TABLE IF EXISTS faculty_availability;
 
 CREATE TABLE departments(code TEXT PRIMARY KEY, name TEXT, hod TEXT, intake INT);
 CREATE TABLE faculty(
@@ -229,7 +230,7 @@ CREATE TABLE requests(
   title TEXT, details TEXT, amount INT, status TEXT, priority TEXT, created_at TEXT, sla_hrs INT);
 CREATE TABLE notifications(
   id INTEGER PRIMARY KEY AUTOINCREMENT, audience TEXT, channel TEXT, title TEXT, body TEXT,
-  created_at TEXT, status TEXT);
+  created_at TEXT, status TEXT, attempts INT DEFAULT 0, delivered_at TEXT, error TEXT);
 CREATE TABLE audit(
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, actor TEXT, agent TEXT, action TEXT,
   payload TEXT, outcome TEXT);
@@ -547,6 +548,10 @@ def _campus():
     campus_data.ensure()
     import academics
     academics.ensure()
+    import notify_gateway                 # delivery columns on an older notifications table (#26)
+    con = connect()
+    notify_gateway.ensure(con)
+    con.close()
 
 
 # ====================================================================== check

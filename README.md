@@ -5,8 +5,8 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![Dependencies: 2](https://img.shields.io/badge/dependencies-2-brightgreen.svg)](requirements.txt)
-[![Tests: 734 assertions](https://img.shields.io/badge/tests-734_assertions_passing-brightgreen.svg)](#tests)
-[![Tools: 59, 20 gated](https://img.shields.io/badge/tools-59_·_20_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
+[![Tests: 1031 assertions](https://img.shields.io/badge/tests-1031_assertions_passing-brightgreen.svg)](#tests)
+[![Tools: 64, 21 gated](https://img.shields.io/badge/tools-64_·_21_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
 [![Data: synthetic](https://img.shields.io/badge/data-100%25_synthetic-lightgrey.svg)](NOTICE)
 
 A working prototype of a **SMART, agentic ERP for an Indian engineering college** (autonomous /
@@ -40,8 +40,8 @@ LLM client included, and the console is plain HTML with three local files (`stat
 
 | | | | |
 |:--|:--|:--|:--|
-| **16** specialist agents | **59** tools · **20** writes, every one gated | **734** test assertions, 0 failing | **2** dependencies |
-| **271** absences swept: the top plan fully covers **268** | **456 / 456** periods placed by the solver, 0 clashes | **91%** less tool payload per LLM turn | **0** external assets in the console |
+| **16** specialist agents | **64** tools · **21** writes, every one gated | **1031** test assertions, 0 failing | **2** dependencies |
+| **271** absences swept: the top plan fully covers **268** | **456 / 456** periods placed by the solver, 0 clashes | **92%** less tool payload per LLM turn | **0** external assets in the console |
 
 Every number above is measured by [`docs/charts/make_charts.py`](docs/charts/make_charts.py) and
 stored in [`docs/charts/results.json`](docs/charts/results.json). Re-run it and the charts in this
@@ -90,6 +90,15 @@ The UI badge in the top bar shows which engine is live; click it to ping the end
 Everything degrades gracefully: if the LLM is unreachable mid-turn, the rule engine answers
 and says so.
 
+**Kannada and Hindi, too (#31).** Office staff can type *ನಾಳೆ CSE 5A ವೇಳಾಪಟ್ಟಿ ತೋರಿಸಿ*, *कल ECE
+sem 3 की समय सारणी दिखाओ* or *Dr. X naale barolla*. The rule engine reads a curated lexicon (both
+scripts and romanised; Kannada case endings absorbed) as English before the NLU runs, the trace
+shows what was translated and the ledger keeps the words as typed; the LLM is told to answer in the
+language it was asked in. Two limits are deliberate: **a write is confirmed only by “yes” in
+English** (ಹೌದು / हाँ commit nothing and the answer says why; no translation may produce an approval
+word), and Hindi *kal* is read as *tomorrow*, the only reading a plan can act on, with the date
+echoed before anything commits.
+
 ### Enabling the LLM agent
 
 ```bash
@@ -105,24 +114,26 @@ listed in `.env.example`. No SDK is installed: `llm.py` talks raw HTTP over `url
 is nothing to `pip install`. Restart the server and the badge flips to green.
 
 <p align="center">
-  <img src="docs/charts/tools_by_module.svg" alt="Bar chart: 59 tools by module. core tools.py 18 reads and 5 writes; campus.py 14 reads and 11 writes; portal.py 6 reads and 3 writes; academics.py 1 read and 1 write" width="760">
+  <img src="docs/charts/tools_by_module.svg" alt="Bar chart: 64 tools by module. core tools.py 19 reads and 5 writes; campus.py 15 reads and 11 writes; portal.py 6 reads and 3 writes; academics.py 2 reads and 2 writes; accreditation.py 1 read" width="760">
 </p>
 
-**The 59 tools the model can call** (a student, teacher or HOD is offered only their role's). 23 academic/admin:
+**The 64 tools the model can call** (a student, teacher or HOD is offered only their role's). 24 academic/admin:
 `institution_overview · get_timetable · faculty_timetable · find_free_faculty · find_free_rooms ·
-faculty_profile · faculty_workload · student_lookup · attendance_defaulters · fee_summary ·
+faculty_profile · faculty_workload · student_lookup · attendance_defaulters · academic_risk · fee_summary ·
 exam_schedule · exam_eligibility · list_requests · list_leaves · plan_absence_coverage ·
 apply_coverage_plan · plan_timetable_generation · apply_timetable_generation · undo_last_change ·
-makeup_schedule · decide_request · create_request · broadcast_notice`. 25 campus services (§5a):
-`ops_radar · student_360 · library_overview · library_search · library_overdue · issue_book ·
+makeup_schedule · decide_request · create_request · broadcast_notice`. 26 campus services (§5a):
+`ops_radar · student_360 · library_loans · library_overview · library_search · library_overdue · issue_book ·
 return_book · library_remind_overdue · hostel_status · hostel_complaints · allocate_hostel_room ·
 dispatch_hostel_complaints · transport_status · rebalance_bus_routes · handle_bus_breakdown ·
 gate_pass_queue · decide_gate_passes · placement_overview · drive_eligibility ·
 publish_drive_shortlist · no_dues_status · issue_certificate · certificate_register ·
 review_pending_leaves · decide_leave`. 9 self-service (§5c): `my_home · my_requests · my_placement ·
-request_gate_pass · request_certificate · my_mentees · my_leaves · apply_leave · dept_overview`. And 2
-for standing faculty availability: `faculty_availability · set_faculty_availability`.
-**20 of the 59 are writes, and every one is gated.**
+request_gate_pass · request_certificate · my_mentees · my_leaves · apply_leave · dept_overview`. 4
+academic records: `faculty_availability · set_faculty_availability` (standing availability) and
+`cie_marks · record_cie_marks` (internal marks, §5d). And 1 for accreditation evidence (§5e):
+`accreditation_evidence`.
+**21 of the 64 are writes, and every one is gated.**
 
 **Write-guard, proven by test:** `tests/mock_llm.py` includes a *rogue agent* endpoint that tries
 to call `apply_coverage_plan` with no admin approval. PolicyGuard returns `{"BLOCKED": ...}`,
@@ -139,13 +150,13 @@ multi-hop turn was spending 7,196 of them. Four things fixed that:
 
 | Technique | Effect |
 |---|---|
-| **Tool router**: the rule-engine NLU pre-selects 3–8 of the 59 tools per utterance | tool-schema payload **−91%** on the 40 example requests below, and the model picks better from a short menu |
+| **Tool router**: the rule-engine NLU pre-selects 3–9 of the 64 tools per utterance | tool-schema payload **−92%** on the 40 example requests below, and the model picks better from a short menu |
 | **Prompt diet**: live-context preamble trimmed, history 8→4 turns, tool results capped at 2.8 KB | system prompt ~1,500 → ~600 tokens |
 | **Model failover chain**: `LLM_FALLBACK_MODELS`, tried in order on 429/5xx/`tool_use_failed` | quotas are *per model*, so the chain multiplies usable throughput |
 | **Nullable optional params**: every non-required arg accepts `null` | models emit `{"dept": null}` constantly; strict validators 400 on it. 41 params were latent landmines |
 
 <p align="center">
-  <img src="docs/charts/router.svg" alt="Histogram: tools offered per request for 40 example requests, between 3 and 8, never all 59. Mean schema payload 1.6 KB instead of 18.2 KB" width="760">
+  <img src="docs/charts/router.svg" alt="Histogram: tools offered per request for 40 example requests, between 3 and 9, never all 64. Mean schema payload 1.7 KB instead of 20.9 KB" width="760">
 </p>
 
 Result: a typical turn now costs **~2,000 tokens and answers in ~1.2 s**, and the
@@ -154,7 +165,7 @@ if the whole chain is exhausted by falling back to the rule engine with an hones
 The trace shows exactly which of these happened:
 
 ```
-· ToolRouter    narrow_toolset    7 of 59 tools offered: plan_absence_coverage, …
+· ToolRouter    narrow_toolset    7 of 64 tools offered: plan_absence_coverage, …
 · LLM Planner   reason (hop 1)    openai/gpt-oss-120b · 1032→107 tok · 513ms
 · LLM Planner   model_failover    primary rate-limited → answered on qwen/qwen3.8-27b
 ```
@@ -162,20 +173,25 @@ The trace shows exactly which of these happened:
 ### Tests
 
 <p align="center">
-  <img src="docs/charts/tests.svg" alt="Bar chart: 734 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 1031 assertions across 15 suites, all passing. mcp_parity 270, campus_test 160, auth_test 108, deploy_test 79, cie_test 59, ranking_test 57, solver_test 53, notify_test 50, nlu_test 49, makeup_test 33, accreditation_test 28, mesh_test 25, academics_test 24, language_test 19, risk_test 17" width="760">
 </p>
 
 ```bash
-python3 tests/solver_test.py  # timetable solver: 44 assertions, no server, no API cost
-python3 tests/mcp_parity.py   # MCP guard parity: 263 assertions, no server, no API cost
-python3 tests/campus_test.py  # campus services: 122 assertions, no server, no API cost
+python3 tests/solver_test.py  # timetable solver: 53 assertions, no server, no API cost
+python3 tests/mcp_parity.py   # MCP guard parity: 270 assertions, no server, no API cost
+python3 tests/campus_test.py  # campus services: 160 assertions, no server, no API cost
 python3 tests/mesh_test.py    # the agent mesh's fault channel and approval stamp: 25 assertions, no server, no API cost
-python3 tests/auth_test.py    # logins, route gating, per-role policy: 77 assertions, no server, no API cost
-python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits verified by re-read: 30 assertions, no server, no API cost
+python3 tests/auth_test.py    # logins, route gating, per-role policy: 108 assertions, no server, no API cost
+python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits verified by re-read: 33 assertions, no server, no API cost
 python3 tests/academics_test.py # standing faculty availability, honoured by every planner: 24 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
-python3 tests/deploy_test.py  # deployment readiness: 68 assertions, no server, no API cost
-python3 tests/nlu_test.py     # date resolution, ISO dates included: 24 assertions, no server, no API cost
+python3 tests/deploy_test.py  # deployment readiness: 79 assertions, no server, no API cost
+python3 tests/nlu_test.py     # date resolution, ISO dates included: 49 assertions, no server, no API cost
+python3 tests/language_test.py # Kannada and Hindi input, never widening the write gate: 19 assertions, no server, no API cost
+python3 tests/cie_test.py     # CIE marks: seed, standing, validated gated entry, role scope: 59 assertions, no server, no API cost
+python3 tests/accreditation_test.py # NAAC/NBA evidence recomputed, moving with the data, writing nothing: 28 assertions, no server, no API cost
+python3 tests/risk_test.py    # the early-warning list, counted in full and recomputed; departments as whole words: 17 assertions, no server, no API cost
+python3 tests/notify_test.py  # notice delivery through a stub gateway: 50 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 python3 docs/charts/make_charts.py --tests   # re-measure everything and redraw this README's charts
@@ -197,13 +213,13 @@ flowchart TB
   AG --> EN{Engine}
   EN -->|default, free| RE[orchestrator.py: rule engine + nlu.py]
   EN -->|LLM key set| LA[llm_agent.py: plan, call tools, answer]
-  LA --> TR[tools.select_tools: 3 to 8 of 59]
+  LA --> TR[tools.select_tools: 3 to 9 of 64]
   MC --> CA[mcp_server.call_as]
   TR --> EX[[tools.execute: the only dispatch point]]
   CA --> EX
   RE -->|campus tools| EX
   EX --> AC[access.py: role policy, default deny]
-  AC --> GD[guard.approved_this_turn: 20 gated writes]
+  AC --> GD[guard.approved_this_turn: 21 gated writes]
   GD --> SP[Specialist agents: agents.py, campus.py, portal.py, academics.py]
   RE -->|core flows, own HITL state machine| SP
   SP --> DB[(SQLite: college.db)]
@@ -335,7 +351,7 @@ sequenceDiagram
 ### The ranking, measured across every absence the timetable can produce
 
 Each of the 53 teachers made absent on each teaching day of one week gives **271 absences**
-(24.8 ms each to plan). The recommendation is spread across all three strategies. None of them is
+(10.6 ms each to plan). The recommendation is spread across all three strategies. None of them is
 a default that wins by construction:
 
 <p align="center">
@@ -363,7 +379,7 @@ arranged), and those cards are flagged **incomplete** on the page rather than ra
 | Plan B folded into plan A (identical committed rows) | 90 |
 | Top plan covers every hour | 268 of 271 |
 | Rank of the recommended plan | min 48.5 · median 94.7 · max 98.95 |
-| Planning time | 24.8 ms per absence |
+| Planning time | 10.6 ms per absence |
 
 </details>
 
@@ -404,7 +420,7 @@ agent then **re-reads what it wrote** before claiming success.
 | Agent | What it does on its own | Example |
 |---|---|---|
 | **OpsRadar** (Autopilot) | asks every agent what needs a human today; returns one ranked queue, each item carrying the sentence that hands it back | “What needs my attention today?” |
-| **LibraryAgent** | catalogue search; issue/return under circulation rules (copy on shelf, 4-book student limit, no overdue books); fines at ₹2/day; one personalised reminder per overdue borrower | “Issue BK0012 to 4VP24CS017” · “Send overdue library reminders” |
+| **LibraryAgent** | catalogue search; one member's loans by title, due date and fine (a question about loans is a read, never an issue or return); issue/return under circulation rules (copy on shelf, 4-book student limit, no overdue books); fines at ₹2/day; one personalised reminder per overdue borrower | “Which book has 4VP23CS001 borrowed?” · “Issue BK0012 to 4VP24CS017” · “Send overdue library reminders” |
 | **HostelAgent** | occupancy by block; allots the waitlist by gender → batch-mates → branch-mates → part-filled rooms; routes complaints to the right crew with an SLA | “Allocate hostel rooms to the waitlist” |
 | **TransportAgent** | seat load per route; moves riders off over-full buses **only at stops another route also serves**, never past that route's seats; breakdown cover with a spare bus | “Rebalance bus routes” · “Bus on route 4 broke down” |
 | **GatePassAgent** | screens every pass against written policy (approve / reject / *review* with the reason), so the warden decides only the arguable ones | “Decide pending gate passes by policy” |
@@ -421,7 +437,7 @@ each of these as a case.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/img/autopilot.png" alt="Autopilot: 13 things need a decision today across 644 records, each with a Hand to agent button"></td>
+<td width="50%"><img src="docs/img/autopilot.png" alt="Autopilot: 15 things need a decision today across 830 records, each with a Hand to agent button"></td>
 <td width="50%"><img src="docs/img/gatepasses.png" alt="Gate passes: 14 pending, 8 approvable by policy, 4 rejectable, 2 need a human, each with the reason"></td>
 </tr>
 <tr>
@@ -451,6 +467,29 @@ Transport, Gate Passes, Placements, Documents). Those pages render what the owni
 **read** tools return via `/api/panel/{tool}`, which lists reads only and passes an empty turn,
 so a page can never commit anything; its buttons hand the job to the agent in the chat.
 
+### 5e. Accreditation evidence: NAAC and NBA from the live records (`accreditation.py`)
+
+Every cycle an IQAC builds its NAAC and NBA evidence by hand from a dozen registers. The
+**IQACAgent** computes what the records can support and, in the same answer, names what they cannot:
+
+- **NAAC** (“NAAC evidence pack”): criterion-wise metrics, each with the tables it came from:
+  student : teacher ratio against AICTE's 20 : 1, doctorates, cadre against 1 : 2 : 6, enrolment
+  against intake, attendance, room utilisation, library holdings and circulation, placement of
+  outgoing students, reserved-category share, hostel grievances, the areas of operation this
+  system runs, and the lab periods where a section outnumbers the seats (#20, stated as evidence).
+- **NBA** (“NBA evidence for CSE”): the same figures by programme, with the 20 : 1 flag.
+- **Gaps are listed, never filled.** Pass percentage (no results yet, #66), publications,
+  scholarships, CO-PO attainment and the rest appear as *not evidenced*, with the reason.
+
+Metrics are grouped by criterion and named rather than numbered, because NAAC's numbering differs
+between manuals and cycles. `tests/accreditation_test.py` recomputes the figures independently,
+checks that each one moves when the records do (a figure that never varies is a typed-in
+constant), and that the pack writes nothing.
+
+<p align="center">
+  <img src="docs/img/accreditation.png" alt="Accreditation page: NAAC evidence pack with 27 metrics evidenced, 17 gaps named, 6 of 7 criteria covered; each metric row shows its value, the AICTE norm where one applies, and its source table" width="760">
+</p>
+
 ### 5c. Everyone signs in: students, faculty and HODs get their own portal
 
 `/login` → the Registrar lands on the console; everyone else on a mobile-first portal with their
@@ -460,7 +499,7 @@ that is decided per tool call in `tools.execute` (`access.py`), not in the UI or
 ```mermaid
 flowchart LR
   U[Signed-in person] --> R{Role}
-  R -->|Registrar| ALL[All 59 tools, institution-wide]
+  R -->|Registrar| ALL[All 64 tools, institution-wide]
   R -->|HOD| H[Self-service + department overview, workload, defaulters, leave decisions, absence cover: own department only]
   R -->|Faculty| F[Own day, mentees, leave with timetable impact]
   R -->|Student| S[Own day, gate pass, certificates, placement eligibility, requests]
@@ -539,6 +578,36 @@ Deep links run a command on load: `/#view=radar`, `/#ask=Rebalance bus routes`, 
 approval words (“approve …”) is only pre-filled, never sent; otherwise someone else's link could
 commit a write on your click.
 
+### 5d. Internal marks (CIE): entry, standing and the SEE minimum (`academics.py`)
+
+Three weeks before the SEE, the Registrar's question is not "what are the marks" but **who has not
+entered them, and who will not make the minimum**. The ExamAgent answers both from the marks register:
+
+| Ask | What happens |
+|---|---|
+| “Which internal marks are still to be entered?” | every course whose IA2 is past its entry deadline, with its teacher and how late it is |
+| “Internal marks: who is at risk?” | students on course to miss the CIE minimum, by department and by student |
+| “Internal marks of 4VP24CS009” / “Internal marks for BCS501 section A” | one student's standing in every course, or one course's register with its mean and at-risk list |
+| “Enter IA2 marks for BCS515 CSE 5A: 4VP24CS001 18, 4VP24CS002 AB” | validated (range, class, the teacher of record, the assessment has happened), shown as new vs corrected, written only on the next “yes”, then re-read |
+
+**The scheme is a stated policy, not a finding:** theory CIE = the average of two IA tests (each /25)
+plus an assignment (/25); lab CIE = record (/30) plus lab test (/20); **20/50** is needed to sit the
+SEE. It is printed under every answer. **Standing is computed from what is entered**: *secured* counts
+the missing components as zero, *ceiling* as full marks, and *projected* extends the student's rate
+so far; a course is *At risk* when the projection falls below 20 and *Cannot reach* when even full
+marks would not get there. The SEE eligibility check, Student 360 and the Autopilot all read it.
+
+<p align="center">
+  <img src="docs/img/internal-marks.png" alt="Internal marks page: per-department courses, entries overdue and students at risk, then 24 IA2 entries two days overdue with each course's teacher" width="760">
+</p>
+
+**Who may:** a teacher enters and reads only the courses they are the teacher of record for (whoever
+takes most of its periods in the current timetable), an HOD their department, a student only their own
+sheet, the Registrar everything. A teacher's first message only ever proposes. The seeded marks
+follow each student's CGPA and their attendance in that subject (Pearson r > 0.3 against CGPA is
+asserted), so a CIE risk says something about the student. `tests/cie_test.py` pins it: 59 assertions,
+every rule mutation-checked.
+
 ---
 
 ## 6. Guardrails (the part that makes it deployable)
@@ -546,7 +615,10 @@ commit a write on your click.
 - **RBAC scopes**: admin = institution-wide; HOD = department; faculty = self.
 - **HITL gate**: every write intent (`absence.cover`, `request.manage`, `notify.broadcast`) returns
   a proposal, never a commit.
-- **Delegation ceilings**: bulk approval respects a rupee cap; high-value requests route to Principal.
+- **Delegation ceilings**: the Registrar approves up to ₹5,00,000 (`PolicyGuard.APPROVAL_CEILING`); above it,
+  every path (chat, rule engine, bulk, inbox buttons) refuses and names the Principal. A bulk cap is
+  clamped to the ceiling, a decided request is never re-decided, and each decision is re-read and
+  audited old → new under the signed-in account.
 - **Immutable audit ledger**: actor, agent, action, payload, outcome, timestamp. Exportable for
   NAAC / NBA / ISO audits.
 - **No silent guessing**: weak entity matches ask instead of acting.
@@ -556,7 +628,7 @@ commit a write on your click.
 
 ### 6a. Driving the ERP from Claude Desktop (MCP)
 
-`mcp_server.py` puts the same 59 tools in front of any MCP client. Registration needs no install
+`mcp_server.py` puts the same 64 tools in front of any MCP client. Registration needs no install
 step, because there is no SDK to install:
 
 ```json
@@ -625,6 +697,8 @@ erDiagram
   faculty ||--o{ faculty_availability : "standing window"
   faculty ||--o{ makeup_sessions : owes
   students ||--o{ attendance : "per subject"
+  students ||--o{ cie_marks : "per course component"
+  subjects ||--o{ cie_marks : "assessed by"
   students ||--o{ gate_passes : requests
   students ||--o{ book_loans : borrows
   books ||--o{ book_loans : "lent as"
@@ -777,7 +851,7 @@ keeps every day contiguous.
 <table>
 <tr>
 <td width="50%"><img src="docs/charts/solver_scarcity.svg" alt="Columns: share of 456 periods placed as lab rooms are removed. 6 rooms 100%, 5 100%, 4 99.1%, 3 97.8%, 2 95.6%, 1 93.2%"></td>
-<td width="50%"><img src="docs/charts/solver_seeds.svg" alt="Columns: solve time for ten seeds, all between about 0.8 and 1.0 seconds on this machine, every seed placing 456 of 456"></td>
+<td width="50%"><img src="docs/charts/solver_seeds.svg" alt="Columns: solve time for ten seeds, every one under a second on this machine, every seed placing 456 of 456"></td>
 </tr>
 </table>
 
@@ -834,11 +908,14 @@ VidyaERP/
 ├── guard.py            approved_this_turn(): the one write gate, importable by every tool module
 ├── orchestrator.py     rule-engine supervisor: routing, HITL state machine
 ├── llm.py              provider-agnostic OpenAI-compatible client (urllib, no SDK)
-├── tools.py            the 59 tool schemas + the single dispatch point (gate + role policy)
+├── tools.py            the 64 tool schemas + the single dispatch point (gate + role policy)
 ├── auth.py             sign-in: principals, PBKDF2, hashed sessions, auth.gate() for every route
 ├── access.py           per-role tool policy: default deny, rules that only ever narrow
 ├── portal.py           self-service tools for students, faculty and HODs
+├── academics.py        standing faculty availability (#19) and CIE marks (#32): seeds, reads, gated writes
+├── accreditation.py    NAAC / NBA evidence from the records, gaps named (#29); reads only
 ├── academics.py        standing faculty availability: seed, read and gated write (#19)
+├── notify_gateway.py   notice delivery: webhook or outbox file, honest status, never the URL (#26)
 ├── llm_agent.py        the LLM reasoning loop (plan → call tools → answer), with failover
 ├── mcp_server.py       MCP surface over stdio JSON-RPC: same tools, same gate, no SDK
 ├── requirements.txt    FastAPI + Uvicorn. That is the entire dependency list
@@ -860,18 +937,23 @@ VidyaERP/
     ├── ranking_test.py plan ranking: every number measured, four labelled defect assertions
     ├── deploy_test.py  deployment claims: key never leaks, /health reads the DB, gate holds
     ├── nlu_test.py     date resolution: all 7x7 weekday pairs pinned, ISO dates read as ISO
+    ├── cie_test.py     CIE marks: standing maths, entry validation, the gate, who may read and enter
+    ├── accreditation_test.py  NAAC/NBA figures recomputed independently; gaps never filled
     ├── campus_test.py  campus rules pinned case by case, routing kept, core data untouched
     ├── mesh_test.py    the fault channel: failures reported, pinned on their owner, holds are not faults
     ├── auth_test.py    sign-in, every route's gate, per-role policy, self-service writes, session binding
     ├── makeup_test.py  make-ups booked and held, coverage commits verified by an independent re-read
     ├── academics_test.py standing availability: seeded consistently, honoured by solver and planners
+    ├── notify_test.py  notice delivery: one batch per dispatch, failures shown, blocked writes send nothing
     └── mock_llm.py     fake OpenAI endpoint + rogue-agent guard test
 ```
 
 Console pages: **Assistant** (with the live agent mesh and the execution log), Autopilot,
 Agent mesh, Overview, Master timetable (override-aware grid, make-ups and live solver), Faculty,
-Students, Faculty leave, Library, Hostels, Transport, Gate passes, Placements, Documents,
+Students, Internal marks, Faculty leave, Library, Hostels, Transport, Gate passes, Placements, Documents,
 Approval inbox, Schedule changes, Audit ledger.
+Students, Faculty leave, Library, Hostels, Transport, Gate passes, Placements, Documents,
+Approval inbox, Schedule changes, Audit ledger, Accreditation.
 
 <details>
 <summary>How the screenshots and charts were made</summary>
@@ -929,8 +1011,9 @@ The NLU + planning layer is deliberately isolated. To go LLM-native:
 
 ## 10. Roadmap beyond admin
 
-CIE marks entry and results processing (#32), parent WhatsApp agent (#28), NAAC/NBA evidence-pack
+SEE results and SGPA processing (the follow-on to the CIE marks of §5d), parent WhatsApp agent (#28), NAAC/NBA evidence-pack
 generator (#29), predictive dropout model feeding the RiskAgent (#30), and Kannada/Hindi input for
+CIE marks entry and results processing (#32), parent WhatsApp agent (#28), predictive dropout model feeding the RiskAgent (#30), and Kannada/Hindi input for
 support staff (#31). Open issues carry the rest, including the known limitations.
 
 ---
@@ -994,7 +1077,7 @@ An unreachable database returns **503**, so a broken instance drops out of rotat
 serving errors behind a green tick. Nothing secret is in that payload: whether a key is
 configured, never what it is.
 
-### Three things that are true about a deployed instance
+### Four things that are true about a deployed instance
 
 Stated here rather than discovered later. None of them is dangerous; all of them decide how this
 may be used.
@@ -1015,6 +1098,15 @@ may be used.
   beside it, so Claude Desktop drives a *local* instance. An approval code minted on the Render
   box is only useful to an MCP client on that box. Driving a deployment over MCP would need an
   HTTP transport, which is not built.
+- **A notice is recorded, not delivered, until you configure a gateway (#26).** Every notice lands
+  in the `notifications` table with the status `Recorded`. Set `VIDYAERP_NOTIFY_URL` to an
+  `https://` endpoint (one JSON batch per dispatch, `VIDYAERP_NOTIFY_TOKEN` as a bearer token) or
+  to a `file://` path (one JSON line per notice, for an on-premise SMS or mail relay to tail).
+  Notices then read `Accepted` or `Failed`, a failure blinks NotifyAgent red in the mesh, and the
+  console offers a retry. The gateway owns the last mile: `Accepted` means it took the message,
+  not that a student read it. Delivery happens after the write commits, so a gateway that is down
+  never undoes or hides a write, and a write the gate blocks sends nothing. `/health` reports
+  `notifications.gateway` and never the URL or the token.
 
 **One worker, deliberately.** `app.py` holds a single module-level SQLite connection and
 `orchestrator.SESS` keeps conversation state in process memory, so a second worker would answer

@@ -4,7 +4,7 @@ Lightweight, dependency-free natural-language understanding for the ERP copilot:
 intent scoring, entity resolution (faculty / dept / sem / section / subject / student),
 and Indian-context date parsing ("tomorrow", "next monday", "12 sep", "9/9").
 """
-import re, difflib, datetime as dt
+import re, difflib, functools, datetime as dt
 
 TODAY = dt.date(2026, 9, 4)          # demo "system date" (Friday)
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -71,6 +71,10 @@ INTENTS = {
                ("placement", 4), ("trend", 3), ("brief me", 5), ("status of college", 5),
                ("risk", 3), ("insight", 4)],
         "desc": "Institution analytics, NAAC/NBA metrics, risk radar"},
+    # ---- accreditation.py ----
+    "accreditation": {
+        "kw": [("evidence pack", 8), ("self study report", 8), ("criterion-wise", 6), ("criteria-wise", 6)],
+        "desc": "NAAC / NBA evidence computed from the records, with the gaps named (#29)"},
     # ---- campus services (campus.py) ----
     "ops.radar": {
         "kw": [("autopilot", 8), ("needs my attention", 8), ("need my attention", 8),
@@ -112,6 +116,11 @@ INTENTS = {
     "availability": {
         "kw": [("availability", 8), ("standing", 4), ("every week", 4), ("visiting faculty", 6)],
         "desc": "Standing weekly windows a teacher cannot be timetabled in (#19)"},
+    "cie": {
+        "kw": [("internal marks", 9), ("internal assessment", 9), ("ia marks", 8), ("ia1", 7),
+               ("ia2", 7), ("ia 1", 7), ("ia 2", 7), ("ia test", 8), ("assignment marks", 7), ("lab record", 6),
+               ("marks entry", 9), ("marks", 4)],
+        "desc": "Internal marks: entry, standing, students at risk of the CIE minimum (#32)"},
 }
 
 CONFIRM_YES = ["yes", "yeah", "yep", "ok", "okay", "approve", "apply", "confirm", "go ahead",
@@ -120,12 +129,29 @@ CONFIRM_NO = ["no", "cancel", "abort", "discard", "don't", "dont", "stop", "reje
 
 # Regex rules that dominate keyword scoring (verb-first phrasing, disambiguation)
 PRIORITY = [
+    # the verb must end there: "Information Science ..." is a department, not an order (#68)
     (r"^\s*(?:please\s+|pls\s+)?(?:notify|inform|announce|broadcast|circulate|alert|"
-     r"send (?:a |an )?(?:message|sms|notice|circular|whatsapp))", "notify.broadcast", 14),
+     r"send (?:a |an )?(?:message|sms|notice|circular|whatsapp))\b", "notify.broadcast", 14),
+    # A broadcast that names its audience is a broadcast whatever its message
+    # mentions (#87). Without this, "notify all students that the library closes
+    # at 6" scored library +16 over notify +14, and one variant staged overdue
+    # reminders: a different gated write that the admin's "yes" would commit.
+    # Worth more than any campus rule. "Notify overdue borrowers" has no
+    # audience phrase and still belongs to the library.
+    (r"^\s*(?:please\s+|pls\s+)?(?:notify|inform|announce|broadcast|circulate|alert|"
+     r"send (?:a |an )?(?:message|sms|notice|circular|whatsapp))"
+     r"(?:\s*:|\s+(?:to\s+)?(?:everyone|everybody|"
+     r"(?:all|every|the whole|the entire)\b[^.?!:]{0,40}?\b(?:students?|faculty|staff|teachers|"
+     r"parents|hostellers|riders|campus|departments?|classes|sections?)\b))", "notify.broadcast", 30),
     (r"\b(?:who(?:'s| is| are)?\s+(?:all\s+)?free|are free|is free|free faculty|free staff|"
      r"available faculty|free (?:room|slot|hall|classroom)|room availability|which rooms)\b",
      "timetable.view", 12),
     (r"\b(?:work ?load|teaching load|utilis|utiliz|over ?loaded)\b", "faculty.query", 12),
+    # whole words: "nba" sits inside "unbalanced" (#29)
+    (r"\b(?:naac|nba|accreditation|accreditations|iqac|aqar|ssr)\b", "accreditation", 18),
+    # the early-warning list (#79); not bare "at risk" - that is also CIE's phrase
+    (r"\b(?:academic(?:ally)? (?:at )?risk|early[- ]warning|dropouts?|counsell?ing (?:list|report)|"
+     r"mentor[- ]?wise)\b", "student.query", 14),
     (r"\b(?:is|are|will be)\s+absent\b|\bon leave (?:tomorrow|today|on|from)\b|"
      r"\barrange (?:a )?(?:substitute|cover|coverage|proxy)\b", "absence.cover", 14),
     (r"\b(?:who(?:'s| is| are)?\s+on leave|list .*leaves?|leave (?:this week|calendar|ledger)|"
@@ -158,12 +184,39 @@ PRIORITY = [
     (r"\bavailability\b|\bavailable again\b|"
      r"\b(?:not available|unavailable|can(?:no|')?t teach|cannot teach|busy)\b[^.?!]{0,40}"
      r"\b(?:every|each|weekly|(?:mon|tues|wednes|thurs|fri|satur)days)\b", "availability", 22),
+    # "cie" as a whole word: a keyword would fire inside "science" and "efficient" (#32)
+    (r"\bcie\b", "cie", 9),
+    # entering marks is a CIE write, whatever else the sentence mentions (#32)
+    (r"\b(?:enter|record|upload|update|correct|change|fill|post)\b[^.?!]{0,40}\bmarks?\b|"
+     r"\b(?:ia ?[12]|cie|internal)\b[^.?!]{0,30}\b4vp\d{2}[a-z]{2}\d{3}\s*[:=-]?\s*(?:\d|ab)", "cie", 20),
     (r"\bautopilot\b|\bneeds? (?:my )?attention\b|\baction items?\b|\bops radar\b|"
      r"\bwhat should i (?:do|act on|focus on|look at)\b|\bto-?do list\b", "ops.radar", 18),
     (r"(?:\b360\b|everything about|full profile|complete profile|subject[- ]wise attendance)"
      r".*\b4vp\d{2}[a-z]{2}\d{3}\b|\b4vp\d{2}[a-z]{2}\d{3}\b.*"
      r"(?:\b360\b|everything|full profile|complete profile|subject[- ]wise)", "student.360", 22),
+    # "show me the details of <USN>" is the same request as "Student <USN> details";
+    # without this it scored nothing and fell to smalltalk (#91).
+    (r"\b(?:details?|record|profile) (?:of|for|on|about)\b[^.?!]*\b4vp\d{2}[a-z]{2}\d{3}\b", "student.query", 12),
+    # A student's books, by USN, belong to the library, not to the 360 (#91).
+    # "how much fine does <USN> have?" used to fall to smalltalk.
+    (r"(?:\bborrow(?:ed|ing|s)?\b|\bon loan\b|\bloans?\b|\b(?:library )?fines?\b|\bbooks?\b)"
+     r"[^.?!]*\b4vp\d{2}[a-z]{2}\d{3}\b|\b4vp\d{2}[a-z]{2}\d{3}\b[^.?!]*"
+     r"(?:\bborrow(?:ed|ing|s)?\b|\bon loan\b|\bloans?\b|\bfines?\b|\bbooks?\b)", "library", 24),
 ]
+
+
+# Verbs that are also the start of unrelated nouns: "inform" / "information",
+# "drive" / "driver". These must END at a word too (an inflection allowed).
+WHOLE_WORD = {"inform", "drive"}
+
+
+@functools.lru_cache(maxsize=None)
+def _kw_rx(kw):
+    """A keyword must START a word (#68): as a bare substring "cie" fired inside
+    "science" - two department names - and "hod" inside "methodology". It may
+    still run on ("recruit" -> "recruitment"), except the WHOLE_WORD verbs."""
+    tail = r"(?:s|ed|ing)?\b" if kw in WHOLE_WORD else ""
+    return re.compile(r"(?<![a-z0-9])" + re.escape(kw) + tail)
 
 
 def classify(text):
@@ -174,7 +227,7 @@ def classify(text):
     for intent, cfg in INTENTS.items():
         s, hits = 0, []
         for kw, w in cfg["kw"]:
-            if kw in t:
+            if _kw_rx(kw).search(t):
                 s += w
                 hits.append(kw)
         if s:
@@ -240,6 +293,14 @@ def parse_date(text, today=None):
         delta = (idx - today.weekday()) % 7 or 7
         d = today + dt.timedelta(days=delta)
         return d, target
+    # "gate pass for Saturday", "timetable for Monday" (#61). Stricter than the
+    # `on` branch: the weekday must be a whole word, so "for months" and
+    # "for Mondays" (a standing pattern, not a date) do not match. Like `on`,
+    # no Sunday - the college does not run on Sunday.
+    m = re.search(r"\bfor\s+(monday|mon|tuesday|tues|tue|wednesday|wed|thursday|thurs|thur|thu|"
+                  r"friday|fri|saturday|sat)\b", t)
+    if m:
+        return next_occurrence(m.group(1), today), DAY_FULL[m.group(1)]
     m = re.search(r"(?<![\d/-])\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b(?![/-]\d)", t)
     if m:
         day, mon = int(m.group(1)), int(m.group(2))
@@ -278,6 +339,14 @@ def _explicit_date(t, today):
 
 WEEKDAY_WORD = re.compile(r"\b(monday|mon|tuesday|tues|tue|wednesday|wed|thursday|thurs|thur|thu|"
                           r"friday|fri|saturday|sat|sunday|sun)\b")
+
+
+def next_occurrence(word, today=None):
+    """The next date falling on weekday `word` ('sat', 'Saturday'); today never
+    counts as the next one. Sunday included - callers decide whether it is a day."""
+    today = today or TODAY
+    idx = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].index(DAY_FULL[word.lower()])
+    return today + dt.timedelta(days=(idx - today.weekday()) % 7 or 7)
 
 
 def date_conflict(text, d):
@@ -334,7 +403,12 @@ def extract_dept(text):
              "CIVIL": ["CIVIL", " CV DEPT"]}
     for code, keys in alias.items():
         for k in keys:
-            if k in " " + t + " ":
+            # a whole word only: "ISE" sits inside advise, otherwise and
+            # mentor-wise, which once scoped those answers to ISE (#80)
+            # ("CSE5A" still counts; the short spaced aliases like " CS " keep
+            # digits out too, or the CS inside a USN would read as a department)
+            guard = "A-Z0-9" if k != k.strip() else "A-Z"
+            if re.search(rf"(?<![{guard}])" + re.escape(k.strip()) + rf"(?![{guard}])", t):
                 return code
     return None
 
@@ -478,3 +552,75 @@ def plan_choice(text):
     if m:
         return {"a": 0, "b": 1, "c": 2}[m.group(1)]
     return None
+
+
+# ------------------------------------------------------------------ languages (#31)
+# Kannada and Hindi - in their own scripts and romanised - for the words a
+# college office actually types. The sentence is normalised to English BEFORE
+# the NLU sees it, so every rule, date parser and guard below runs unchanged.
+#
+# Deliberate limits, each pinned by tests/nlu_test.py:
+#   * no translation ever yields an approval word. A write is confirmed with
+#     "yes" / "approve" in English, on purpose: the write gate's vocabulary is
+#     not something a lookup table should widen;
+#   * Hindi "kal" means both tomorrow and yesterday. It is read forward, the
+#     only reading an absence plan or a gate pass can act on, and the resolved
+#     date is echoed back before anything commits;
+#   * romanised forms that are also common first names (Indu, "today" in
+#     Kannada) are left out - only the Kannada-script form is read.
+# A native-script form matches as a word STEM: Kannada and Hindi add case
+# endings (ನಾಳೆಗೆ, "for tomorrow"), which the stem absorbs.
+LEXICON = [
+    ("day after tomorrow", ["ನಾಡಿದ್ದು", "naadiddu", "परसों", "parson", "parso"]),
+    ("tomorrow", ["ನಾಳೆ", "naale", "nale", "कल", "kal"]),
+    ("today", ["ಇಂದು", "ಇವತ್ತು", "ivattu", "आज", "aaj"]),
+    ("yesterday", ["ನಿನ್ನೆ", "ninne"]),
+    ("on monday", ["ಸೋಮವಾರ", "somavara", "somvara", "सोमवार", "somvar", "somwar"]),
+    ("on tuesday", ["ಮಂಗಳವಾರ", "mangalavara", "मंगलवार", "mangalvar", "mangalwar"]),
+    ("on wednesday", ["ಬುಧವಾರ", "budhavara", "बुधवार", "budhvar", "budhwar"]),
+    ("on thursday", ["ಗುರುವಾರ", "guruvara", "गुरुवार", "guruvar", "guruwar"]),
+    ("on friday", ["ಶುಕ್ರವಾರ", "shukravara", "शुक्रवार", "shukravar", "shukrawar"]),
+    ("on saturday", ["ಶನಿವಾರ", "shanivara", "शनिवार", "shanivar", "shaniwar"]),
+    ("is absent", ["ಬರೊಲ್ಲ", "ಬರಲ್ಲ", "barolla", "baralla", "नहीं आएंगे", "नहीं आएगा", "नहीं आएगी",
+                   "nahi aayenge", "nahin aayenge", "nahi aayega", "nahi aayegi"]),
+    ("absent", ["ಗೈರುಹಾಜರು", "ಗೈರು", "gairuhajaru", "gairu", "अनुपस्थित", "anupasthit", "गैरहाज़िर", "gairhazir"]),
+    ("leave", ["ರಜೆ", "raje", "छुट्टी", "chutti", "chhutti"]),
+    ("timetable", ["ವೇಳಾಪಟ್ಟಿ", "velapatti", "समय सारणी", "samay sarni", "samay saarini", "samay sarini"]),
+    ("attendance", ["ಹಾಜರಾತಿ", "hajarati", "उपस्थिति", "upasthiti", "हाज़िरी", "हाजिरी", "haziri", "hazri"]),
+    ("exam", ["ಪರೀಕ್ಷೆ", "pareekshe", "परीक्षा", "pariksha"]),
+    ("fees", ["ಶುಲ್ಕ", "shulka", "शुल्क", "shulk", "फीस", "phees"]),
+    ("library", ["ಗ್ರಂಥಾಲಯ", "granthalaya", "पुस्तकालय", "pustakalaya"]),
+    ("books", ["ಪುಸ್ತಕ", "pustaka", "किताब", "kitab", "kitaab", "पुस्तक", "pustak"]),
+    ("hostel", ["ವಸತಿ ನಿಲಯ", "छात्रावास", "chhatravas", "chatravas"]),
+    ("students", ["ವಿದ್ಯಾರ್ಥಿ", "vidyarthi", "विद्यार्थी", "छात्र", "chhatra"]),
+    ("faculty", ["ಉಪನ್ಯಾಸಕ", "upanyasaka", "ಶಿಕ್ಷಕ", "shikshaka", "शिक्षक", "shikshak", "अध्यापक", "adhyapak"]),
+    ("substitute", ["ಬದಲಿ", "badali", "बदली", "badli"]),
+    ("show", ["ತೋರಿಸಿ", "torisi", "दिखाओ", "दिखाइए", "dikhao", "dikhaiye", "बताओ", "बताइए", "batao", "bataiye"]),
+    ("gate pass", ["ಗೇಟ್ ಪಾಸ್", "गेट पास"]),
+]
+# Words people use to CONFIRM in these languages. They are recognised only so
+# the answer can say why they do not commit anything (see LEXICON's first limit).
+NATIVE_YES = re.compile(r"(?:ಹೌದು|ಸರಿ|हाँ|हां|ठीक है|(?<![a-z])(?:haan|haa|howdu|houdu|sari|theek hai|thik hai)(?![a-z]))", re.I)
+_NATIVE = re.compile(r"[\u0900-\u097F\u0C80-\u0CFF]")
+
+
+def _lex_rx(form):
+    if _NATIVE.search(form):
+        # a stem: absorb the case ending that follows it
+        return re.escape(form).replace(r"\ ", r"\s+") + r"[\u0900-\u097F\u0C80-\u0CFF]*"
+    return r"(?<![a-z])" + re.escape(form).replace(r"\ ", r"\s+") + r"(?![a-z])"
+
+
+_LEX = sorted(((_lex_rx(f), en, f) for en, forms in LEXICON for f in forms), key=lambda x: -len(x[2]))
+_LEX = [(re.compile(rx, re.I), en, f) for rx, en, f in _LEX]
+
+
+def normalize(text):
+    """-> (english text, [(form, english), ...]). Text with nothing to
+    translate comes back unchanged, so English input is never touched."""
+    out, hits = str(text or ""), []
+    for rx, en, form in _LEX:
+        if rx.search(out):
+            hits.append((form, en))
+            out = rx.sub(f" {en} ", out)
+    return (re.sub(r"[ \t]+", " ", out).strip() if hits else out), hits

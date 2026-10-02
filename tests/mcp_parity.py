@@ -617,13 +617,18 @@ print("-" * 78)
 import academics                                                   # noqa: E402
 
 ACADEMIC_ARGS = {"set_faculty_availability": {"faculty": "F001", "day": "Sat", "periods": "P3",
-                                              "reason": "parity probe"}}
+                                              "reason": "parity probe"},
+                 # half marks: the seed only ever writes whole ones, so this is always a change (#32)
+                 "record_cie_marks": {"subject": "BCS501", "component": "IA2", "section": "A",
+                                      "marks": "4VP24CS001 11.5"}}
 check("18a every academic write has a parity probe", set(ACADEMIC_ARGS) == set(academics.GATED_WRITES))
 check("18b every academic write is in tools.GATED_WRITES", set(academics.GATED_WRITES) <= set(tools.GATED_WRITES))
 
 
 def avail_snapshot():
-    return [tuple(r) for r in con.execute("SELECT * FROM faculty_availability ORDER BY id")]
+    academics.ensure_cie(con)
+    return ([tuple(r) for r in con.execute("SELECT * FROM faculty_availability ORDER BY id")],
+            [tuple(r) for r in con.execute("SELECT * FROM cie_marks ORDER BY usn, subject, component")])
 
 
 for name, aargs in ACADEMIC_ARGS.items():
@@ -644,6 +649,14 @@ for i, path in enumerate(PATHS):
     got = one(con, "SELECT 1 FROM faculty_availability WHERE faculty='F002' AND day=? AND p_from=7 "
                    "AND status='Active'", (day,))
     check(f"18c approved academic write commits · {path}", verdict(r) == "ok" and got is not None,
+          f"{verdict(r)}: {json.dumps(r.get('data'), default=str)[:120]}")
+for i, path in enumerate(PATHS):
+    S = fresh_session()
+    usn = f"4VP24CS00{i + 2}"               # a different student per path, so each commit is its own change
+    r = run_path(path, S, "record_cie_marks", {"subject": "BCS501", "component": "IA2", "section": "A",
+                                               "marks": f"{usn} 12.5"}, approves=True)
+    got = one(con, "SELECT marks FROM cie_marks WHERE usn=? AND subject='BCS501' AND component='IA2'", (usn,))
+    check(f"18d approved CIE entry commits · {path}", verdict(r) == "ok" and got and got["marks"] == 12.5,
           f"{verdict(r)}: {json.dumps(r.get('data'), default=str)[:120]}")
 
 # ========================================================================= out

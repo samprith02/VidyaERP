@@ -19,7 +19,11 @@ from guard import approved_this_turn
 from agents import (rows, one, fac_name, subj_name, NotifyAgent, Auditor, ensure_makeups,
                     B_text, B_table, B_cards, B_checklist, B_bars)
 from campus import (_propose, _done, _err, _stu, _cls, _when, inr, GatePassAgent, DocumentAgent,
-                    LeaveAgent, PlacementAgent, LibraryAgent, VERDICT_MD, CERT_KINDS, cert_kind, NOW)
+                    LeaveAgent, PlacementAgent, LibraryAgent, VERDICT_MD, CERT_KINDS, cert_kind, NOW,
+                    loans_question)
+
+# "my books", "books I borrowed", "my library fine": a person's own loans (#91).
+MY_LOANS_RX = r"\bmy (?:library )?(?:books|loans|fines?)\b|\bbooks? i (?:have |'ve )?(?:borrowed|taken|got)\b"
 
 GP_KINDS = {"outing": "Outing", "home": "Home visit", "medical": "Medical", "emergency": "Emergency",
             "early": "Early leave"}
@@ -473,51 +477,92 @@ AGENT_OF = {"my_home": "StudentAgent", "my_requests": "RequestAgent", "my_placem
 
 
 # ============================================================== routing
+def _pass_reason(text):
+    """The purpose clause of a gate-pass request. The LAST 'for' is the purpose:
+    in 'for Saturday 2pm to 7pm for an outing' the first one is the date (#61).
+    A clause that is only a day or a time is not a reason."""
+    m = re.search(r".*\b(?:for|to attend|because)\s+(.+)$", text, re.I | re.S)
+    r = m.group(1).strip() if m else ""
+    if nlu.WEEKDAY_WORD.match(r.lower()) or re.match(r"\d", r) or re.match(r"(?:to|tomorrow|today)\b", r.lower()):
+        return ""
+    return r[:120]
+
+
+CIE_RX = re.compile(r"\bcie\b|internal (?:marks|assessment)|\bia ?[12]\b|\bia (?:test|marks)|\bmarks?\b|"
+                    r"lab record|lab test|assignment")
+
+
 def route(con, text, P, ent):
     """Rule-engine routing for a non-admin: utterance -> (tool, args), or
     (None, None) for help. Every tool it can name still passes access.py."""
     t = text.lower()
     role = P["role"]
     usn = ent.get("usn")
-    if re.search(r"\b(?:my day|home|dashboard|overview of me|good morning)\b", t) and "department" not in t:
+    # "home" is also half of "home visit" - a gate-pass kind that could never be
+    # requested while this matched first (#61).
+    if re.search(r"\b(?:my day|home|dashboard|overview of me|good morning)\b", t) and "department" not in t \
+            and not re.search(r"gate ?pass|outing|out ?pass|home visit|go(?:ing)? home", t):
         return "my_home", {}
     if re.search(r"make-?up|extra class|extra hour|rescheduled class", t):
         return "makeup_schedule", {}
     if role == "student":
+        # deciding passes is the warden's: routed to the tool that decides them,
+        # which access.py refuses for a student - not filed as a new pass (#77)
+        if re.search(r"\b(?:approve|reject|decide|sanction)\b.*\b(?:gate ?pass|out ?pass)", t):
+            return "decide_gate_passes", {}
         if re.search(r"gate ?pass|outing|out ?pass|home visit|go home|leave (?:the )?campus", t):
             k = ("Home visit" if re.search(r"home", t) else "Medical" if re.search(r"medical|doctor|hospital", t) else
                  "Emergency" if "emergency" in t else "Early leave" if re.search(r"early|after lunch", t) else "Outing")
             times = re.findall(r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\b\d{1,2}:\d{2}\b", t)
-            d, _l = nlu.parse_date(text)
-            ds = (d or TODAY).isoformat()
             rng = re.search(r"\bto\s+(mon|tue|wed|thu|fri|sat|sun)[a-z]*", t)
+            d, _l = nlu.parse_date(text)
+            if not d:
+                # A bare weekday ("gate pass Saturday 2pm") is still a day, and
+                # falling back to today silently filed it for the wrong one (#61).
+                # The "to <weekday>" return day is not the day out.
+                bare = nlu.WEEKDAY_WORD.search(t[:rng.start()] if rng else t)
+                # Sunday counts here: an outing on Sunday is exactly what a pass is for.
+                d = nlu.next_occurrence(bare.group(1)) if bare else None
+            ds = (d or TODAY).isoformat()
             back = None
             if rng:
-                bd, _ = nlu.parse_date("on " + rng.group(1))
-                back = f"{bd.isoformat()} {times[1] if len(times) > 1 else '6pm'}" if bd else None
+                # the first such weekday on or after the day out; "sat to sun" is
+                # a weekend, and the parser's no-Sunday rule would drop the return
+                bd = nlu.next_occurrence(rng.group(1), (d or TODAY) - dt.timedelta(days=1))
+                back = f"{bd.isoformat()} {times[1] if len(times) > 1 else '6pm'}"
             return "request_gate_pass", {
                 "kind": k, "out_at": f"{ds} {times[0] if times else '2pm'}",
                 "return_by": back or (f"{ds} {times[1]}" if len(times) > 1 else ""),
-                "reason": (re.search(r"\b(?:for|to attend|because)\s+(.+)$", text, re.I) or [None, ""])[1][:120],
+                "reason": _pass_reason(text),
                 "parent_consent": bool(re.search(r"parents? (?:know|agreed|consent|approved|permission|are ok)", t))}
         if re.search(r"certificate|bonafide|\bnoc\b|no[- ]?dues? cert|transfer cert", t) and not re.search(r"status|position", t):
             m = re.search(r"\bfor\s+(?:a |an |my |the )?([a-z0-9][a-z0-9 \-&]{2,50})$", t)
             return "request_certificate", {"kind": cert_kind(text) or "Bonafide", "purpose": m.group(1) if m else ""}
+        # before the timetable: "Exam schedule" matched its "schedule" (#77)
+        # ("exam fees" is a dues question and "internal exam marks" a marks one)
+        if re.search(r"\bexams?\b|\bsee\b|hall ticket", t) and not re.search(r"fee|dues|marks|internal", t):
+            return "exam_schedule", {}
+
         if re.search(r"no[- ]?dues|dues|fees?\b|clearance", t):
-            return "no_dues_status", {}
+            # a named USN is passed on, so access.py refuses someone else's (#77)
+            return "no_dues_status", {"usn": usn} if usn else {}
         if re.search(r"placement|drive|eligible|offer|company|recruit", t):
             return "my_placement", {}
+        if CIE_RX.search(t):
+            # a USN is passed on, so access.py refuses someone else's instead of
+            # quietly answering with the student's own
+            return "cie_marks", {"usn": usn} if usn else {}
         if re.search(r"time ?table|classes|schedule|period", t):
             return "get_timetable", {"date": (nlu.parse_date(text)[0] or TODAY).isoformat()}
-        if re.search(r"exam|see\b|hall ticket", t):
-            return "exam_schedule", {}
+        if re.search(MY_LOANS_RX, t) or loans_question(text):
+            return "library_loans", {"member": usn} if usn else {}
         if re.search(r"library|book", t):
             q = re.sub(r"\b(search|find|library|books?|for|on|about|do you have|any|the|a)\b", " ", t).strip()
             return "library_search", {"query": q or "engineering"}
         if re.search(r"request|status|my pass|application", t):
             return "my_requests", {}
         if re.search(r"attendance|cgpa|marks|record|profile|backlog|360|everything", t):
-            return "student_360", {}
+            return "student_360", {"usn": usn} if usn else {}
         return None, None
     # faculty and HOD
     if re.search(r"\b(?:apply|applying|take|need|want)\b.*\bleave\b|\bleave (?:on|from|for)\b|\bi(?:'m| am| will be) (?:absent|on leave)", t) \
@@ -529,6 +574,9 @@ def route(con, text, P, ent):
         return "apply_leave", {"from_date": (a or TODAY + dt.timedelta(days=1)).isoformat(),
                                "to_date": (b or a or TODAY + dt.timedelta(days=1)).isoformat(),
                                "kind": k, "reason": rs.group(1) if rs else ""}
+    if CIE_RX.search(t):
+        import academics                       # lazily: academics imports this module's _staged
+        return academics.cie_route(con, text, ent, admin=False)
     if role == "hod":
         if re.search(r"department|dept overview|my dept|overview|who(?:'s| is| else is)? on leave|away today", t):
             return "dept_overview", {}
@@ -548,12 +596,19 @@ def route(con, text, P, ent):
             return "attendance_defaulters", {}
         if re.search(r"eligib|hall ticket", t):
             return "exam_eligibility", {}
+        # A question about a student's books is the library's, not the 360's (#91):
+        # it used to return the whole profile, attendance and fees included.
+        if loans_question(text) and (usn or (ent.get("faculty") and ent["faculty"]["id"] != P["fid"])):
+            return "library_loans", {"member": usn or ent["faculty"]["id"]}
         if usn:
             return "student_360", {"usn": usn}
         if ent.get("faculty") and ent["faculty"]["id"] != P["fid"] and re.search(r"timetable|schedule", t):
             return "faculty_timetable", {"name": ent["faculty"]["id"]}
         if ent.get("faculty") and ent["faculty"]["id"] != P["fid"]:
             return "faculty_profile", {"name": ent["faculty"]["id"]}
+    # the early-warning list (#79): a teacher's mentees, an HOD's department (access.py narrows)
+    if re.search(r"\brisk\b|early[- ]warning|counsell?ing|dropout", t):
+        return "academic_risk", {"by": "mentor"} if re.search(r"mentor[- ]?wise|counsell?ing list", t) else {}
     if re.search(r"mentee|mentoring|my students", t):
         return "my_mentees", {}
     if re.search(r"my leave|leave history|leave status", t):
@@ -568,6 +623,8 @@ def route(con, text, P, ent):
         return "faculty_profile", {}
     if re.search(r"exam|see\b", t):
         return "exam_schedule", {}
+    if re.search(MY_LOANS_RX, t) or loans_question(text):
+        return "library_loans", {"member": usn} if usn else {}
     if re.search(r"library|book", t):
         q = re.sub(r"\b(search|find|library|books?|for|on|about|do you have|any|the|a)\b", " ", t).strip()
         return "library_search", {"query": q or "engineering"}
@@ -579,10 +636,11 @@ def route(con, text, P, ent):
 HELP = {
     "student": [["My day", "“Good morning” · “My attendance”"], ["Gate pass", "“Gate pass for Saturday 2pm to 7pm, parents know”"],
                 ["Certificates", "“Request a bonafide certificate for passport”"], ["Fees & dues", "“My no-dues status”"],
-                ["Placements", "“Am I eligible for any drive?”"], ["Timetable & exams", "“My timetable” · “Exam schedule”"],
+                ["Placements", "“Am I eligible for any drive?”"], ["Internal marks", "“My internal marks”"], ["Timetable & exams", "“My timetable” · “Exam schedule”"],
                 ["Library", "“Library books on machine learning”"], ["Tracking", "“My requests”"]],
     "faculty": [["My day", "“Good morning”"], ["Leave", "“Apply for casual leave on 10 sep for a family function”"],
-                ["Mentees", "“My mentees”"], ["Timetable", "“My timetable” · “CSE sem 5 A timetable”"],
+                ["Mentees", "“My mentees”"],
+                ["Internal marks", "“Internal marks of my courses” · “Enter IA2 marks for BCS501: 4VP24CS001 18, …”"], ["Timetable", "“My timetable” · “CSE sem 5 A timetable”"],
                 ["Rooms", "“Free rooms at period 4”"], ["Tracking", "“My leave” · “My requests”"]],
 }
 HELP["hod"] = [["Department", "“Department overview”"], ["Leave", "“Pending leave applications” · “Approve leave 4”"],

@@ -21,7 +21,7 @@ from fastapi import FastAPI, Body, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-import db, orchestrator as orch, llm, llm_agent, solver, mcp_server, tools, campus, auth
+import db, orchestrator as orch, llm, llm_agent, solver, mcp_server, tools, campus, auth, notify_gateway
 from agents import (rows, one, fac_name, PERIOD_TIME, TimetableAgent, AnalyticsAgent,
                     RequestAgent, Auditor)
 from nlu import TODAY, DAYS, day_of
@@ -34,6 +34,26 @@ auth.ensure(con)
 app = FastAPI(title="VidyaERP", docs_url="/api/docs")
 
 ADMIN_TOKEN = (os.environ.get("VIDYAERP_ADMIN_TOKEN") or "").strip()
+
+
+class BadInput(ValueError):
+    """A request whose values are the wrong type or name nothing real: a 400 with
+    a sentence, never a 500 (#90)."""
+
+
+@app.exception_handler(BadInput)
+async def _bad_input(request: Request, e: BadInput):
+    return JSONResponse({"error": str(e)}, status_code=400)
+
+
+def _text(payload, key):
+    """payload[key] as a string: missing or null is "", anything else not text is a 400."""
+    v = payload.get(key)
+    if v is None:
+        return ""
+    if not isinstance(v, str):
+        raise BadInput(f"'{key}' must be text.")
+    return v
 
 
 @app.middleware("http")
@@ -111,6 +131,15 @@ def resolve_build(env=None, root=None):
 COMMIT, BRANCH, COMMIT_SOURCE = resolve_build()
 
 
+def _who(request):
+    """The ledger's actor for a console or operator write: the signed-in
+    account, or 'operator-token' for the admin-token path. Never a name from
+    the request body - the ledger records who acted, not who they said they
+    were (#73)."""
+    user = getattr(getattr(request, "state", None), "user", None)
+    return user["id"] if user else "operator-token"
+
+
 def _denied(request):
     """None if the caller may use an operator endpoint, else a 401 response.
 
@@ -169,6 +198,8 @@ def health():
         # a deployment's security posture should be readable, not inferred.
         "auth": {"logins": True, "mode": "demo" if auth.demo_mode() else "strict",
                  "passwords_published": auth.demo_mode()},
+        # Whether a notice leaves the building at all; never the gateway's URL or token.
+        "notifications": notify_gateway.describe(),
     }, status_code=200 if ok else 503)
 
 
@@ -210,8 +241,8 @@ def _public(p):
 @app.post("/api/auth/login")
 def login(request: Request, payload: dict = Body(default={})):
     ip = request.client.host if request.client else "?"
-    p, token = auth.login(con, payload.get("username", ""), payload.get("password", ""),
-                          key=f"{(payload.get('username') or '').lower()}@{ip}")
+    username, password = _text(payload, "username"), _text(payload, "password")
+    p, token = auth.login(con, username, password, key=f"{username.lower()}@{ip}")
     if not p:
         return JSONResponse({"error": token}, status_code=401)
     Auditor().log(con, p["id"], "Auth", "login", {"role": p["role"]}, "ok")
@@ -258,8 +289,8 @@ def demo_accounts():
 @app.post("/api/auth/password")
 def change_password(request: Request, payload: dict = Body(default={})):
     user = request.state.user
-    new = payload.get("new") or ""
-    if not auth.verify_password(con, user, payload.get("current") or ""):
+    new = _text(payload, "new")
+    if not auth.verify_password(con, user, _text(payload, "current")):
         return JSONResponse({"error": "Current password is wrong."}, status_code=400)
     if len(new) < 8 or new.lower() == auth.demo_password(user["id"]):
         return JSONResponse({"error": "Use at least 8 characters, and not your ID."}, status_code=400)
@@ -272,11 +303,12 @@ def change_password(request: Request, payload: dict = Body(default={})):
 def reset_password(payload: dict = Body(default={})):
     """Registrar only (auth.gate). The temporary password is returned to the
     Registrar's screen once - never logged, never shown to a model."""
-    pw = auth.temporary_password(con, payload.get("username", ""))
+    username = _text(payload, "username")
+    pw = auth.temporary_password(con, username)
     if not pw:
         return JSONResponse({"error": "No such account."}, status_code=404)
-    Auditor().log(con, "registrar", "Auth", "password.reset", {"username": payload.get("username")}, "issued")
-    return {"username": payload.get("username"), "temporary_password": pw,
+    Auditor().log(con, "registrar", "Auth", "password.reset", {"username": username}, "issued")
+    return {"username": username, "temporary_password": pw,
             "note": "Shown once. Their existing sessions were signed out."}
 
 
@@ -299,7 +331,7 @@ def chat(request: Request, payload: dict = Body(...)):
     """Routes to the LLM agent when a key is configured, else the deterministic rule engine.
     The role is the SESSION's, never a field the client sends."""
     user = request.state.user
-    text = (payload.get("text") or "").strip()
+    text = _text(payload, "text").strip()
     sid = _sid(user, payload.get("session"))
     if not text:
         return {"blocks": [], "trace": []}
@@ -346,7 +378,7 @@ def mcp_approval(request: Request, payload: dict = Body(default={})):
     beside it, so a code minted here is only useful to an MCP client running
     against this same instance - see the MCP section of the README.
     """
-    return _denied(request) or mcp_server.mint_approval(con, payload.get("actor", "admin@vidyatech"))
+    return _denied(request) or mcp_server.mint_approval(con, _who(request))
 
 
 @app.get("/api/kpis")
@@ -373,7 +405,9 @@ def kpis():
 PANELS = {"ops_radar", "library_overview", "library_overdue", "library_search", "hostel_status",
           "hostel_complaints", "transport_status", "gate_pass_queue", "placement_overview",
           "drive_eligibility", "certificate_register", "no_dues_status", "student_360",
-          "review_pending_leaves", "faculty_availability"}
+          "review_pending_leaves", "faculty_availability", "cie_marks"}
+# the accreditation evidence pack (#29) reads only, like every panel
+PANELS.add("accreditation_evidence")
 
 
 @app.get("/api/panel/{name}")
@@ -397,6 +431,11 @@ def badges():
 
 @app.get("/api/timetable")
 def timetable(dept: str = "CSE", sem: int = 5, section: str = "A", date: str = ""):
+    if date:
+        try:
+            dt.date.fromisoformat(date)
+        except ValueError:
+            raise BadInput(f"date must be YYYY-MM-DD, not {date!r}.")
     return TimetableAgent().class_grid(con, dept, sem, section, date or TODAY.isoformat())
 
 
@@ -411,12 +450,20 @@ def classes():
 # tests/solver_test.py ("same seed gives an identical timetable"), so the client
 # never has to ship a whole timetable back to commit what it just watched.
 def _gen_args(p):
+    """The generator's arguments, or raise BadInput. A section that does not run
+    used to be applied as 0 of 0 and verified clean (#89); a non-numeric sem
+    was a 500 (#90)."""
     scope = "all" if str(p.get("scope", "class")).lower().startswith("all") else "class"
-    return {"scope": scope,
-            "dept": (p.get("dept") or "CSE").upper() if scope == "class" else None,
-            "sem": int(p.get("sem") or 5) if scope == "class" else None,
-            "section": (p.get("section") or "A").upper() if scope == "class" else None,
-            "seed": int(p.get("seed") or 7)}
+    try:
+        seed = int(p.get("seed") or 7)
+    except (TypeError, ValueError):
+        raise BadInput(f"seed must be a whole number, not {p.get('seed')!r}.")
+    if scope == "all":
+        return {"scope": "all", "dept": None, "sem": None, "section": None, "seed": seed}
+    cls, why = solver.resolve_class(con, p.get("dept") or "CSE", p.get("sem") or 5, p.get("section") or "A")
+    if why:
+        raise BadInput(why)
+    return {"scope": "class", "dept": cls[0], "sem": cls[1], "section": cls[2], "seed": seed}
 
 
 @app.get("/api/timetable/generate/stream")
@@ -448,7 +495,7 @@ def generate_stream(scope: str = "class", dept: str = "CSE", sem: int = 5,
 
 
 @app.post("/api/timetable/generate/apply")
-def generate_apply(payload: dict = Body(default={})):
+def generate_apply(request: Request, payload: dict = Body(default={})):
     """Commit a generated timetable. Re-solves with the same seed, then verifies."""
     a = _gen_args(payload)
     inp = solver.build_input(con, **a)
@@ -457,7 +504,7 @@ def generate_apply(payload: dict = Body(default={})):
     problems = solver.verify(con, scope=a["scope"], dept=a["dept"], sem=a["sem"],
                              section=a["section"])
     target = "the whole college" if a["scope"] == "all" else f"{a['dept']}-{a['sem']}{a['section']}"
-    Auditor().log(con, payload.get("actor", "admin"), "TimetableAgent", "timetable.generate",
+    Auditor().log(con, _who(request), "TimetableAgent", "timetable.generate",
                   {**a, "placed": res["placed"], "total": res["total"], "ms": res["ms"]},
                   "Applied" if not problems else f"Applied with {len(problems)} problem(s)")
     return {"ok": not problems, "target": target, "placed": res["placed"], "total": res["total"],
@@ -506,9 +553,17 @@ def requests_(status: str = ""):
 
 
 @app.post("/api/requests/{rid}/{decision}")
-def decide(rid: int, decision: str):
-    RequestAgent().decide(con, rid, "Approved" if decision == "approve" else "Rejected")
-    return {"ok": True}
+def decide(rid: int, decision: str, request: Request):
+    """The inbox buttons. The click is the Registrar's decision; the same
+    RequestAgent.decide as the chat applies the ceiling, refuses a decided
+    request, re-reads and audits it under the signed-in account (#71)."""
+    dec = {"approve": "Approved", "reject": "Rejected"}.get(decision)
+    if not dec:
+        return JSONResponse({"error": f"'{decision}' is not a decision — approve or reject."}, status_code=400)
+    r, why, denied = RequestAgent().decide(con, rid, dec, actor=request.state.user["id"])
+    if why:
+        return JSONResponse({"error": why}, status_code=403 if denied else 409)
+    return {"ok": True, "status": r["status"]}
 
 
 @app.get("/api/overrides")
@@ -524,6 +579,21 @@ def overrides():
 @app.get("/api/notifications")
 def notifications():
     return rows(con, "SELECT * FROM notifications ORDER BY id DESC LIMIT 40")
+
+
+@app.post("/api/notifications/retry")
+def notifications_retry(request: Request):
+    """Hand every Queued or Failed notice to the gateway again (#26).
+
+    Registrar-only (not in auth.PUBLIC or ANY_USER). It re-sends messages the
+    gate already approved; it writes nothing of the institution's own.
+    """
+    out = notify_gateway.retry(con)
+    who = (getattr(request.state, "user", None) or {}).get("id") or "operator-token"
+    Auditor().log(con, who, "NotifyAgent", "notify.retry",
+                  {k: out[k] for k in ("retried", "accepted", "failed")},
+                  "ok" if not out["failed"] else "partial")
+    return out
 
 
 @app.get("/api/audit")

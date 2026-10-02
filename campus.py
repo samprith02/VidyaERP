@@ -261,6 +261,36 @@ def t_library_search(con, S, U, query="", **kw):
             "trace": [("LibraryAgent", "catalogue_search", f"'{query[:40]}' → {len(hits)} title(s)")]}
 
 
+def t_library_loans(con, S, U, member="", **kw):
+    """One member's books on loan, by title, with due dates and fines (#91).
+    Read-only. Student 360 only ever gave a count, so "which book has he
+    borrowed?" had no tool that could answer it."""
+    la = LibraryAgent()
+    mem, err = la.member(con, member)
+    if err:
+        return {"data": err, "blocks": [B_text(err["error"])], "trace": []}
+    loans = []
+    for l in la.active(con, mem["id"]):
+        d = la.days_over(l)
+        loans.append({"book": l["book_id"], "title": l["title"], "issued_on": l["issued_on"],
+                      "due_on": l["due_on"], "days_overdue": d, "fine": la.fine(l),
+                      "status": "Overdue" if d else "On loan"})
+    fine = sum(x["fine"] for x in loans)
+    head = (f"**{mem['name']}** ({mem['id']}) has **{len(loans)} book{'s' if len(loans) != 1 else ''}** on loan"
+            + (f", **{inr(fine)}** in fines" if fine else "") + "." if loans else
+            f"**{mem['name']}** ({mem['id']}) has no books on loan.")
+    blocks = [B_text(head)]
+    if loans:
+        blocks.append(B_table(["Book", "Title", "Issued", "Due", "Status", "Fine"],
+                              [[x["book"], x["title"], x["issued_on"], x["due_on"],
+                                f"{x['status']} ({x['days_overdue']} days)" if x["days_overdue"] else x["status"],
+                                inr(x["fine"]) if x["fine"] else "—"] for x in loans], dense=True))
+    return {"data": {"member": mem["id"], "name": mem["name"], "kind": mem["kind"], "loans": loans,
+                     "total_fine": fine, "fine_per_day": cd.FINE_PER_DAY},
+            "blocks": blocks,
+            "trace": [("LibraryAgent", "member_loans", f"{mem['id']}: {len(loans)} on loan · {inr(fine)} fines")]}
+
+
 def t_library_overdue(con, S, U, dept=None, **kw):
     od = LibraryAgent().overdue(con, dept.upper() if dept else None)
     fines = sum(o["fine_due"] for o in od)
@@ -1472,6 +1502,9 @@ def t_student_360(con, S, U, usn="", **kw):
     certs = rows(con, "SELECT * FROM certificates WHERE usn=? ORDER BY id DESC", (s["usn"],))
     nd = DocumentAgent().no_dues(con, s["usn"])
     short = [a for a in att if a["held"] and 100 * a["attended"] / a["held"] < 75]
+    import academics                         # lazily: academics imports this module
+    cie = academics.t_cie_marks(con, S, "", usn=s["usn"])["data"].get("subjects", [])
+    cie_risk = [c for c in cie if c["status"] in academics.RISKY]
     life = [f"**Mentor** {fac_name(con, s['mentor'])}",
             f"**Hostel** {h['room']}, {h['block']}" if h else ("**Hostel** waitlisted" if s["hostel"] else "**Day scholar**"),
             f"**Bus** {t['route']} {t['rname']} from {t['stop']}" if t else None,
@@ -1482,6 +1515,7 @@ def t_student_360(con, S, U, usn="", **kw):
     return {"data": {"usn": s["usn"], "name": s["name"], "class": _cls(s), "cgpa": s["cgpa"],
                      "attendance": s["attendance"], "backlogs": s["backlogs"], "fee_due": s["fee_due"],
                      "subjects_below_75": [a["subject"] for a in short],
+                     "cie_at_risk": [c["subject"] for c in cie_risk],
                      "hostel": h["room"] if h else None, "bus": t["route"] if t else None,
                      "books_on_loan": len(loans), "offers": [o["company"] for o in offers],
                      "no_dues_clear": all(i["ok"] for i in nd)},
@@ -1496,12 +1530,17 @@ def t_student_360(con, S, U, usn="", **kw):
                        B_bars([{"label": f"{a['subject']} {a['sname']}", "value": a["attended"], "max": a["held"],
                                 "pct": round(100 * a["attended"] / a["held"], 1) if a["held"] else 0}
                                for a in att], title="Subject-wise attendance (hours attended / held)", unit="hrs"),
+                       B_table(["Course", "Secured", "Projected", "Standing"],
+                               [[f"{c['subject']} {c['name']}", f"{c['secured']:g}/{academics.CIE_MAX}",
+                                 "—" if c["projected"] is None else f"{c['projected']:g}", c["status"]] for c in cie],
+                               title=f"Internal marks (CIE) · {len(cie_risk)} course(s) at risk", dense=True),
                        B_checklist(nd, title="No-dues position")]
                       + ([B_table(["Pass", "Type", "Out", "Status"], [[p["id"], p["kind"], _when(p["out_at"]),
                                                                        p["status"]] for p in passes],
                                   title="Recent gate passes", dense=True)] if passes else []),
             "trace": [("StudentAgent", "record_fetch", s["usn"]),
                       ("AttendanceAgent", "subject_rollup", f"{len(att)} subjects · {len(short)} below 75%"),
+                      ("ExamAgent", "cie_read", f"{len(cie)} course(s) · {len(cie_risk)} at risk"),
                       ("LibraryAgent", "member_loans", f"{len(loans)} on loan"),
                       ("HostelAgent", "allocation", h["room"] if h else "none"),
                       ("TransportAgent", "pass", t["route"] if t else "none"),
@@ -1599,6 +1638,22 @@ def t_ops_radar(con, S, U, **kw):
             "SEE eligibility check", short)
     tr.append(("ExamAgent", "eligibility_scan", f"{short} below 75%"))
 
+    # CIE (#32): marks the SEE eligibility check depends on, and who they leave short
+    import academics                         # lazily: academics imports this module
+    late = academics.overdue_entries(con)
+    if late:
+        add("high" if max(x["overdue_days"] for x in late) >= 3 else "medium", "Examinations", "ExamAgent",
+            f"{len(late)} CIE marks entries overdue", ", ".join(f"{x['subject']} {x['cls']} {x['component']}"
+                                                               for x in late[:3]),
+            "Which internal marks are still to be entered?", len(late))
+    risk = academics.cie_risk(con)
+    if risk and first:
+        add("high" if any(r["status"] == "Cannot reach" for r in risk) else "medium", "Examinations", "ExamAgent",
+            f"{len({r['usn'] for r in risk})} students on course to miss the CIE minimum",
+            f"{len(risk)} student-course pairs · SEE from {first}", "Internal marks: who is at risk?",
+            len({r["usn"] for r in risk}))
+    tr.append(("ExamAgent", "cie_scan", f"{len(late)} entries overdue · {len(risk)} pairs at risk"))
+
     rank = {"high": 0, "medium": 1, "low": 2}
     items.sort(key=lambda x: (rank[x["severity"]], -x["records"]))
     n = sum(i["records"] for i in items)
@@ -1656,6 +1711,10 @@ REGISTRY = [
     (t_library_overview, "library_overview", "Library circulation: loans, overdue, fines, titles fully out.", _p({})),
     (t_library_search, "library_search", "Search the library catalogue by title, subject, author or BK id.",
      _p({"query": _S}, ["query"])),
+    (t_library_loans, "library_loans",
+     "One member's books on loan (USN, staff name or staff id): title, BK id, issued, due date, days "
+     "overdue and fine. Read-only. Use this, not student_360, for 'which book has X borrowed', 'X's fine', "
+     "'when is X's book due'.", _p({"member": _S}, ["member"])),
     (t_library_overdue, "library_overdue", "Overdue loans with fines, optionally for one department.",
      _p({"dept": _S})),
     (t_issue_book, "issue_book",
@@ -1717,8 +1776,9 @@ GATED_WRITES = ("issue_book", "return_book", "library_remind_overdue", "allocate
 TOOL_GROUPS = {
     "ops.radar":    ["ops_radar", "institution_overview", "review_pending_leaves", "gate_pass_queue",
                      "list_requests"],
-    "student.360":  ["student_360", "no_dues_status", "student_lookup"],
-    "library":      ["library_overview", "library_search", "library_overdue", "issue_book", "return_book",
+    "student.360":  ["student_360", "no_dues_status", "student_lookup", "library_loans"],
+    "library":      ["library_loans", "library_overview", "library_search", "library_overdue", "issue_book",
+                     "return_book",
                      "library_remind_overdue"],
     "hostel":       ["hostel_status", "hostel_complaints", "allocate_hostel_room",
                      "dispatch_hostel_complaints", "student_360"],
@@ -1742,6 +1802,20 @@ for _fn, _name, _d, _s in REGISTRY:
 
 
 # ================================================================ rule routing
+LOANS_RX = re.compile(r"\bborrow(?:ed|ing|s)?\b|\bon loan\b|\bloans?\b|\bfines?\b|\boverdue\b|"
+                      r"\bbooks?\b[^.?!]{0,40}\b(?:due|returned|holding|has|have|got|taken|checked out)\b|"
+                      r"\bdue\b[^.?!]{0,40}\bbooks?\b")
+ASK_RX = re.compile(r"\?|\b(?:which|what|when|how much|how many|show|list|tell me|can you tell|"
+                    r"could you tell|does|did|has|have)\b")
+
+
+def loans_question(text):
+    """Is this a question about books someone holds (not an order to issue or
+    return one)? Shared by the Registrar's and the portal's rule routing."""
+    t = (text or "").lower()
+    return bool(LOANS_RX.search(t) and ASK_RX.search(t))
+
+
 def rule_route(con, intent, text, ent):
     """The deterministic engine's half: utterance -> (tool, args). Execution
     goes through tools.execute like every other caller, so the rule engine and
@@ -1754,6 +1828,11 @@ def rule_route(con, intent, text, ent):
     if intent == "student.360":
         return "student_360", {"usn": usn or ""}
     if intent == "library":
+        # A QUESTION about one member's loans is a read (#91). Before this,
+        # "when does the book borrowed by <USN> need to be returned?" staged
+        # return_book, a write that checks the books in.
+        if loans_question(text) and (usn or ent.get("faculty")):
+            return "library_loans", {"member": usn or ent["faculty"]["name"]}
         if re.search(r"remind|reminder|nudge|notify|chase", t):
             return "library_remind_overdue", {}
         if re.search(r"\breturn", t):

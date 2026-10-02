@@ -33,7 +33,7 @@ key into `.env` (gitignored) and the LLM agent takes over — same guardrails ei
 ## Architecture in one pass
 
 `app.py` routes → `orchestrator.py` (rule engine) **or** `llm_agent.py` (model plans and calls
-tools) → `tools.py` (59 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
+tools) → `tools.py` (64 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
 + `portal.py` (the specialists). Everyone signs in first (`auth.py`).
 
 | Piece | Where | Note |
@@ -44,7 +44,10 @@ tools) → `tools.py` (59 tool schemas, PolicyGuard-wrapped, role policy enforce
 | Auditor | `agents.py` (`class Auditor`) | immutable ledger of who asked, which agent acted, what changed |
 | Campus services | `campus.py` | library, hostel, transport, gate pass, placement, documents, leave review, Student 360, Ops radar — tools + `rule_route` |
 | Campus data | `campus_data.py` | their tables + seed, own `Random`; `ensure()` is additive to an old DB |
+| Academics | `academics.py` | standing faculty availability (#19) and CIE marks (#32): seeds, read tools, gated writes, `rule_route` |
 | Academics | `academics.py` | standing faculty availability (#19): seed, read tool, gated write, `rule_route` |
+| Accreditation | `accreditation.py` | NAAC / NBA evidence (#29): one read tool, every figure sourced, every gap named |
+| Notice delivery | `notify_gateway.py` | `NotifyAgent.dispatch` records, commits, then hands off: webhook / outbox / none (#26) |
 | Sign-in | `auth.py` | principals from the data, PBKDF2, hashed session tokens, `gate()` for every route |
 | Role policy | `access.py` | default-deny per role; rules that NARROW arguments or refuse |
 | Self-service | `portal.py` | student / faculty / HOD tools + rule routing; acts only for `S["user"]` |
@@ -60,8 +63,8 @@ the exception on the rule side: `orchestrator.h_campus` picks a tool with `campu
 runs it through `tools.execute`, so for them all three callers share one path. The parity that is
 actually enforced is between the **LLM agent and MCP** — both reach `tools.execute` and cannot
 differ, which is what `tests/mcp_parity.py` asserts.
-`tools.select_tools()` narrows 59 tools to 3–8 per utterance (a non-admin is offered exactly their role's menu) —
-−91% tool-schema bytes on the README's 40 example requests (`docs/charts/results.json`; this replaces an
+`tools.select_tools()` narrows 64 tools to 3–9 per utterance (a non-admin is offered exactly their role's menu) —
+−92% tool-schema bytes on the README's 40 example requests (`docs/charts/results.json`; this replaces an
 older, unsourced −64%). Free tiers are stingy and this is what keeps multi-hop turns
 inside the budget.
 
@@ -69,10 +72,10 @@ inside the budget.
 
 ## Rules that matter here
 
-- **Writes are guarded, and the guard is in code, not in the prompt.** *Twenty* write tools —
+- **Writes are guarded, and the guard is in code, not in the prompt.** *Twenty-one* write tools —
   `tools.GATED_WRITES`: the five core ones (`apply_coverage_plan`, `apply_timetable_generation`,
   `decide_request`, `create_request`, `broadcast_notice`), the eleven in `campus.GATED_WRITES`, the
-  three in `portal.GATED_WRITES` and the one in `academics.GATED_WRITES` (parity-probed in
+  three in `portal.GATED_WRITES` and the two in `academics.GATED_WRITES` (parity-probed in
   `mcp_parity.py` section 18)
   — refuse to commit without explicit admin approval *in the current turn*
   (`guard.approved_this_turn`, re-exported as `tools.approved_this_turn`). `tests/mock_llm.py` has a
@@ -99,6 +102,13 @@ inside the budget.
   gate, never a shortcut. After committing, a campus tool re-reads what it wrote before reporting.
 - **Module pages are read-only by construction.** `/api/panel/{name}` serves only names in
   `app.PANELS` (reads) and passes `U=""`. `campus_test.py:10a` fails if a gated write is ever listed.
+- **Kannada / Hindi input is translated, approvals are not (#31).** `nlu.normalize` reads
+  `nlu.LEXICON` as English at the top of `orchestrator.handle` (and in `tools.select_tools`), so
+  every rule after it is unchanged. **No lexicon entry may produce an approval word**
+  (`language_test.py:1g`), and ಹೌದು / हाँ / haan with a proposal pending get an explanation, not a
+  commit. Do not add native confirmations to `CONFIRM_YES` or `guard.APPROVAL_RX`. Leave out
+  romanised forms that are common names ("Indu" = today). Write Kannada/Hindi source with the file
+  tools: the shell turned `\u0900` escapes into literal characters once.
 - **Radar commands must never contain approval words.** An Ops-radar button sends its sentence as
   the admin's turn; if it said "approve", one click would commit. `campus_test.py:9e` checks every
   one. Same reason `#ask=` deep links carrying approval words are only pre-filled (`10d` keeps the
@@ -147,6 +157,12 @@ inside the budget.
   by driving the portal in a browser. The Registrar's tools keep the older rule on purpose
   ("approve 3" is an instruction). Self-service tools read the person from `S["user"]`, never from
   an argument.
+- **A request is decided in one place: `RequestAgent.decide` (#70, #71).** The chat tool, the rule
+  engine (single and bulk) and the inbox buttons all call it. It refuses a missing or decided
+  request and an approval above `PolicyGuard.APPROVAL_CEILING` (₹5,00,000 — a `DENIED`/warn, the
+  guard working), re-reads, and audits old → new under the account. The ceiling used to exist only
+  as trace text ("ceiling respected") on every path. Never print a guard's verdict you did not
+  compute; `auth_test.py` section 6.
 - **`VIDYAERP_ADMIN_TOKEN`** remains the non-session way into the two operator endpoints — an open
   approval endpoint would hand the MCP write gate to whoever found it.
 - **The real environment beats `.env`.** `llm.py`'s config reads `os.environ` first and `.env`
@@ -163,6 +179,12 @@ inside the budget.
   generic class name across components:** timetable activity cells were once `.act`, the same
   class as the Autopilot rows, and the rows' grid crushed every activity cell into three
   columns. They are `.actv` now.
+- **Every record field a page puts into `innerHTML` goes through `esc()` (#85).** A student's
+  certificate purpose once reached the Registrar's inbox raw: through the LLM engine, a student
+  could run script in the Registrar's session and "approve" gated writes as them. `blocks.js`,
+  the execution log and the mesh always escaped; the console's hand-written tables did not.
+  `auth_test.py` 8a/8b scan both pages for a bare `${x.title}`-style interpolation of any field
+  that can carry a person's words, so escape it even when today's data is seeded.
 - **`static/index.html` loads nothing external** — no CDN, no fonts, no images. Keep it that way;
   it is why the console works offline and on a locked-down college network. The 3D agent mesh is
   therefore a hand-rolled perspective projection on a 2D canvas (`static/mesh.js`, served locally),
@@ -227,6 +249,13 @@ ships a timetable back.
   `--screenshot` cannot carry a session cookie, and headless Edge stops firing animation frames
   after ~100 — which is why `mesh.js` also steps from a timer when frames stall.
 
+- **A request that names nothing real is refused, never "done" as an empty set (#89, #90).**
+  `solver.resolve_class` is the one answer to "does this section run?" (`solver.classes`, the
+  list `build_input` itself uses), and both `tools._gen_scope` and `app._gen_args` go through it.
+  Before, "rebuild cse-5a" (a model's lower case) or NOPE-5A planned 0 of 0, applied, and
+  `solver.verify` honestly re-read an empty set as "clean". At the HTTP boundary, `app._text`
+  and `BadInput` turn a wrong-typed value into a 400 with a sentence; it used to be a bare 500,
+  including on the public login endpoint (`deploy_test.py` section 6).
 - **Always pass `encoding="utf-8"` to `open()`.** Windows defaults to cp1252 and the console
   contains typographic quotes and `·` separators. `app.py` served a 500 on the whole page for
   exactly this reason.
@@ -260,6 +289,10 @@ ships a timetable back.
   was not, so `/api/seed/reset` on a running server rebuilt a *different* institution from the one
   it booted with. The core tables are fingerprinted in `campus_test.py` (`CORE_BEFORE`, `1a`); if
   you change the core generator on purpose, re-record them.
+- **A new table must be dropped in `db.SCHEMA` too (#64).** Tables created lazily with
+  `CREATE TABLE IF NOT EXISTS` survive `db.seed(force=True)` unless `SCHEMA` drops them.
+  `makeup_sessions` and `faculty_availability` once did: after `/api/seed/reset` a booking whose
+  plan the reset had deleted still held its teacher busy (`makeup_test.py` section 8).
 - **Campus data draws from its own `Random`, after the core seed.** Never let `campus_data.py`
   touch the global stream — `1a` is what notices if it does.
 - **`college.db` is gitignored on purpose.** `db.seed()` reproduces the seeded data exactly
@@ -283,16 +316,21 @@ ships a timetable back.
 ## Tests
 
 ```bash
-python tests/solver_test.py    # 44 assertions, no server, no API cost
-python tests/mcp_parity.py     # 263 assertions, no server, no API cost
-python tests/campus_test.py    # 122 assertions, no server, no API cost
+python tests/solver_test.py    # 53 assertions, no server, no API cost
+python tests/mcp_parity.py     # 270 assertions, no server, no API cost
+python tests/campus_test.py    # 160 assertions, no server, no API cost
 python tests/mesh_test.py      # 25 assertions, no server, no API cost (6a-6c need node)
-python tests/auth_test.py      # 77 assertions, no server, no API cost
-python tests/makeup_test.py    # 30 assertions, no server, no API cost
+python tests/auth_test.py      # 108 assertions, no server, no API cost
+python tests/makeup_test.py    # 33 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
-python tests/deploy_test.py    # 68 assertions, no server, no API cost
-python tests/nlu_test.py       # 24 assertions, no server, no API cost
+python tests/deploy_test.py    # 79 assertions, no server, no API cost
+python tests/nlu_test.py       # 49 assertions, no server, no API cost
+python tests/language_test.py  # 19 assertions, no server, no API cost
+python tests/cie_test.py       # 59 assertions, no server, no API cost
+python tests/accreditation_test.py # 28 assertions, no server, no API cost
+python tests/risk_test.py      # 17 assertions, no server, no API cost
+python tests/notify_test.py    # 50 assertions, no server, no API cost (a stub gateway on loopback)
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)
@@ -386,6 +424,17 @@ and room scarcity must degrade rather than collapse.
 - **An ISO date is parsed before the Indian dd-mm form (#55).** Without that branch, the dd-mm
   pattern matched the `09-08` inside `2026-09-08` and returned 9 August, a Sunday, so the reply
   was "no coverage needed". `nlu_test.py` section 4 pins it.
+- **"for Saturday" is a date too (#61), and a gate pass may be on Sunday.** `parse_date` reads
+  `for <weekday>` (whole words only: "for months" and "for Mondays" are not dates). The portal's
+  gate-pass route falls back to a bare weekday and resolves it with `nlu.next_occurrence`, which
+  includes Sunday — the parser's no-Sunday rule is about classes, and a weekend home visit is
+  Sat → Sun. "home" no longer sends a home-visit request to the home screen (#62).
+  `nlu_test.py` section 6 pins both.
+- **An NLU keyword must start a word (#68).** `nlu.classify` used plain substrings, so `cie` fired
+  inside "Computer *Science*" and the broadcast rule's `^inform` matched "*Inform*ation Science
+  sem 5 timetable" — the ISE department's own name drafted a circular. `nlu._kw_rx` anchors every
+  keyword at a word start; `WHOLE_WORD` verbs (`inform`, `drive`) must also end at one. A new
+  keyword that is the start of an unrelated noun belongs in `WHOLE_WORD`. `nlu_test.py` section 0.
 - **A booked make-up holds its teacher for every planner (#54).** `busy_faculty` counts
   `makeup_sessions`. Before this, only other make-up searches saw a booking, and plan B made a
   teacher a swap partner at the hour they owed their own make-up (`makeup_test.py:6h`).
@@ -421,6 +470,12 @@ and room scarcity must degrade rather than collapse.
 - **Attendance is a single independent draw per student** — `random.gauss(80, 12)` clamped to
   [46, 99] (`db.py`, students insert). It carries no correlation with CGPA, backlogs, subject or
   semester, so any "attendance risk" analytics are structurally shallow.
+- **The early-warning list is rule-based, not predictive (#79).** `StudentAgent.risk` scores
+  every student on measured signals with `agents.RISK_SIGNALS` weights and `RISK_BANDS` floors —
+  policy, pinned by `risk_test.py:1f` and printed with every list. It inherits the attendance
+  weakness above, and nothing in the data can validate it (no dropout or result outcomes), so
+  never call it a prediction; #30 stays open for that. It counts in full: it once ended in
+  `LIMIT 25` and the answer reported that as the number of students at risk.
 - **Per-subject attendance is derived, not observed.** Since 2026-09-25 `campus_data` fills the
   `attendance` table, reconciled so each student's hours-weighted mean reproduces
   `students.attendance` (±0.5, `campus_test.py:1f`). It refines the headline; it inherits its
@@ -430,8 +485,43 @@ and room scarcity must degrade rather than collapse.
 - **The gate-pass, circulation and placement rules are policy constants** (`CURFEW`,
   `OUTING_CLASS_HOURS_BAR`, `LOAN_LIMIT`, `FINE_PER_DAY`, `DREAM_MULTIPLE`), stated in the console
   and pinned by tests. They are one college's plausible policy, not findings.
-- **Campus notifications are recorded, not delivered.** Like every notice here, they land in the
-  `notifications` table; there is no SMS/email gateway.
+- **The CIE scheme is a policy constant, and so is "at risk" (#32).** `academics.CIE_SCHEME` /
+
+  `CIE_MIN` (average of two IA tests /25 + assignment /25; lab record /30 + lab test /20; 20/50 to sit
+
+  the SEE) are one college's plausible policy, printed under every CIE answer. *Projected* extends
+
+  the rate so far, so before the assignment is in, "at risk" means an IA average below 40%. The
+
+  seeded marks are drawn from CGPA and per-subject attendance (`cie_test.py:1g` asserts r > 0.3),
+
+  which means they inherit the attendance weakness above. The teacher of record is whoever takes
+
+  most of a course's periods in the *current* timetable, so a rebuild moves the register with it.
+
+  SEE results and SGPA are not modelled yet.
+
+- **A notice is delivered only if a gateway is configured (#26).** Every notice lands in
+
+  `notifications` first. With no `VIDYAERP_NOTIFY_URL` its status is `Recorded`; it used to say
+
+  `Sent`, which was false (#83). With one, `notify_gateway.deliver` hands the batch over AFTER
+
+  the write commits: `Accepted` / `Failed`, never raising, so a dead gateway cannot undo or hide a
+
+  write. `tools.execute` collects each call's deliveries (`notify_gateway.begin/end`, a per-thread
+
+  stack) and appends a NotifyAgent `deliver` step, `status: "error"` on a failure; the rule
+
+  engine's own dispatches do the same through `orchestrator._delivered`. **Never store or return
+
+  `str(e)` from a delivery failure**: an `HTTPError` carries the URL, which may carry a token
+
+  (`_why`, pinned by `notify_test.py` 7a-7c). A token is never sent over plain http except to the
+
+  loopback interface. There is no SMS/email/WhatsApp code here on purpose: the gateway owns the
+
+  last mile and the recipient lookup, which keeps phone numbers out of this repo.
 - **The fee-structure certificate uses synthetic fee heads** (`campus.FEE_HEADS`), and every
   printed document carries a footer saying it is a specimen from synthetic data.
 

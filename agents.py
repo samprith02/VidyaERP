@@ -91,6 +91,9 @@ def B_bars(items, title=None, unit=""):
 class PolicyGuard:
     """RBAC + scope + safety. Admin persona has institution-wide read, gated write."""
     WRITE_INTENTS = {"absence.cover", "request.manage", "notify.broadcast"}
+    # The Registrar's financial delegation (#71): a request above it is the
+    # Principal's to approve. A policy constant, enforced in RequestAgent.decide.
+    APPROVAL_CEILING = 500_000
     ROLE_SCOPE = {
         "admin":     {"read": "*", "write": {"timetable_override", "approve_request", "broadcast",
                                              "raise_request", "leave_decision"}},
@@ -1078,10 +1081,52 @@ class StudentAgent:
         if sem:  q += " AND sem=?";  a.append(sem)
         return rows(con, q + " ORDER BY attendance ASC", tuple(a))
 
-    def risk(self, con):
-        return rows(con, """SELECT * FROM students
-                            WHERE attendance<70 AND (cgpa<6.5 OR backlogs>0)
-                            ORDER BY attendance ASC LIMIT 25""")
+    def risk(self, con, dept=None, sem=None, mentor=None):
+        """The early-warning index (#79): every student with at least one
+        signal, scored and banded, UNCAPPED - the caller decides how many to
+        show, never how many there are. It once returned LIMIT 25 and the
+        answer reported len() of that as the count.
+
+        Rule-based, not a prediction: there are no dropout or failure outcomes
+        in this data to train or validate against (#30). Each signal is
+        measured per student; the weights are policy (RISK_SIGNALS)."""
+        q, a = "SELECT * FROM students WHERE 1=1", []
+        for col, v in (("dept", dept), ("sem", sem), ("mentor", mentor)):
+            if v:
+                q += f" AND {col}=?"
+                a.append(v)
+        studs = rows(con, q, tuple(a))
+        subj = {}
+        if one(con, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='attendance'"):
+            subj = {r["usn"]: r["n"] for r in rows(con, """SELECT usn, COUNT(*) n FROM attendance
+                                                           WHERE held>0 AND 100.0*attended/held < 75 GROUP BY usn""")}
+        cie = set()
+        import academics                     # lazily: academics imports this module
+        if hasattr(academics, "cie_risk"):   # the CIE register, once it exists (#32)
+            cie = {r["usn"] for r in academics.cie_risk(con, dept, sem)}
+        test = {"att75": lambda s: s["attendance"] < 75, "att60": lambda s: s["attendance"] < 60,
+                "subj": lambda s: subj.get(s["usn"], 0) >= 2, "backlog": lambda s: (s["backlogs"] or 0) > 0,
+                "cgpa": lambda s: s["cgpa"] < 6.0, "fees": lambda s: (s["fee_due"] or 0) > 50_000,
+                "cie": lambda s: s["usn"] in cie}
+        out = []
+        for s in studs:
+            sig = [(label, w) for key, label, w in RISK_SIGNALS if test[key](s)]
+            if not sig:
+                continue
+            score = sum(w for _l, w in sig)
+            band = next(b for b, floor in RISK_BANDS if score >= floor)
+            out.append({**s, "score": score, "band": band, "signals": [label for label, _w in sig],
+                        "subjects_below_75": subj.get(s["usn"], 0)})
+        return sorted(out, key=lambda r: (-r["score"], r["attendance"], r["usn"]))
+
+
+# The early-warning index's signals and weights (#79). POLICY, not findings:
+# declared once, printed with every list. (key, label, weight)
+RISK_SIGNALS = (("att75", "attendance below 75%", 3), ("att60", "attendance below 60%", 2),
+                ("subj", "2+ subjects below 75%", 1), ("backlog", "backlogs", 2),
+                ("cgpa", "CGPA below 6.0", 2), ("fees", "fee due above ₹50,000", 1),
+                ("cie", "CIE minimum at risk", 2))
+RISK_BANDS = (("High", 5), ("Medium", 3), ("Watch", 1))
 
 
 class FinanceAgent:
@@ -1125,9 +1170,33 @@ class RequestAgent:
         con.commit()
         return cur.lastrowid
 
-    def decide(self, con, rid, decision):
-        con.execute("UPDATE requests SET status=? WHERE id=?", (decision, rid))
+    def decide(self, con, rid, decision, actor="registrar"):
+        """The one way a request is decided - the chat tool, the rule engine
+        (single and bulk) and the inbox buttons all come here (#71).
+
+        Refuses a request that does not exist, one already decided, and an
+        approval above PolicyGuard.APPROVAL_CEILING. Writes only a Pending row,
+        re-reads it, and audits old -> new with who decided.
+        -> (row after, None, False), or (None, reason, denied) where denied is
+        True for the ceiling - PolicyGuard refusing, not the agent failing."""
+        if decision not in ("Approved", "Rejected"):
+            return None, f"'{decision}' is not a decision — approve or reject.", False
+        r = one(con, "SELECT * FROM requests WHERE id=?", (rid,))
+        if not r:
+            return None, f"No request with ID {rid}.", False
+        if r["status"] != "Pending":
+            return None, f"REQ-{rid:04d} was already {r['status'].lower()}; a decided request is not re-decided here.", False
+        cap = PolicyGuard.APPROVAL_CEILING
+        if decision == "Approved" and (r["amount"] or 0) > cap:
+            return None, (f"REQ-{rid:04d} is for ₹{r['amount']:,}, above the Registrar's ₹{cap:,} delegation — "
+                          f"it needs the Principal's approval."), True
+        con.execute("UPDATE requests SET status=? WHERE id=? AND status='Pending'", (decision, rid))
         con.commit()
+        back = one(con, "SELECT * FROM requests WHERE id=?", (rid,))
+        Auditor().log(con, actor, self.name, "request.decide",
+                      {"id": rid, "was": r["status"], "now": back["status"], "amount": r["amount"]},
+                      "Applied" if back["status"] == decision else "Failed")
+        return back, (None if back["status"] == decision else f"REQ-{rid:04d} re-read as {back['status']}."), False
 
 
 class NotifyAgent:
@@ -1167,12 +1236,22 @@ class NotifyAgent:
         return msgs
 
     def dispatch(self, con, msgs):
+        """Record every notice, commit, then hand them to the gateway (#26).
+
+        The rows are committed BEFORE delivery is attempted, so a gateway that
+        is down can never undo or hide the write that produced them; it marks
+        them Failed instead. The status says what happened, never "Sent" (#83).
+        """
+        import notify_gateway
+        status, ids = notify_gateway.initial_status(), []
         for m in msgs:
-            con.execute("""INSERT INTO notifications(audience,channel,title,body,created_at,status)
-                           VALUES(?,?,?,?,?,?)""",
-                        (m["audience"], m["channel"], m["title"], m["body"],
-                         dt.datetime.now().isoformat(timespec="seconds"), "Sent"))
+            cur = con.execute("""INSERT INTO notifications(audience,channel,title,body,created_at,status)
+                                 VALUES(?,?,?,?,?,?)""",
+                              (m["audience"], m["channel"], m["title"], m["body"],
+                               dt.datetime.now().isoformat(timespec="seconds"), status))
+            ids.append(cur.lastrowid)
         con.commit()
+        return notify_gateway.deliver(con, ids)
 
 
 class AnalyticsAgent:

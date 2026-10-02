@@ -39,7 +39,7 @@ const RED = '#D93A2B', AMBER = '#D97706', GREEN = '#1C7A4B', VIOLET = '#6A3DB8';
 const CATALOG = {
   'Supervisor':        {g: 'core', role: 'Receives every request, routes it through the mesh and composes the answer.', ask: 'What needs my attention today?'},
   'Router':            {g: 'core', role: 'Rule-engine intent classifier: keyword scoring plus regex priority rules.'},
-  'ToolRouter':        {g: 'core', role: 'Narrows 47 tools to the handful an utterance can need, and picks one on the rule engine.'},
+  'ToolRouter':        {g: 'core', role: 'Narrows the tool list to the handful an utterance can need, and picks one on the rule engine.'},
   'EntityResolver':    {g: 'core', role: 'Resolves faculty names, USNs, departments, semesters and Indian date phrases.'},
   'LLM Planner':       {g: 'core', role: 'The language model planning tool calls (LLM engine only).'},
   'ToolBus':           {g: 'core', role: 'Carries each tool call from the planner to the agent that owns it.'},
@@ -68,6 +68,7 @@ const CATALOG = {
   'NotifyAgent':       {g: 'ops',  role: 'Drafts and dispatches notices. Recorded, not delivered - there is no gateway.'},
   'AnalyticsAgent':    {g: 'ops',  role: 'Institution KPIs and the daily brief.', ask: 'Brief me on today\'s institution status'},
   'OpsRadar':          {g: 'ops',  role: 'Asks every agent what needs a human today and ranks the answers.', ask: 'What needs my attention today?'},
+  'IQACAgent':         {g: 'ops',  role: 'NAAC and NBA evidence computed from the records, with every gap named.', ask: 'NAAC evidence pack'},
 };
 const LAYOUTS = ['sphere', 'rings', 'flow', 'clusters'];
 const STORE = 'vidyaerp.mesh.v2';

@@ -306,6 +306,32 @@ out2 = orchestrator.handle(con, "apply plan A", "mk7", "admin", "registrar")
 check("7c a 'yes' after the question commits nothing",
       one(con, "SELECT COUNT(*) c FROM overrides")["c"] == before, str([b.get("md") for b in out2["blocks"]])[:160])
 
+# --------------------------------------------- 8 · a reset is a clean slate (#64)
+print("\n8 · a reset rebuilds bookings and standing windows from the seed (#64)")
+print("-" * 78)
+import academics                                                   # noqa: E402
+
+con.execute("""INSERT INTO makeup_sessions(date,day,period,dept,sem,section,subject,faculty,room,plan_ref,status,
+               created_at,created_by,reason) VALUES('2026-09-12','Sat',5,'CSE',5,'A','X','F001','SB-102',
+               'orphan','Scheduled','','test','t')""")
+con.execute("INSERT INTO faculty_availability(faculty,day,p_from,p_to,reason,status) "
+            "VALUES('F002','Mon',7,7,'reset probe','Active')")
+seeded = [tuple(r) for r in con.execute("SELECT * FROM faculty_availability WHERE created_by='seed' ORDER BY id")]
+con.execute("UPDATE faculty_availability SET status='Removed' WHERE created_by='seed'")
+con.commit()
+con.close()
+db.seed(force=True)
+con = db.connect()
+ensure_makeups(con)
+# Defect: SCHEMA dropped every table but these two, so a booking whose plan the
+# reset had deleted still held its teacher - and could never be undone.
+check("8a no make-up booking survives a reset", one(con, "SELECT COUNT(*) c FROM makeup_sessions")["c"] == 0,
+      str(rows(con, "SELECT plan_ref, faculty, date FROM makeup_sessions")))
+check("8b so the teacher it named is free again", "F001" not in sub.busy_faculty(con, "Sat", 5, "2026-09-12"))
+check("8c standing windows are exactly the seeded ones again",
+      [tuple(r) for r in con.execute("SELECT * FROM faculty_availability ORDER BY id")] == seeded,
+      str([tuple(r) for r in con.execute("SELECT faculty, day, reason, status FROM faculty_availability")]))
+
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")
 for f in FAILED:
