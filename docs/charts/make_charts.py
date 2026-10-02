@@ -486,9 +486,9 @@ column_chart("faculty_load.svg", "How loaded is each teacher?",
 
 # =========================================================== 5. the suites
 SUITES = ["mcp_parity", "campus_test", "auth_test", "deploy_test", "ranking_test", "solver_test",
-          "makeup_test", "mesh_test", "academics_test", "nlu_test"]
+          "makeup_test", "mesh_test", "academics_test", "nlu_test", "notify_test"]
 if "--tests" in sys.argv:
-    print("\n5 · running the ten no-server suites")
+    print(f"\n5 · running the {len(SUITES)} no-server suites")
     got = []
     for name in SUITES:
         t0 = time.perf_counter()

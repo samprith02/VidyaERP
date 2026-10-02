@@ -3,7 +3,7 @@ VidyaERP :: Orchestrator (Supervisor agent)
 Routes an utterance through the agent mesh and composes the response payload.
 """
 import re, json, datetime as dt
-import nlu, campus, tools, portal, academics
+import nlu, campus, tools, portal, academics, notify_gateway
 from nlu import TODAY, day_of
 from agents import *
 from agents import _span, plabel
@@ -176,8 +176,9 @@ def resolve_pending(con, text, st, tr, actor):
         v = sub.verify_plan(con, plan["id"], p["date"], sub.last_commit)
         tr.add("Auditor", "verify", sub.verify_line(v), status="ok" if v["ok"] else "error")
         msgs = notif.draft_absence(con, faculty, date, plan)
-        notif.dispatch(con, msgs)
-        tr.add("NotifyAgent", "dispatch", f"{len(msgs)} notification(s) queued (students, faculty, HOD)")
+        sent = notif.dispatch(con, msgs)
+        tr.add("NotifyAgent", "dispatch", f"{len(msgs)} notification(s) recorded (students, faculty, HOD)")
+        _delivered(tr, sent)
         # auto-log a leave record if none
         exists = one(con, "SELECT 1 FROM leaves WHERE faculty=? AND from_date<=? AND to_date>=?",
                      (faculty["id"], p["date"], p["date"]))
@@ -242,12 +243,11 @@ def resolve_pending(con, text, st, tr, actor):
             return {"blocks": [B_text("Broadcast cancelled — nothing was sent.")], "trace": tr.items,
                     "agent": "NotifyAgent", "intent": "notify.broadcast", "confidence": 90}
         if nlu.is_yes(text):
-            NotifyAgent().dispatch(con, p["msgs"])
+            sent = NotifyAgent().dispatch(con, p["msgs"])
             st["pending"] = None
-            tr.add("NotifyAgent", "dispatch", f"{len(p['msgs'])} channel(s) fired")
-            return {"blocks": [B_text(f"Sent to **{p['msgs'][0]['audience']}** over "
-                                      f"{p['msgs'][0]['channel']}. Delivery receipts will appear in "
-                                      f"Notifications.")],
+            tr.add("NotifyAgent", "dispatch", f"{len(p['msgs'])} notice(s) recorded")
+            _delivered(tr, sent)
+            return {"blocks": [B_text(notify_gateway.sentence(sent, p["msgs"][0]["audience"]))],
                     "trace": tr.items, "agent": "NotifyAgent", "intent": "notify.broadcast",
                     "confidence": 95, "refresh": True}
         return None
@@ -279,6 +279,13 @@ def resolve_pending(con, text, st, tr, actor):
 
     # undo
     return None
+
+
+def _delivered(tr, out):
+    """The rule engine's own dispatches report delivery the way tools.execute does (#26)."""
+    s = notify_gateway.step(out)
+    if s:
+        tr.add(*s)
 
 
 def _relay(tr, res, tool):
@@ -834,9 +841,9 @@ def h_request(con, text, ent, st, tr, actor):
         ra.decide(con, rid, dec)
         tr.add("PolicyGuard", "authority_check", f"admin may {dec.lower()} '{r['kind']}' requests up to ₹5,00,000")
         tr.add("RequestAgent", "decision", f"REQ-{rid:04d} → {dec}")
-        NotifyAgent().dispatch(con, [{"audience": r["raised_by"], "channel": "App + email",
+        _delivered(tr, NotifyAgent().dispatch(con, [{"audience": r["raised_by"], "channel": "App + email",
                                       "title": f"Your request '{r['title']}' was {dec.lower()}",
-                                      "body": f"Decision by Admin on {TODAY.isoformat()}."}])
+                                      "body": f"Decision by Admin on {TODAY.isoformat()}."}]))
         return {"blocks": [B_text(f"**REQ-{rid:04d} — {r['title']}** marked **{dec}**. "
                                   f"{r['raised_by']} has been notified and the ledger updated"
                                   f"{', budget head debited ' + inr(r['amount']) if dec=='Approved' and r['amount'] else ''}.")],

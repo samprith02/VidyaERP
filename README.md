@@ -5,7 +5,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![Dependencies: 2](https://img.shields.io/badge/dependencies-2-brightgreen.svg)](requirements.txt)
-[![Tests: 734 assertions](https://img.shields.io/badge/tests-734_assertions_passing-brightgreen.svg)](#tests)
+[![Tests: 784 assertions](https://img.shields.io/badge/tests-784_assertions_passing-brightgreen.svg)](#tests)
 [![Tools: 59, 20 gated](https://img.shields.io/badge/tools-59_·_20_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
 [![Data: synthetic](https://img.shields.io/badge/data-100%25_synthetic-lightgrey.svg)](NOTICE)
 
@@ -40,7 +40,7 @@ LLM client included, and the console is plain HTML with three local files (`stat
 
 | | | | |
 |:--|:--|:--|:--|
-| **16** specialist agents | **59** tools · **20** writes, every one gated | **734** test assertions, 0 failing | **2** dependencies |
+| **16** specialist agents | **59** tools · **20** writes, every one gated | **784** test assertions, 0 failing | **2** dependencies |
 | **271** absences swept: the top plan fully covers **268** | **456 / 456** periods placed by the solver, 0 clashes | **91%** less tool payload per LLM turn | **0** external assets in the console |
 
 Every number above is measured by [`docs/charts/make_charts.py`](docs/charts/make_charts.py) and
@@ -162,7 +162,7 @@ The trace shows exactly which of these happened:
 ### Tests
 
 <p align="center">
-  <img src="docs/charts/tests.svg" alt="Bar chart: 734 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 784 assertions across 11 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, notify_test 50, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24" width="760">
 </p>
 
 ```bash
@@ -176,6 +176,7 @@ python3 tests/academics_test.py # standing faculty availability, honoured by eve
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
 python3 tests/deploy_test.py  # deployment readiness: 68 assertions, no server, no API cost
 python3 tests/nlu_test.py     # date resolution, ISO dates included: 24 assertions, no server, no API cost
+python3 tests/notify_test.py  # notice delivery through a stub gateway: 50 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 python3 docs/charts/make_charts.py --tests   # re-measure everything and redraw this README's charts
@@ -335,7 +336,7 @@ sequenceDiagram
 ### The ranking, measured across every absence the timetable can produce
 
 Each of the 53 teachers made absent on each teaching day of one week gives **271 absences**
-(24.8 ms each to plan). The recommendation is spread across all three strategies. None of them is
+(10.7 ms each to plan). The recommendation is spread across all three strategies. None of them is
 a default that wins by construction:
 
 <p align="center">
@@ -363,7 +364,7 @@ arranged), and those cards are flagged **incomplete** on the page rather than ra
 | Plan B folded into plan A (identical committed rows) | 90 |
 | Top plan covers every hour | 268 of 271 |
 | Rank of the recommended plan | min 48.5 · median 94.7 · max 98.95 |
-| Planning time | 24.8 ms per absence |
+| Planning time | 10.7 ms per absence |
 
 </details>
 
@@ -839,6 +840,7 @@ VidyaERP/
 ├── access.py           per-role tool policy: default deny, rules that only ever narrow
 ├── portal.py           self-service tools for students, faculty and HODs
 ├── academics.py        standing faculty availability: seed, read and gated write (#19)
+├── notify_gateway.py   notice delivery: webhook or outbox file, honest status, never the URL (#26)
 ├── llm_agent.py        the LLM reasoning loop (plan → call tools → answer), with failover
 ├── mcp_server.py       MCP surface over stdio JSON-RPC: same tools, same gate, no SDK
 ├── requirements.txt    FastAPI + Uvicorn. That is the entire dependency list
@@ -865,6 +867,7 @@ VidyaERP/
     ├── auth_test.py    sign-in, every route's gate, per-role policy, self-service writes, session binding
     ├── makeup_test.py  make-ups booked and held, coverage commits verified by an independent re-read
     ├── academics_test.py standing availability: seeded consistently, honoured by solver and planners
+    ├── notify_test.py  notice delivery: one batch per dispatch, failures shown, blocked writes send nothing
     └── mock_llm.py     fake OpenAI endpoint + rogue-agent guard test
 ```
 
@@ -994,7 +997,7 @@ An unreachable database returns **503**, so a broken instance drops out of rotat
 serving errors behind a green tick. Nothing secret is in that payload: whether a key is
 configured, never what it is.
 
-### Three things that are true about a deployed instance
+### Four things that are true about a deployed instance
 
 Stated here rather than discovered later. None of them is dangerous; all of them decide how this
 may be used.
@@ -1015,6 +1018,15 @@ may be used.
   beside it, so Claude Desktop drives a *local* instance. An approval code minted on the Render
   box is only useful to an MCP client on that box. Driving a deployment over MCP would need an
   HTTP transport, which is not built.
+- **A notice is recorded, not delivered, until you configure a gateway (#26).** Every notice lands
+  in the `notifications` table with the status `Recorded`. Set `VIDYAERP_NOTIFY_URL` to an
+  `https://` endpoint (one JSON batch per dispatch, `VIDYAERP_NOTIFY_TOKEN` as a bearer token) or
+  to a `file://` path (one JSON line per notice, for an on-premise SMS or mail relay to tail).
+  Notices then read `Accepted` or `Failed`, a failure blinks NotifyAgent red in the mesh, and the
+  console offers a retry. The gateway owns the last mile: `Accepted` means it took the message,
+  not that a student read it. Delivery happens after the write commits, so a gateway that is down
+  never undoes or hides a write, and a write the gate blocks sends nothing. `/health` reports
+  `notifications.gateway` and never the URL or the token.
 
 **One worker, deliberately.** `app.py` holds a single module-level SQLite connection and
 `orchestrator.SESS` keeps conversation state in process memory, so a second worker would answer

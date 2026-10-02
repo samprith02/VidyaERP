@@ -229,7 +229,7 @@ CREATE TABLE requests(
   title TEXT, details TEXT, amount INT, status TEXT, priority TEXT, created_at TEXT, sla_hrs INT);
 CREATE TABLE notifications(
   id INTEGER PRIMARY KEY AUTOINCREMENT, audience TEXT, channel TEXT, title TEXT, body TEXT,
-  created_at TEXT, status TEXT);
+  created_at TEXT, status TEXT, attempts INT DEFAULT 0, delivered_at TEXT, error TEXT);
 CREATE TABLE audit(
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, actor TEXT, agent TEXT, action TEXT,
   payload TEXT, outcome TEXT);
@@ -547,6 +547,10 @@ def _campus():
     campus_data.ensure()
     import academics
     academics.ensure()
+    import notify_gateway                 # delivery columns on an older notifications table (#26)
+    con = connect()
+    notify_gateway.ensure(con)
+    con.close()
 
 
 # ====================================================================== check

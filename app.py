@@ -21,7 +21,7 @@ from fastapi import FastAPI, Body, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-import db, orchestrator as orch, llm, llm_agent, solver, mcp_server, tools, campus, auth
+import db, orchestrator as orch, llm, llm_agent, solver, mcp_server, tools, campus, auth, notify_gateway
 from agents import (rows, one, fac_name, PERIOD_TIME, TimetableAgent, AnalyticsAgent,
                     RequestAgent, Auditor)
 from nlu import TODAY, DAYS, day_of
@@ -169,6 +169,8 @@ def health():
         # a deployment's security posture should be readable, not inferred.
         "auth": {"logins": True, "mode": "demo" if auth.demo_mode() else "strict",
                  "passwords_published": auth.demo_mode()},
+        # Whether a notice leaves the building at all; never the gateway's URL or token.
+        "notifications": notify_gateway.describe(),
     }, status_code=200 if ok else 503)
 
 
@@ -524,6 +526,21 @@ def overrides():
 @app.get("/api/notifications")
 def notifications():
     return rows(con, "SELECT * FROM notifications ORDER BY id DESC LIMIT 40")
+
+
+@app.post("/api/notifications/retry")
+def notifications_retry(request: Request):
+    """Hand every Queued or Failed notice to the gateway again (#26).
+
+    Registrar-only (not in auth.PUBLIC or ANY_USER). It re-sends messages the
+    gate already approved; it writes nothing of the institution's own.
+    """
+    out = notify_gateway.retry(con)
+    who = (getattr(request.state, "user", None) or {}).get("id") or "operator-token"
+    Auditor().log(con, who, "NotifyAgent", "notify.retry",
+                  {k: out[k] for k in ("retried", "accepted", "failed")},
+                  "ok" if not out["failed"] else "partial")
+    return out
 
 
 @app.get("/api/audit")

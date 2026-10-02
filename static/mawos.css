@@ -223,6 +223,11 @@ select:focus, input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var
 .st.Approved { background: var(--ok-soft); color: var(--ok) }
 .st.Rejected, .st.Reverted { background: var(--bad-soft); color: var(--bad) }
 .st.Applied { background: var(--blue-soft); color: var(--blue) }
+/* notification delivery (#26): Recorded = no gateway, never a failure; violet stays for approval */
+.st.Accepted { background: var(--ok-soft); color: var(--ok) }
+.st.Queued { background: var(--blue-soft); color: var(--blue) }
+.st.Failed { background: var(--bad-soft); color: var(--bad) }
+.st.Recorded { background: var(--sunken); color: var(--graphite) }
 
 /* =============================================================== plans */
 .plan { margin: 12px 0 16px; border: 1px solid var(--rule); border-radius: var(--r-m); background: var(--surface); overflow: hidden }

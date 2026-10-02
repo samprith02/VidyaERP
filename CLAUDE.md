@@ -45,6 +45,7 @@ tools) → `tools.py` (59 tool schemas, PolicyGuard-wrapped, role policy enforce
 | Campus services | `campus.py` | library, hostel, transport, gate pass, placement, documents, leave review, Student 360, Ops radar — tools + `rule_route` |
 | Campus data | `campus_data.py` | their tables + seed, own `Random`; `ensure()` is additive to an old DB |
 | Academics | `academics.py` | standing faculty availability (#19): seed, read tool, gated write, `rule_route` |
+| Notice delivery | `notify_gateway.py` | `NotifyAgent.dispatch` records, commits, then hands off: webhook / outbox / none (#26) |
 | Sign-in | `auth.py` | principals from the data, PBKDF2, hashed session tokens, `gate()` for every route |
 | Role policy | `access.py` | default-deny per role; rules that NARROW arguments or refuse |
 | Self-service | `portal.py` | student / faculty / HOD tools + rule routing; acts only for `S["user"]` |
@@ -293,6 +294,7 @@ python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 68 assertions, no server, no API cost
 python tests/nlu_test.py       # 24 assertions, no server, no API cost
+python tests/notify_test.py    # 50 assertions, no server, no API cost (a stub gateway on loopback)
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)
@@ -430,8 +432,17 @@ and room scarcity must degrade rather than collapse.
 - **The gate-pass, circulation and placement rules are policy constants** (`CURFEW`,
   `OUTING_CLASS_HOURS_BAR`, `LOAN_LIMIT`, `FINE_PER_DAY`, `DREAM_MULTIPLE`), stated in the console
   and pinned by tests. They are one college's plausible policy, not findings.
-- **Campus notifications are recorded, not delivered.** Like every notice here, they land in the
-  `notifications` table; there is no SMS/email gateway.
+- **A notice is delivered only if a gateway is configured (#26).** Every notice lands in
+  `notifications` first. With no `VIDYAERP_NOTIFY_URL` its status is `Recorded`; it used to say
+  `Sent`, which was false (#83). With one, `notify_gateway.deliver` hands the batch over AFTER
+  the write commits: `Accepted` / `Failed`, never raising, so a dead gateway cannot undo or hide a
+  write. `tools.execute` collects each call's deliveries (`notify_gateway.begin/end`, a per-thread
+  stack) and appends a NotifyAgent `deliver` step, `status: "error"` on a failure; the rule
+  engine's own dispatches do the same through `orchestrator._delivered`. **Never store or return
+  `str(e)` from a delivery failure**: an `HTTPError` carries the URL, which may carry a token
+  (`_why`, pinned by `notify_test.py` 7a-7c). A token is never sent over plain http except to the
+  loopback interface. There is no SMS/email/WhatsApp code here on purpose: the gateway owns the
+  last mile and the recipient lookup, which keeps phone numbers out of this repo.
 - **The fee-structure certificate uses synthetic fee heads** (`campus.FEE_HEADS`), and every
   printed document carries a footer saying it is a specimen from synthetic data.
 
