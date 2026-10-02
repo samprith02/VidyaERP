@@ -227,6 +227,13 @@ ships a timetable back.
   `--screenshot` cannot carry a session cookie, and headless Edge stops firing animation frames
   after ~100 — which is why `mesh.js` also steps from a timer when frames stall.
 
+- **A request that names nothing real is refused, never "done" as an empty set (#89, #90).**
+  `solver.resolve_class` is the one answer to "does this section run?" (`solver.classes`, the
+  list `build_input` itself uses), and both `tools._gen_scope` and `app._gen_args` go through it.
+  Before, "rebuild cse-5a" (a model's lower case) or NOPE-5A planned 0 of 0, applied, and
+  `solver.verify` honestly re-read an empty set as "clean". At the HTTP boundary, `app._text`
+  and `BadInput` turn a wrong-typed value into a 400 with a sentence; it used to be a bare 500,
+  including on the public login endpoint (`deploy_test.py` section 6).
 - **Always pass `encoding="utf-8"` to `open()`.** Windows defaults to cp1252 and the console
   contains typographic quotes and `·` separators. `app.py` served a 500 on the whole page for
   exactly this reason.
@@ -283,7 +290,7 @@ ships a timetable back.
 ## Tests
 
 ```bash
-python tests/solver_test.py    # 44 assertions, no server, no API cost
+python tests/solver_test.py    # 53 assertions, no server, no API cost
 python tests/mcp_parity.py     # 263 assertions, no server, no API cost
 python tests/campus_test.py    # 122 assertions, no server, no API cost
 python tests/mesh_test.py      # 25 assertions, no server, no API cost (6a-6c need node)
@@ -291,7 +298,7 @@ python tests/auth_test.py      # 77 assertions, no server, no API cost
 python tests/makeup_test.py    # 30 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
-python tests/deploy_test.py    # 68 assertions, no server, no API cost
+python tests/deploy_test.py    # 76 assertions, no server, no API cost
 python tests/nlu_test.py       # 24 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens

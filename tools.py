@@ -445,18 +445,24 @@ def t_makeup_schedule(con, S, U, dept=None, sem=None, section=None, faculty=None
             "trace": [("SubstitutionAgent", "makeup_schedule", f"{len(out)} session(s) held")]}
 
 
-def _gen_scope(scope, dept, sem, section):
+def _gen_scope(con, scope, dept, sem, section):
     scope = "all" if str(scope).lower().startswith("all") else "class"
-    if scope == "class" and not (dept and sem and section):
+    if scope == "all":
+        return ("all", None, None, None), None
+    if not (dept and sem and section):
         return None, {"error": "Regenerating one section needs dept, sem and section. "
                                "Pass scope='all' to rebuild the whole college."}
-    return (scope, dept, int(sem) if sem else None, section), None
+    # A section that does not run was "rebuilt" as 0 of 0 and verified clean (#89).
+    cls, why = solver.resolve_class(con, dept, sem, section)
+    if why:
+        return None, {"error": why}
+    return ("class", *cls), None
 
 
 def t_plan_timetable_generation(con, S, U, scope="class", dept=None, sem=None, section=None,
                                 seed=7, **kw):
     """Build a timetable from scratch and REPORT it. Writes nothing."""
-    parsed, err = _gen_scope(scope, dept, sem, section)
+    parsed, err = _gen_scope(con, scope, dept, sem, section)
     if err:
         return {"data": err, "blocks": [], "trace": []}
     scope, dept, sem, section = parsed
