@@ -47,6 +47,7 @@ tools) → `tools.py` (63 tool schemas, PolicyGuard-wrapped, role policy enforce
 | Academics | `academics.py` | standing faculty availability (#19) and CIE marks (#32): seeds, read tools, gated writes, `rule_route` |
 | Academics | `academics.py` | standing faculty availability (#19): seed, read tool, gated write, `rule_route` |
 | Accreditation | `accreditation.py` | NAAC / NBA evidence (#29): one read tool, every figure sourced, every gap named |
+| Notice delivery | `notify_gateway.py` | `NotifyAgent.dispatch` records, commits, then hands off: webhook / outbox / none (#26) |
 | Sign-in | `auth.py` | principals from the data, PBKDF2, hashed session tokens, `gate()` for every route |
 | Role policy | `access.py` | default-deny per role; rules that NARROW arguments or refuse |
 | Self-service | `portal.py` | student / faculty / HOD tools + rule routing; acts only for `S["user"]` |
@@ -316,6 +317,9 @@ python tests/language_test.py  # 19 assertions, no server, no API cost
 python tests/cie_test.py       # 59 assertions, no server, no API cost
 python tests/accreditation_test.py # 28 assertions, no server, no API cost
 python tests/risk_test.py      # 17 assertions, no server, no API cost
+python tests/deploy_test.py    # 68 assertions, no server, no API cost
+python tests/nlu_test.py       # 24 assertions, no server, no API cost
+python tests/notify_test.py    # 50 assertions, no server, no API cost (a stub gateway on loopback)
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)
@@ -471,15 +475,42 @@ and room scarcity must degrade rather than collapse.
   `OUTING_CLASS_HOURS_BAR`, `LOAN_LIMIT`, `FINE_PER_DAY`, `DREAM_MULTIPLE`), stated in the console
   and pinned by tests. They are one college's plausible policy, not findings.
 - **The CIE scheme is a policy constant, and so is "at risk" (#32).** `academics.CIE_SCHEME` /
+
   `CIE_MIN` (average of two IA tests /25 + assignment /25; lab record /30 + lab test /20; 20/50 to sit
+
   the SEE) are one college's plausible policy, printed under every CIE answer. *Projected* extends
+
   the rate so far, so before the assignment is in, "at risk" means an IA average below 40%. The
+
   seeded marks are drawn from CGPA and per-subject attendance (`cie_test.py:1g` asserts r > 0.3),
+
   which means they inherit the attendance weakness above. The teacher of record is whoever takes
+
   most of a course's periods in the *current* timetable, so a rebuild moves the register with it.
+
   SEE results and SGPA are not modelled yet.
-- **Campus notifications are recorded, not delivered.** Like every notice here, they land in the
-  `notifications` table; there is no SMS/email gateway.
+
+- **A notice is delivered only if a gateway is configured (#26).** Every notice lands in
+
+  `notifications` first. With no `VIDYAERP_NOTIFY_URL` its status is `Recorded`; it used to say
+
+  `Sent`, which was false (#83). With one, `notify_gateway.deliver` hands the batch over AFTER
+
+  the write commits: `Accepted` / `Failed`, never raising, so a dead gateway cannot undo or hide a
+
+  write. `tools.execute` collects each call's deliveries (`notify_gateway.begin/end`, a per-thread
+
+  stack) and appends a NotifyAgent `deliver` step, `status: "error"` on a failure; the rule
+
+  engine's own dispatches do the same through `orchestrator._delivered`. **Never store or return
+
+  `str(e)` from a delivery failure**: an `HTTPError` carries the URL, which may carry a token
+
+  (`_why`, pinned by `notify_test.py` 7a-7c). A token is never sent over plain http except to the
+
+  loopback interface. There is no SMS/email/WhatsApp code here on purpose: the gateway owns the
+
+  last mile and the recipient lookup, which keeps phone numbers out of this repo.
 - **The fee-structure certificate uses synthetic fee heads** (`campus.FEE_HEADS`), and every
   printed document carries a footer saying it is a specimen from synthetic data.
 

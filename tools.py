@@ -10,7 +10,7 @@ Write-tools are wrapped by PolicyGuard: they refuse to commit unless the admin
 gave explicit approval **in the current turn**. The model cannot talk its way past this.
 """
 import re, datetime as dt
-import nlu, db, solver, agents, campus, portal, access, academics, accreditation
+import nlu, db, solver, agents, campus, portal, access, academics, accreditation, notify_gateway
 from nlu import TODAY, day_of
 from agents import (rows, one, fac_name, subj_name, plabel, _span, PERIOD_SPAN,
                     SubstitutionAgent, TimetableAgent, FacultyAgent, StudentAgent,
@@ -819,10 +819,17 @@ def execute(con, S, U, name, args=None):
         if why:
             return {"data": {"DENIED": why}, "blocks": [B_text(f"{why}")],
                     "trace": [("PolicyGuard", "access_denied", f"{P['role']} {P['id']} → {name}: {why}", "warn")]}
+    # Deliveries made during the call are reported on its trace (#26): a gateway
+    # that is down blinks NotifyAgent red without touching the write's own result.
+    notify_gateway.begin()
     try:
-        return fn(con, S, U, **(args or {}))
+        res = fn(con, S, U, **(args or {}))
     except Exception as e:
-        return {"data": {"error": f"{type(e).__name__}: {e}"}, "blocks": [], "trace": []}
+        res = {"data": {"error": f"{type(e).__name__}: {e}"}, "blocks": [], "trace": []}
+    steps = notify_gateway.end()
+    if steps and isinstance(res, dict):
+        res["trace"] = list(res.get("trace") or []) + steps
+    return res
 
 
 # ====================================================== dynamic tool selection

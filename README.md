@@ -191,6 +191,9 @@ python3 tests/language_test.py # Kannada and Hindi input, never widening the wri
 python3 tests/cie_test.py     # CIE marks: seed, standing, validated gated entry, role scope: 59 assertions, no server, no API cost
 python3 tests/accreditation_test.py # NAAC/NBA evidence recomputed, moving with the data, writing nothing: 28 assertions, no server, no API cost
 python3 tests/risk_test.py    # the early-warning list, counted in full and recomputed; departments as whole words: 17 assertions, no server, no API cost
+python3 tests/deploy_test.py  # deployment readiness: 68 assertions, no server, no API cost
+python3 tests/nlu_test.py     # date resolution, ISO dates included: 24 assertions, no server, no API cost
+python3 tests/notify_test.py  # notice delivery through a stub gateway: 50 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 python3 docs/charts/make_charts.py --tests   # re-measure everything and redraw this README's charts
@@ -913,6 +916,8 @@ VidyaERP/
 ├── portal.py           self-service tools for students, faculty and HODs
 ├── academics.py        standing faculty availability (#19) and CIE marks (#32): seeds, reads, gated writes
 ├── accreditation.py    NAAC / NBA evidence from the records, gaps named (#29); reads only
+├── academics.py        standing faculty availability: seed, read and gated write (#19)
+├── notify_gateway.py   notice delivery: webhook or outbox file, honest status, never the URL (#26)
 ├── llm_agent.py        the LLM reasoning loop (plan → call tools → answer), with failover
 ├── mcp_server.py       MCP surface over stdio JSON-RPC: same tools, same gate, no SDK
 ├── requirements.txt    FastAPI + Uvicorn. That is the entire dependency list
@@ -941,6 +946,7 @@ VidyaERP/
     ├── auth_test.py    sign-in, every route's gate, per-role policy, self-service writes, session binding
     ├── makeup_test.py  make-ups booked and held, coverage commits verified by an independent re-read
     ├── academics_test.py standing availability: seeded consistently, honoured by solver and planners
+    ├── notify_test.py  notice delivery: one batch per dispatch, failures shown, blocked writes send nothing
     └── mock_llm.py     fake OpenAI endpoint + rogue-agent guard test
 ```
 
@@ -1073,7 +1079,7 @@ An unreachable database returns **503**, so a broken instance drops out of rotat
 serving errors behind a green tick. Nothing secret is in that payload: whether a key is
 configured, never what it is.
 
-### Three things that are true about a deployed instance
+### Four things that are true about a deployed instance
 
 Stated here rather than discovered later. None of them is dangerous; all of them decide how this
 may be used.
@@ -1094,6 +1100,15 @@ may be used.
   beside it, so Claude Desktop drives a *local* instance. An approval code minted on the Render
   box is only useful to an MCP client on that box. Driving a deployment over MCP would need an
   HTTP transport, which is not built.
+- **A notice is recorded, not delivered, until you configure a gateway (#26).** Every notice lands
+  in the `notifications` table with the status `Recorded`. Set `VIDYAERP_NOTIFY_URL` to an
+  `https://` endpoint (one JSON batch per dispatch, `VIDYAERP_NOTIFY_TOKEN` as a bearer token) or
+  to a `file://` path (one JSON line per notice, for an on-premise SMS or mail relay to tail).
+  Notices then read `Accepted` or `Failed`, a failure blinks NotifyAgent red in the mesh, and the
+  console offers a retry. The gateway owns the last mile: `Accepted` means it took the message,
+  not that a student read it. Delivery happens after the write commits, so a gateway that is down
+  never undoes or hides a write, and a write the gate blocks sends nothing. `/health` reports
+  `notifications.gateway` and never the URL or the token.
 
 **One worker, deliberately.** `app.py` holds a single module-level SQLite connection and
 `orchestrator.SESS` keeps conversation state in process memory, so a second worker would answer

@@ -1236,12 +1236,22 @@ class NotifyAgent:
         return msgs
 
     def dispatch(self, con, msgs):
+        """Record every notice, commit, then hand them to the gateway (#26).
+
+        The rows are committed BEFORE delivery is attempted, so a gateway that
+        is down can never undo or hide the write that produced them; it marks
+        them Failed instead. The status says what happened, never "Sent" (#83).
+        """
+        import notify_gateway
+        status, ids = notify_gateway.initial_status(), []
         for m in msgs:
-            con.execute("""INSERT INTO notifications(audience,channel,title,body,created_at,status)
-                           VALUES(?,?,?,?,?,?)""",
-                        (m["audience"], m["channel"], m["title"], m["body"],
-                         dt.datetime.now().isoformat(timespec="seconds"), "Sent"))
+            cur = con.execute("""INSERT INTO notifications(audience,channel,title,body,created_at,status)
+                                 VALUES(?,?,?,?,?,?)""",
+                              (m["audience"], m["channel"], m["title"], m["body"],
+                               dt.datetime.now().isoformat(timespec="seconds"), status))
+            ids.append(cur.lastrowid)
         con.commit()
+        return notify_gateway.deliver(con, ids)
 
 
 class AnalyticsAgent:
