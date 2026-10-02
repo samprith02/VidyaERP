@@ -348,13 +348,13 @@ async function renderDash(el){
     <div class="grid2">
       <div class="pnl"><h3>Department scorecard</h3><div class="cap">attendance & academic risk</div>
         <table><thead><tr><th>Dept</th><th>Students</th><th>Avg att.</th><th>&lt;75%</th></tr></thead><tbody>
-        ${k.depts.map(d=>`<tr><td><b>${d.dept}</b></td><td>${d.n}</td>
-          <td><span class="mini"><i style="width:${d.att}%;background:${d.att>=75?'var(--good)':'var(--warn)'}"></i></span>${d.att}%</td>
-          <td style="color:${d.short>40?'var(--bad)':'var(--mut)'}">${d.short}</td></tr>`).join('')}</tbody></table></div>
-      <div class="pnl"><h3>On leave today</h3><div class="cap">${k.today} · drives substitution planning</div>
-        ${k.leaves_today.length?`<table><tbody>${k.leaves_today.map(l=>`<tr><td><b>${l.name}</b><br>
-          <span style="color:var(--dim);font-size:11px">${l.dept} · ${l.kind}</span></td>
-          <td style="text-align:right;color:var(--mut)">${l.from_date}<br>→ ${l.to_date}</td></tr>`).join('')}</tbody></table>`
+        ${k.depts.map(d=>`<tr><td><b>${esc(d.dept)}</b></td><td>${esc(d.n)}</td>
+          <td><span class="mini"><i style="width:${esc(d.att)}%;background:${d.att>=75?'var(--good)':'var(--warn)'}"></i></span>${esc(d.att)}%</td>
+          <td style="color:${d.short>40?'var(--bad)':'var(--mut)'}">${esc(d.short)}</td></tr>`).join('')}</tbody></table></div>
+      <div class="pnl"><h3>On leave today</h3><div class="cap">${esc(k.today)} · drives substitution planning</div>
+        ${k.leaves_today.length?`<table><tbody>${k.leaves_today.map(l=>`<tr><td><b>${esc(l.name)}</b><br>
+          <span style="color:var(--dim);font-size:11px">${esc(l.dept)} · ${esc(l.kind)}</span></td>
+          <td style="text-align:right;color:var(--mut)">${esc(l.from_date)}<br>→ ${esc(l.to_date)}</td></tr>`).join('')}</tbody></table>`
           :'<div style="color:var(--dim)">Full attendance of staff today.</div>'}
         <div style="margin-top:12px"><button class="btn sm" onclick="goChat('Brief me on today\\'s institution status')">Open the daily operations brief</button></div>
       </div>
@@ -581,9 +581,9 @@ async function renderFac(el){
   panel('faculty_availability').then(r=>{$('#favail').innerHTML=(r.blocks||[]).map(rBlock).join('')}).catch(()=>{});
   const draw=list=>$('#fbox').innerHTML=`<table><thead><tr><th>ID</th><th>Name</th><th>Dept</th>
     <th>Designation</th><th>Load</th><th>Utilisation</th><th>Status</th><th></th></tr></thead><tbody>
-    ${list.map(x=>`<tr><td>${x.id}</td><td><b>${x.name}</b><br><span style="color:var(--dim);font-size:11px">${x.email}</span></td>
-      <td>${x.dept}</td><td>${x.designation}</td><td>${x.load}/${x.max_load}</td>
-      <td><span class="mini"><i style="width:${Math.min(100,x.util)}%;background:${x.util>100?'var(--bad)':x.util>85?'var(--warn)':'var(--good)'}"></i></span>${x.util}%</td>
+    ${list.map(x=>`<tr><td>${esc(x.id)}</td><td><b>${esc(x.name)}</b><br><span style="color:var(--dim);font-size:11px">${esc(x.email)}</span></td>
+      <td>${esc(x.dept)}</td><td>${esc(x.designation)}</td><td>${esc(x.load)}/${esc(x.max_load)}</td>
+      <td><span class="mini"><i style="width:${Math.min(100,x.util)}%;background:${x.util>100?'var(--bad)':x.util>85?'var(--warn)':'var(--good)'}"></i></span>${esc(x.util)}%</td>
       <td>${x.on_leave?'<span class="st Rejected">On leave</span>':'<span class="st Approved">Available</span>'}</td>
       <td><button class="btn sm ghost" onclick="goChat('${x.name.replace(/'/g,"")} is absent tomorrow, arrange coverage')">Plan absence</button></td>
     </tr>`).join('')}</tbody></table>`;
@@ -604,10 +604,10 @@ async function renderStu(el){
     $('#sbox').innerHTML=`<div class="cap" style="color:var(--dim);font-size:11.5px;margin-bottom:9px">${s.length} records</div>
       <table><thead><tr><th>USN</th><th>Name</th><th>Class</th><th>Attendance</th><th>CGPA</th>
       <th>Backlogs</th><th>Fee due</th><th>Mentor</th></tr></thead><tbody>
-      ${s.map(x=>`<tr><td>${x.usn}</td><td><b>${x.name}</b></td><td>${x.dept}-${x.sem}${x.section}</td>
-        <td><span class="mini"><i style="width:${x.attendance}%;background:${x.attendance>=75?'var(--good)':x.attendance>=65?'var(--warn)':'var(--bad)'}"></i></span>${x.attendance}%</td>
-        <td>${x.cgpa}</td><td>${x.backlogs}</td><td>${x.fee_due?inr(x.fee_due):'—'}</td>
-        <td style="color:var(--mut)">${x.mentor_name}</td></tr>`).join('')}</tbody></table>`;
+      ${s.map(x=>`<tr><td>${esc(x.usn)}</td><td><b>${esc(x.name)}</b></td><td>${esc(x.dept)}-${esc(x.sem)}${esc(x.section)}</td>
+        <td><span class="mini"><i style="width:${esc(x.attendance)}%;background:${x.attendance>=75?'var(--good)':x.attendance>=65?'var(--warn)':'var(--bad)'}"></i></span>${esc(x.attendance)}%</td>
+        <td>${esc(x.cgpa)}</td><td>${esc(x.backlogs)}</td><td>${x.fee_due?inr(x.fee_due):'—'}</td>
+        <td style="color:var(--mut)">${esc(x.mentor_name)}</td></tr>`).join('')}</tbody></table>`;
   };
   ['sd','ss','sr'].forEach(i=>$('#'+i).onchange=load); $('#sq').oninput=load; await load();
 }
@@ -618,15 +618,15 @@ async function renderReq(el){
     <div class="cap">Ordered by priority and service-level age; every decision is retained in the audit ledger</div>
     <table><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>From</th><th>Route</th><th>Amount</th>
     <th>Priority</th><th>Age</th><th>Status</th><th></th></tr></thead><tbody>
-    ${r.map(x=>`<tr><td>REQ-${String(x.id).padStart(4,'0')}</td><td>${x.kind}</td>
-      <td><b>${x.title}</b><br><span style="color:var(--dim);font-size:11px">${x.details}</span></td>
-      <td>${x.raised_by}<br><span style="color:var(--dim);font-size:11px">${x.role}</span></td><td>${x.target}</td>
+    ${r.map(x=>`<tr><td>REQ-${String(x.id).padStart(4,'0')}</td><td>${esc(x.kind)}</td>
+      <td><b>${esc(x.title)}</b><br><span style="color:var(--dim);font-size:11px">${esc(x.details)}</span></td>
+      <td>${esc(x.raised_by)}<br><span style="color:var(--dim);font-size:11px">${esc(x.role)}</span></td><td>${esc(x.target)}</td>
       <td>${x.amount?inr(x.amount):'—'}</td>
-      <td style="color:${x.priority==='High'?'var(--bad)':'var(--mut)'}">${x.priority}</td>
-      <td>${x.age}d ${x.age*24>x.sla_hrs&&x.status==='Pending'?'<span class="sla-breach">SLA</span>':''}</td>
-      <td><span class="st ${x.status}">${x.status}</span></td>
-      <td>${x.status==='Pending'?`<button class="btn sm ok" onclick="dec(${x.id},'approve')">Approve</button>
-        <button class="btn sm no" onclick="dec(${x.id},'reject')">Reject</button>`:''}</td></tr>`).join('')}
+      <td style="color:${x.priority==='High'?'var(--bad)':'var(--mut)'}">${esc(x.priority)}</td>
+      <td>${esc(x.age)}d ${x.age*24>x.sla_hrs&&x.status==='Pending'?'<span class="sla-breach">SLA</span>':''}</td>
+      <td><span class="st ${esc(x.status)}">${esc(x.status)}</span></td>
+      <td>${x.status==='Pending'?`<button class="btn sm ok" onclick="dec(${esc(x.id)},'approve')">Approve</button>
+        <button class="btn sm no" onclick="dec(${esc(x.id)},'reject')">Reject</button>`:''}</td></tr>`).join('')}
     </tbody></table></div>`;
 }
 async function dec(id,d){await api(`/api/requests/${id}/${d}`,{method:'POST'});render('req');loadBadges()}
@@ -637,16 +637,16 @@ async function renderOvr(el){
     <div class="cap">Approved schedule changes with full decision and actor provenance</div>
     ${o.length?`<table><thead><tr><th>Date</th><th>Class</th><th>Slot</th><th>Action</th><th>Original</th>
       <th>Now</th><th>Reason</th><th>Plan</th><th>By</th><th>Status</th></tr></thead><tbody>
-      ${o.map(x=>`<tr><td>${x.date}</td><td>${x.dept}-${x.sem}${x.section}</td><td>${x.day} P${x.period}</td>
-        <td><span class="chipx ${x.action==='SWAP'?'swap':x.action==='MAKEUP'?'makeup':'sub'}">${x.action}</span></td>
-        <td>${x.orig_name}</td><td><b>${x.new_name}</b></td>
-        <td style="color:var(--mut);font-size:11.5px">${x.reason}</td><td><code>${x.plan_ref||''}</code></td>
-        <td style="color:var(--dim)">${x.created_by}</td><td><span class="st ${x.status}">${x.status}</span></td></tr>`).join('')}
+      ${o.map(x=>`<tr><td>${esc(x.date)}</td><td>${esc(x.dept)}-${esc(x.sem)}${esc(x.section)}</td><td>${esc(x.day)} P${esc(x.period)}</td>
+        <td><span class="chipx ${x.action==='SWAP'?'swap':x.action==='MAKEUP'?'makeup':'sub'}">${esc(x.action)}</span></td>
+        <td>${esc(x.orig_name)}</td><td><b>${esc(x.new_name)}</b></td>
+        <td style="color:var(--mut);font-size:11.5px">${esc(x.reason)}</td><td><code>${esc(x.plan_ref||'')}</code></td>
+        <td style="color:var(--dim)">${esc(x.created_by)}</td><td><span class="st ${esc(x.status)}">${esc(x.status)}</span></td></tr>`).join('')}
       </tbody></table>`:'<div style="color:var(--dim)">No overrides yet — ask the copilot to handle a faculty absence.</div>'}</div>
     <div class="pnl"><h3>Dispatched notifications</h3><div class="cap">${n.length} messages</div>
-    ${n.length?n.map(x=>`<div class="notice"><div class="a">${x.audience} · ${x.channel}</div>
-      <div class="t">${x.title}</div><div class="b">${x.body}</div>
-      <div class="ch">${x.created_at} · ${x.status}</div></div>`).join(''):'<div style="color:var(--dim)">Nothing sent yet.</div>'}</div>`;
+    ${n.length?n.map(x=>`<div class="notice"><div class="a">${esc(x.audience)} · ${esc(x.channel)}</div>
+      <div class="t">${esc(x.title)}</div><div class="b">${esc(x.body)}</div>
+      <div class="ch">${esc(x.created_at)} · ${esc(x.status)}</div></div>`).join(''):'<div style="color:var(--dim)">Nothing sent yet.</div>'}</div>`;
 }
 
 async function renderLog(el){
@@ -654,10 +654,10 @@ async function renderLog(el){
   el.innerHTML=`<div class="pnl"><h3>Administrative audit ledger</h3>
     <div class="cap">Complete request, execution, decision, and outcome provenance for governance review</div>
     <table><thead><tr><th>Time</th><th>Actor</th><th>Agent</th><th>Action</th><th>Payload</th><th>Outcome</th></tr></thead>
-    <tbody>${a.map(x=>`<tr><td style="white-space:nowrap">${x.ts.replace('T',' ')}</td><td>${x.actor}</td>
-      <td><b>${x.agent}</b></td><td><code>${x.action}</code></td>
+    <tbody>${a.map(x=>`<tr><td style="white-space:nowrap">${esc(x.ts.replace('T',' '))}</td><td>${esc(x.actor)}</td>
+      <td><b>${esc(x.agent)}</b></td><td><code>${esc(x.action)}</code></td>
       <td style="color:var(--mut);font-size:11.5px">${esc(x.payload)}</td>
-      <td><span class="st ${x.outcome==='applied'||x.outcome==='committed'?'Approved':'Applied'}">${x.outcome}</span></td></tr>`).join('')}
+      <td><span class="st ${x.outcome==='applied'||x.outcome==='committed'?'Approved':'Applied'}">${esc(x.outcome)}</span></td></tr>`).join('')}
     </tbody></table></div>`;
 }
 
@@ -768,8 +768,8 @@ async function renderLeave(el){
     `<div class="pnl">${blocksHTML(r.blocks)}</div>
     <div class="pnl"><h3>Leave ledger</h3><div class="cap">${lv.length} records</div>
     <table><thead><tr><th>ID</th><th>Faculty</th><th>Dept</th><th>From</th><th>To</th><th>Type</th><th>Reason</th><th>Status</th></tr></thead>
-    <tbody>${lv.map(l=>`<tr><td>${l.id}</td><td><b>${esc(l.name)}</b></td><td>${l.dept}</td><td>${l.from_date}</td><td>${l.to_date}</td>
-      <td>${esc(l.kind)}</td><td style="color:var(--mut)">${esc(l.reason)}</td><td><span class="st ${l.status}">${l.status}</span></td></tr>`).join('')}</tbody></table></div>`;
+    <tbody>${lv.map(l=>`<tr><td>${esc(l.id)}</td><td><b>${esc(l.name)}</b></td><td>${esc(l.dept)}</td><td>${esc(l.from_date)}</td><td>${esc(l.to_date)}</td>
+      <td>${esc(l.kind)}</td><td style="color:var(--mut)">${esc(l.reason)}</td><td><span class="st ${esc(l.status)}">${esc(l.status)}</span></td></tr>`).join('')}</tbody></table></div>`;
 }
 async function renderLib(el){
   const [o,d]=await Promise.all([panel('library_overview'),panel('library_overdue')]);

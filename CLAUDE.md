@@ -163,6 +163,12 @@ inside the budget.
   generic class name across components:** timetable activity cells were once `.act`, the same
   class as the Autopilot rows, and the rows' grid crushed every activity cell into three
   columns. They are `.actv` now.
+- **Every record field a page puts into `innerHTML` goes through `esc()` (#85).** A student's
+  certificate purpose once reached the Registrar's inbox raw: through the LLM engine, a student
+  could run script in the Registrar's session and "approve" gated writes as them. `blocks.js`,
+  the execution log and the mesh always escaped; the console's hand-written tables did not.
+  `auth_test.py` 6a/6b scan both pages for a bare `${x.title}`-style interpolation of any field
+  that can carry a person's words, so escape it even when today's data is seeded.
 - **`static/index.html` loads nothing external** — no CDN, no fonts, no images. Keep it that way;
   it is why the console works offline and on a locked-down college network. The 3D agent mesh is
   therefore a hand-rolled perspective projection on a 2D canvas (`static/mesh.js`, served locally),
@@ -287,7 +293,7 @@ python tests/solver_test.py    # 44 assertions, no server, no API cost
 python tests/mcp_parity.py     # 263 assertions, no server, no API cost
 python tests/campus_test.py    # 122 assertions, no server, no API cost
 python tests/mesh_test.py      # 25 assertions, no server, no API cost (6a-6c need node)
-python tests/auth_test.py      # 77 assertions, no server, no API cost
+python tests/auth_test.py      # 81 assertions, no server, no API cost
 python tests/makeup_test.py    # 30 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost

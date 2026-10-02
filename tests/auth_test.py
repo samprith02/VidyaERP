@@ -336,6 +336,37 @@ S_llm = {"pending": None, "history": [], "ctx": {}, "user": P["student"]}
 check("5i the LLM's first hop is offered only the student's tools",
       {s["function"]["name"] for s in tools.select_tools("show me everything", S_llm)[0]} == set(access.POLICY["student"]))
 
+# ------------------------------------------- 6 · what a user writes is shown as text (#85)
+print("\n6 · the pages escape what users can write")
+print("-" * 78)
+# Defect found 2026-10-02: a student's certificate purpose became a request
+# title, and the Registrar's inbox put it into innerHTML raw. Through the LLM
+# engine a student could run script in the Registrar's session, which is
+# enough to "approve" gated writes as them. Escaping is checked by reading the
+# pages: any record field that can carry a person's words, interpolated bare
+# as ${x.title} or ${x.title||''}, fails here.
+import re                                                          # noqa: E402
+
+USER_TEXT = ("title", "details", "reason", "body", "audience", "channel", "purpose", "note", "payload",
+             "actor", "action", "created_by", "raised_by", "target", "kind", "name", "email", "status",
+             "outcome", "orig_name", "new_name", "mentor_name", "designation", "plan_ref", "error")
+BARE = re.compile(r"\$\{\s*[A-Za-z_]\w{0,3}\.(" + "|".join(USER_TEXT) + r")\s*(?:\|\|\s*'[^']*'\s*)?\}")
+
+
+def bare_fields(page):
+    with open(os.path.join(HERE, "static", page), encoding="utf-8") as f:
+        return [(i + 1, m.group(0)) for i, line in enumerate(f) for m in BARE.finditer(line)]
+
+
+check("6a the console interpolates no user-writable field without esc()", not bare_fields("index.html"),
+      str(bare_fields("index.html")[:6]))
+check("6b ...and neither does the portal", not bare_fields("portal.html"), str(bare_fields("portal.html")[:6]))
+inbox = open(os.path.join(HERE, "static", "index.html"), encoding="utf-8").read()
+check("6c the inbox escapes the request title and details, the fields #85 used",
+      "<b>${esc(x.title)}</b>" in inbox and "${esc(x.details)}" in inbox)
+check("6d the scan itself finds a bare field (it is not vacuous)",
+      len(BARE.findall("<b>${x.title}</b> ${l.reason||''} ${esc(x.body)}")) == 2)
+
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")
 for f in FAILED:
