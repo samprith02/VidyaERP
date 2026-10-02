@@ -285,7 +285,7 @@ ships a timetable back.
 ```bash
 python tests/solver_test.py    # 44 assertions, no server, no API cost
 python tests/mcp_parity.py     # 263 assertions, no server, no API cost
-python tests/campus_test.py    # 122 assertions, no server, no API cost
+python tests/campus_test.py    # 137 assertions, no server, no API cost
 python tests/mesh_test.py      # 25 assertions, no server, no API cost (6a-6c need node)
 python tests/auth_test.py      # 77 assertions, no server, no API cost
 python tests/makeup_test.py    # 30 assertions, no server, no API cost

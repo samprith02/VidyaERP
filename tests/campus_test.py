@@ -428,6 +428,34 @@ orch.handle(cr, "Send overdue library reminders", sid)
 out = orch.handle(cr, "yes", sid)
 check("9i 'yes' commits through tools.execute", one(cr, "SELECT COUNT(*) n FROM notifications")["n"] > n_notes
       and orch.sess(sid)["pending"] is None, str([b.get("md", b["type"]) for b in out["blocks"]])[:140])
+
+# A broadcast that names its audience stays a broadcast whatever its message
+# mentions (#87). Measured before the fix: 6 of these 8 went to the campus
+# service named in the message, and the library one staged overdue reminders.
+BROADCASTS = ["Broadcast to all students: the library closes at 6 pm today",
+              "Notify all hostel students that the mess will be closed on Sunday",
+              "Inform all CSE students that the placement drive for Infosys is postponed",
+              "Announce to all students that the bus to Mysuru route is cancelled tomorrow",
+              "Notify all students that library books are due Friday",
+              "Alert all 5th sem students that gate passes are suspended this weekend",
+              "Send a notice to all faculty: exam duty list is out",
+              "Broadcast: fee payment deadline extended to 30 Sep",
+              "Notify: bus route 4 is cancelled tomorrow",
+              "Broadcast: the library is closed on Saturday"]
+for t in BROADCASTS:
+    check(f"9j a broadcast is a broadcast: “{t[:52]}”", top(t) == "notify.broadcast", top(t))
+sid = "campus-bc"
+orch.SESS.pop(sid, None)
+orch.handle(cr, "Notify all students that library books are due Friday", sid)
+p = orch.sess(sid)["pending"] or {}
+check("9k ...and the rule engine stages the notice, not the overdue reminders a 'yes' would commit",
+      p.get("kind") == "broadcast_draft" and "library books are due friday" in p["msgs"][0]["body"].lower(),
+      str(p)[:160])
+orch.SESS.pop(sid, None)
+KEEP = {"Send overdue library reminders": "library", "Notify riders of route 4 about the breakdown": "transport",
+        "Alert the warden about hostel complaints": "hostel", "approve gate pass 12": "gatepass"}
+for t, want in KEEP.items():
+    check(f"9l no audience phrase, still its service: “{t}” → {want}", top(t) == want, top(t))
 cr.close()
 os.remove(pr)
 

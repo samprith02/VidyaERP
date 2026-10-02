@@ -5,7 +5,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![Dependencies: 2](https://img.shields.io/badge/dependencies-2-brightgreen.svg)](requirements.txt)
-[![Tests: 734 assertions](https://img.shields.io/badge/tests-734_assertions_passing-brightgreen.svg)](#tests)
+[![Tests: 749 assertions](https://img.shields.io/badge/tests-749_assertions_passing-brightgreen.svg)](#tests)
 [![Tools: 59, 20 gated](https://img.shields.io/badge/tools-59_·_20_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
 [![Data: synthetic](https://img.shields.io/badge/data-100%25_synthetic-lightgrey.svg)](NOTICE)
 
@@ -40,7 +40,7 @@ LLM client included, and the console is plain HTML with three local files (`stat
 
 | | | | |
 |:--|:--|:--|:--|
-| **16** specialist agents | **59** tools · **20** writes, every one gated | **734** test assertions, 0 failing | **2** dependencies |
+| **16** specialist agents | **59** tools · **20** writes, every one gated | **749** test assertions, 0 failing | **2** dependencies |
 | **271** absences swept: the top plan fully covers **268** | **456 / 456** periods placed by the solver, 0 clashes | **91%** less tool payload per LLM turn | **0** external assets in the console |
 
 Every number above is measured by [`docs/charts/make_charts.py`](docs/charts/make_charts.py) and
@@ -162,13 +162,13 @@ The trace shows exactly which of these happened:
 ### Tests
 
 <p align="center">
-  <img src="docs/charts/tests.svg" alt="Bar chart: 734 assertions across 10 suites, all passing. mcp_parity 263, campus_test 122, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 749 assertions across 10 suites, all passing. mcp_parity 263, campus_test 137, auth_test 77, deploy_test 68, ranking_test 57, solver_test 44, makeup_test 30, mesh_test 25, academics_test 24, nlu_test 24" width="760">
 </p>
 
 ```bash
 python3 tests/solver_test.py  # timetable solver: 44 assertions, no server, no API cost
 python3 tests/mcp_parity.py   # MCP guard parity: 263 assertions, no server, no API cost
-python3 tests/campus_test.py  # campus services: 122 assertions, no server, no API cost
+python3 tests/campus_test.py  # campus services: 137 assertions, no server, no API cost
 python3 tests/mesh_test.py    # the agent mesh's fault channel and approval stamp: 25 assertions, no server, no API cost
 python3 tests/auth_test.py    # logins, route gating, per-role policy: 77 assertions, no server, no API cost
 python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits verified by re-read: 30 assertions, no server, no API cost
@@ -335,7 +335,7 @@ sequenceDiagram
 ### The ranking, measured across every absence the timetable can produce
 
 Each of the 53 teachers made absent on each teaching day of one week gives **271 absences**
-(24.8 ms each to plan). The recommendation is spread across all three strategies. None of them is
+(11.0 ms each to plan). The recommendation is spread across all three strategies. None of them is
 a default that wins by construction:
 
 <p align="center">
@@ -363,7 +363,7 @@ arranged), and those cards are flagged **incomplete** on the page rather than ra
 | Plan B folded into plan A (identical committed rows) | 90 |
 | Top plan covers every hour | 268 of 271 |
 | Rank of the recommended plan | min 48.5 · median 94.7 · max 98.95 |
-| Planning time | 24.8 ms per absence |
+| Planning time | 11.0 ms per absence |
 
 </details>
 

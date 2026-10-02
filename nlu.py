@@ -122,6 +122,17 @@ CONFIRM_NO = ["no", "cancel", "abort", "discard", "don't", "dont", "stop", "reje
 PRIORITY = [
     (r"^\s*(?:please\s+|pls\s+)?(?:notify|inform|announce|broadcast|circulate|alert|"
      r"send (?:a |an )?(?:message|sms|notice|circular|whatsapp))", "notify.broadcast", 14),
+    # A broadcast that names its audience is a broadcast whatever its message
+    # mentions (#87). Without this, "notify all students that the library closes
+    # at 6" scored library +16 over notify +14, and one variant staged overdue
+    # reminders: a different gated write that the admin's "yes" would commit.
+    # Worth more than any campus rule. "Notify overdue borrowers" has no
+    # audience phrase and still belongs to the library.
+    (r"^\s*(?:please\s+|pls\s+)?(?:notify|inform|announce|broadcast|circulate|alert|"
+     r"send (?:a |an )?(?:message|sms|notice|circular|whatsapp))"
+     r"(?:\s*:|\s+(?:to\s+)?(?:everyone|everybody|"
+     r"(?:all|every|the whole|the entire)\b[^.?!:]{0,40}?\b(?:students?|faculty|staff|teachers|"
+     r"parents|hostellers|riders|campus|departments?|classes|sections?)\b))", "notify.broadcast", 30),
     (r"\b(?:who(?:'s| is| are)?\s+(?:all\s+)?free|are free|is free|free faculty|free staff|"
      r"available faculty|free (?:room|slot|hall|classroom)|room availability|which rooms)\b",
      "timetable.view", 12),
