@@ -33,7 +33,7 @@ key into `.env` (gitignored) and the LLM agent takes over — same guardrails ei
 ## Architecture in one pass
 
 `app.py` routes → `orchestrator.py` (rule engine) **or** `llm_agent.py` (model plans and calls
-tools) → `tools.py` (59 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
+tools) → `tools.py` (60 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
 + `portal.py` (the specialists). Everyone signs in first (`auth.py`).
 
 | Piece | Where | Note |
@@ -60,7 +60,7 @@ the exception on the rule side: `orchestrator.h_campus` picks a tool with `campu
 runs it through `tools.execute`, so for them all three callers share one path. The parity that is
 actually enforced is between the **LLM agent and MCP** — both reach `tools.execute` and cannot
 differ, which is what `tests/mcp_parity.py` asserts.
-`tools.select_tools()` narrows 59 tools to 3–8 per utterance (a non-admin is offered exactly their role's menu) —
+`tools.select_tools()` narrows 60 tools to 3–8 per utterance (a non-admin is offered exactly their role's menu) —
 −91% tool-schema bytes on the README's 40 example requests (`docs/charts/results.json`; this replaces an
 older, unsourced −64%). Free tiers are stingy and this is what keeps multi-hop turns
 inside the budget.
@@ -285,9 +285,9 @@ ships a timetable back.
 ```bash
 python tests/solver_test.py    # 44 assertions, no server, no API cost
 python tests/mcp_parity.py     # 263 assertions, no server, no API cost
-python tests/campus_test.py    # 122 assertions, no server, no API cost
+python tests/campus_test.py    # 141 assertions, no server, no API cost
 python tests/mesh_test.py      # 25 assertions, no server, no API cost (6a-6c need node)
-python tests/auth_test.py      # 77 assertions, no server, no API cost
+python tests/auth_test.py      # 90 assertions, no server, no API cost
 python tests/makeup_test.py    # 30 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost

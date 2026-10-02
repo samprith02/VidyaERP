@@ -336,6 +336,47 @@ S_llm = {"pending": None, "history": [], "ctx": {}, "user": P["student"]}
 check("5i the LLM's first hop is offered only the student's tools",
       {s["function"]["name"] for s in tools.select_tools("show me everything", S_llm)[0]} == set(access.POLICY["student"]))
 
+# ------------------------------------------------ 7 · library loans, by role (#91)
+print("\n7 · whose library loans each role may read")
+print("-" * 78)
+CSE_STU = one(con, """SELECT usn FROM students WHERE dept='CSE' AND usn<>? AND usn IN
+                      (SELECT member FROM book_loans WHERE returned_on IS NULL) ORDER BY usn""", (STU["usn"],))["usn"]
+r = call("student", "library_loans", {})
+check("7a a student reads their own loans by default", r["data"].get("member") == STU["usn"], str(r["data"])[:120])
+check("7b ...'me' is them too", call("student", "library_loans", {"member": "me"})["data"].get("member") == STU["usn"])
+check("7c ...and another student's loans are refused", denied(call("student", "library_loans", {"member": CSE_STU})))
+check("7d a teacher reads their own", call("faculty", "library_loans", {})["data"].get("member") == FAC["id"])
+check("7e ...but not a student's", denied(call("faculty", "library_loans", {"member": CSE_STU})))
+check("7f a HOD reads a student in the department", call("hod", "library_loans", {"member": CSE_STU})["data"]
+      .get("member") == CSE_STU)
+check("7g ...and a colleague in it", call("hod", "library_loans", {"member": FAC["id"]})["data"].get("member") == FAC["id"])
+check("7h ...but not another department's student or teacher",
+      denied(call("hod", "library_loans", {"member": STU2["usn"]}))
+      and denied(call("hod", "library_loans", {"member": FAC2["id"]})))
+sid = A._sid(P["hod"], "loans")
+orch.SESS.pop(sid, None)
+orch.sess(sid)["user"] = P["hod"]
+out = orch.handle(con, f"{CSE_STU} can you tell me which book he has borrowed", sid)
+text = json.dumps(out["blocks"]).lower()
+check("7i the reported case: the HOD gets the loans, not the 360",
+      out.get("intent") == "library_loans" and "on loan" in text and "cgpa" not in text and "attendance" not in text,
+      f"{out.get('intent')} {text[:120]}")
+out = orch.handle(con, f"show me the details of {CSE_STU}", sid)
+check("7j ...and 'details of' still gives the HOD the full profile", out.get("intent") == "student_360")
+out = orch.handle(con, "which book has she borrowed?", sid)
+check("7k ...and a follow-up's pronoun is that student",
+      out.get("intent") == "library_loans" and CSE_STU in json.dumps(out["blocks"]))
+orch.SESS.pop(sid, None)
+sid = A._sid(P["student"], "loans")
+orch.SESS.pop(sid, None)
+orch.sess(sid)["user"] = P["student"]
+out = orch.handle(con, "which books have I borrowed?", sid)
+check("7l a student asking about their own books gets their loans",
+      out.get("intent") == "library_loans" and STU["usn"] in json.dumps(out["blocks"]), str(out.get("intent")))
+orch.SESS.pop(sid, None)
+check("7m the LLM menu for every role includes it",
+      all("library_loans" in access.POLICY[r] for r in ("student", "faculty", "hod")))
+
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")
 for f in FAILED:

@@ -163,6 +163,14 @@ PRIORITY = [
     (r"(?:\b360\b|everything about|full profile|complete profile|subject[- ]wise attendance)"
      r".*\b4vp\d{2}[a-z]{2}\d{3}\b|\b4vp\d{2}[a-z]{2}\d{3}\b.*"
      r"(?:\b360\b|everything|full profile|complete profile|subject[- ]wise)", "student.360", 22),
+    # "show me the details of <USN>" is the same request as "Student <USN> details";
+    # without this it scored nothing and fell to smalltalk (#91).
+    (r"\b(?:details?|record|profile) (?:of|for|on|about)\b[^.?!]*\b4vp\d{2}[a-z]{2}\d{3}\b", "student.query", 12),
+    # A student's books, by USN, belong to the library, not to the 360 (#91).
+    # "how much fine does <USN> have?" used to fall to smalltalk.
+    (r"(?:\bborrow(?:ed|ing|s)?\b|\bon loan\b|\bloans?\b|\b(?:library )?fines?\b|\bbooks?\b)"
+     r"[^.?!]*\b4vp\d{2}[a-z]{2}\d{3}\b|\b4vp\d{2}[a-z]{2}\d{3}\b[^.?!]*"
+     r"(?:\bborrow(?:ed|ing|s)?\b|\bon loan\b|\bloans?\b|\bfines?\b|\bbooks?\b)", "library", 24),
 ]
 
 

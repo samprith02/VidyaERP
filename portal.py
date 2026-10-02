@@ -19,7 +19,11 @@ from guard import approved_this_turn
 from agents import (rows, one, fac_name, subj_name, NotifyAgent, Auditor, ensure_makeups,
                     B_text, B_table, B_cards, B_checklist, B_bars)
 from campus import (_propose, _done, _err, _stu, _cls, _when, inr, GatePassAgent, DocumentAgent,
-                    LeaveAgent, PlacementAgent, LibraryAgent, VERDICT_MD, CERT_KINDS, cert_kind, NOW)
+                    LeaveAgent, PlacementAgent, LibraryAgent, VERDICT_MD, CERT_KINDS, cert_kind, NOW,
+                    loans_question)
+
+# "my books", "books I borrowed", "my library fine": a person's own loans (#91).
+MY_LOANS_RX = r"\bmy (?:library )?(?:books|loans|fines?)\b|\bbooks? i (?:have |'ve )?(?:borrowed|taken|got)\b"
 
 GP_KINDS = {"outing": "Outing", "home": "Home visit", "medical": "Medical", "emergency": "Emergency",
             "early": "Early leave"}
@@ -511,6 +515,8 @@ def route(con, text, P, ent):
             return "get_timetable", {"date": (nlu.parse_date(text)[0] or TODAY).isoformat()}
         if re.search(r"exam|see\b|hall ticket", t):
             return "exam_schedule", {}
+        if re.search(MY_LOANS_RX, t) or loans_question(text):
+            return "library_loans", {"member": usn} if usn else {}
         if re.search(r"library|book", t):
             q = re.sub(r"\b(search|find|library|books?|for|on|about|do you have|any|the|a)\b", " ", t).strip()
             return "library_search", {"query": q or "engineering"}
@@ -548,6 +554,10 @@ def route(con, text, P, ent):
             return "attendance_defaulters", {}
         if re.search(r"eligib|hall ticket", t):
             return "exam_eligibility", {}
+        # A question about a student's books is the library's, not the 360's (#91):
+        # it used to return the whole profile, attendance and fees included.
+        if loans_question(text) and (usn or (ent.get("faculty") and ent["faculty"]["id"] != P["fid"])):
+            return "library_loans", {"member": usn or ent["faculty"]["id"]}
         if usn:
             return "student_360", {"usn": usn}
         if ent.get("faculty") and ent["faculty"]["id"] != P["fid"] and re.search(r"timetable|schedule", t):
@@ -568,6 +578,8 @@ def route(con, text, P, ent):
         return "faculty_profile", {}
     if re.search(r"exam|see\b", t):
         return "exam_schedule", {}
+    if re.search(MY_LOANS_RX, t) or loans_question(text):
+        return "library_loans", {"member": usn} if usn else {}
     if re.search(r"library|book", t):
         q = re.sub(r"\b(search|find|library|books?|for|on|about|do you have|any|the|a)\b", " ", t).strip()
         return "library_search", {"query": q or "engineering"}
