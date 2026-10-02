@@ -33,7 +33,7 @@ key into `.env` (gitignored) and the LLM agent takes over — same guardrails ei
 ## Architecture in one pass
 
 `app.py` routes → `orchestrator.py` (rule engine) **or** `llm_agent.py` (model plans and calls
-tools) → `tools.py` (63 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
+tools) → `tools.py` (64 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
 + `portal.py` (the specialists). Everyone signs in first (`auth.py`).
 
 | Piece | Where | Note |
@@ -63,7 +63,7 @@ the exception on the rule side: `orchestrator.h_campus` picks a tool with `campu
 runs it through `tools.execute`, so for them all three callers share one path. The parity that is
 actually enforced is between the **LLM agent and MCP** — both reach `tools.execute` and cannot
 differ, which is what `tests/mcp_parity.py` asserts.
-`tools.select_tools()` narrows 63 tools to 3–8 per utterance (a non-admin is offered exactly their role's menu) —
+`tools.select_tools()` narrows 64 tools to 3–9 per utterance (a non-admin is offered exactly their role's menu) —
 −92% tool-schema bytes on the README's 40 example requests (`docs/charts/results.json`; this replaces an
 older, unsourced −64%). Free tiers are stingy and this is what keeps multi-hop turns
 inside the budget.
@@ -316,22 +316,20 @@ ships a timetable back.
 ## Tests
 
 ```bash
-python tests/solver_test.py    # 44 assertions, no server, no API cost
+python tests/solver_test.py    # 53 assertions, no server, no API cost
 python tests/mcp_parity.py     # 270 assertions, no server, no API cost
-python tests/campus_test.py    # 126 assertions, no server, no API cost
+python tests/campus_test.py    # 160 assertions, no server, no API cost
 python tests/mesh_test.py      # 25 assertions, no server, no API cost (6a-6c need node)
-python tests/auth_test.py      # 91 assertions, no server, no API cost
+python tests/auth_test.py      # 108 assertions, no server, no API cost
 python tests/makeup_test.py    # 33 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
-python tests/deploy_test.py    # 71 assertions, no server, no API cost
+python tests/deploy_test.py    # 79 assertions, no server, no API cost
 python tests/nlu_test.py       # 49 assertions, no server, no API cost
 python tests/language_test.py  # 19 assertions, no server, no API cost
 python tests/cie_test.py       # 59 assertions, no server, no API cost
 python tests/accreditation_test.py # 28 assertions, no server, no API cost
 python tests/risk_test.py      # 17 assertions, no server, no API cost
-python tests/deploy_test.py    # 68 assertions, no server, no API cost
-python tests/nlu_test.py       # 24 assertions, no server, no API cost
 python tests/notify_test.py    # 50 assertions, no server, no API cost (a stub gateway on loopback)
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens

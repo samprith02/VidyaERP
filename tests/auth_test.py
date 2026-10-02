@@ -338,101 +338,277 @@ check("5i the LLM's first hop is offered only the student's tools",
       {s["function"]["name"] for s in tools.select_tools("show me everything", S_llm)[0]} == set(access.POLICY["student"]))
 
 # --------------------------- 6 · request decisions: one path, the ceiling enforced (#70, #71)
+
 print("\n6 · every decision path applies the Registrar's delegation and refuses a decided request")
+
 print("-" * 78)
+
 from agents import PolicyGuard                                     # noqa: E402
+
+
 
 CAP = PolicyGuard.APPROVAL_CEILING
 
 
+
+
+
 def status(rid):
+
     return one(con, "SELECT status FROM requests WHERE id=?", (rid,))["status"]
 
 
+
+
+
 def new_request(amount, title):
+
     return con.execute("""INSERT INTO requests(kind,raised_by,role,target,title,details,amount,status,priority,
+
                           created_at,sla_hrs) VALUES('Infrastructure','HOD-CSE','HOD','Principal',?,'',?,'Pending',
+
                           'Medium','2026-09-03',48)""", (title, amount)).lastrowid
 
 
+
+
+
 big = new_request(CAP + 700_000, "AV system above the delegation")
+
 con.commit()
+
 before = {r["id"]: r["status"] for r in rows(con, "SELECT id, status FROM requests")}
+
 out = orch.handle(con, "approve all under 1 lakh", "dec1", "admin", "registrar")
+
 after = {r["id"]: r["status"] for r in rows(con, "SELECT id, status FROM requests")}
+
 changed = {k: after[k] for k in after if after[k] != before[k]}
+
 # Defect (#70): the "1" of "1 lakh" was read as a request id, and REQ-0001 - a
+
 # medical leave - was approved on its own.
+
 check("6a 'approve all under 1 lakh' is a bulk approval, not REQ-0001",
+
       1 not in changed or one(con, "SELECT amount FROM requests WHERE id=1")["amount"] <= 100_000
+
       and len(changed) > 1 and all(v == "Approved" for v in changed.values()), str(changed))
+
 check("6b ...and approves only requests at or under ₹1,00,000",
+
       all(one(con, "SELECT amount FROM requests WHERE id=?", (k,))["amount"] <= 100_000 for k in changed), str(changed))
+
 out = orch.handle(con, "approve all under 5000", "dec0", "admin", "registrar")
+
 check("6b2 a bare rupee figure is a cap too: 'approve all under 5000' is bulk, not REQ-5000",
+
       "Bulk-approved" in json.dumps(out["blocks"]), json.dumps(out["blocks"])[:140])
+
 out = orch.handle(con, "approve all under 50 crore", "dec2", "admin", "registrar")
+
 # Defect (#71): the ceiling was printed in the trace and never compared.
+
 check("6c a bulk cap above the delegation is clamped to it: the ₹12 L request stays pending", status(big) == "Pending")
+
 check("6c2 ...and the answer says so, rather than calling the asked-for cap respected",
+
       "stays for the Principal" in json.dumps(out["blocks"])
+
       and any(t["agent"] == "PolicyGuard" and t["status"] == "warn" for t in out["trace"]), json.dumps(out["blocks"])[:200])
+
 bd = next((t["detail"] for t in out["trace"] if t["action"] == "bulk_decision"), "")
+
 nums = [int(x) for x in re.findall(r"\d+", bd)[:2]]
+
 check("6c3 ...because the clamped cap never selects a request the delegation would refuse",
+
       len(nums) == 2 and nums[0] == nums[1], bd)
+
 out = orch.handle(con, f"approve {big}", "dec3", "admin", "registrar")
+
 check("6d the rule engine refuses to approve it - a guard warning, not a failure",
+
       status(big) == "Pending" and any(t["agent"] == "PolicyGuard" and t["status"] == "warn" for t in out["trace"])
+
       and not any(t["status"] == "error" for t in out["trace"]), json.dumps(out["trace"])[-240:])
+
 r = call("admin", "decide_request", {"request_id": big, "decision": "approve"}, U="yes, approve it")
+
 check("6e so does the tool the LLM and MCP use - DENIED, and failure_of sees no failure",
+
       status(big) == "Pending" and "DENIED" in r["data"] and tools.failure_of(r) is None, str(r["data"])[:140])
+
 bad = A.decide(big, "approve", Req(P["admin"]))
+
 check("6f and so do the inbox buttons", status(big) == "Pending" and getattr(bad, "status_code", 200) == 403)
+
 check("6g a rejection needs no delegation", A.decide(big, "reject", Req(P["admin"])) == {"ok": True, "status": "Rejected"})
+
 again = A.decide(big, "approve", Req(P["admin"]))
+
 check("6h a decided request is not decided again", status(big) == "Rejected" and getattr(again, "status_code", 200) == 409)
+
 small = new_request(1000, "probe")
+
 con.commit()
+
 check("6i an unknown decision word is refused, not taken as reject",
+
       getattr(A.decide(small, "maybe", Req(P["admin"])), "status_code", 200) == 400 and status(small) == "Pending")
+
 check("6j a request that does not exist is not 'ok'", getattr(A.decide(99999, "reject", Req(P["admin"])),
+
                                                               "status_code", 200) == 409)
+
 led = one(con, "SELECT * FROM audit WHERE action='request.decide' ORDER BY id DESC LIMIT 1")
+
 check("6k every decision is audited old -> new under the signed-in account",
+
       led and led["actor"] == "registrar" and json.loads(led["payload"])["now"] == "Rejected"
+
       and json.loads(led["payload"])["id"] == big, str(led and dict(led)))
-# ------------------------------------------- 8 · what a user writes is shown as text (#85)
-print("\n8 · the pages escape what users can write")
+
+# ------------------------------------------------ 7 · library loans, by role (#91)
+
+print("\n7 · whose library loans each role may read")
+
 print("-" * 78)
+
+CSE_STU = one(con, """SELECT usn FROM students WHERE dept='CSE' AND usn<>? AND usn IN
+
+                      (SELECT member FROM book_loans WHERE returned_on IS NULL) ORDER BY usn""", (STU["usn"],))["usn"]
+
+r = call("student", "library_loans", {})
+
+check("7a a student reads their own loans by default", r["data"].get("member") == STU["usn"], str(r["data"])[:120])
+
+check("7b ...'me' is them too", call("student", "library_loans", {"member": "me"})["data"].get("member") == STU["usn"])
+
+check("7c ...and another student's loans are refused", denied(call("student", "library_loans", {"member": CSE_STU})))
+
+check("7d a teacher reads their own", call("faculty", "library_loans", {})["data"].get("member") == FAC["id"])
+
+check("7e ...but not a student's", denied(call("faculty", "library_loans", {"member": CSE_STU})))
+
+check("7f a HOD reads a student in the department", call("hod", "library_loans", {"member": CSE_STU})["data"]
+
+      .get("member") == CSE_STU)
+
+check("7g ...and a colleague in it", call("hod", "library_loans", {"member": FAC["id"]})["data"].get("member") == FAC["id"])
+
+check("7h ...but not another department's student or teacher",
+
+      denied(call("hod", "library_loans", {"member": STU2["usn"]}))
+
+      and denied(call("hod", "library_loans", {"member": FAC2["id"]})))
+
+sid = A._sid(P["hod"], "loans")
+
+orch.SESS.pop(sid, None)
+
+orch.sess(sid)["user"] = P["hod"]
+
+out = orch.handle(con, f"{CSE_STU} can you tell me which book he has borrowed", sid)
+
+text = json.dumps(out["blocks"]).lower()
+
+check("7i the reported case: the HOD gets the loans, not the 360",
+
+      out.get("intent") == "library_loans" and "on loan" in text and "cgpa" not in text and "attendance" not in text,
+
+      f"{out.get('intent')} {text[:120]}")
+
+out = orch.handle(con, f"show me the details of {CSE_STU}", sid)
+
+check("7j ...and 'details of' still gives the HOD the full profile", out.get("intent") == "student_360")
+
+out = orch.handle(con, "which book has she borrowed?", sid)
+
+check("7k ...and a follow-up's pronoun is that student",
+
+      out.get("intent") == "library_loans" and CSE_STU in json.dumps(out["blocks"]))
+
+orch.SESS.pop(sid, None)
+
+sid = A._sid(P["student"], "loans")
+
+orch.SESS.pop(sid, None)
+
+orch.sess(sid)["user"] = P["student"]
+
+out = orch.handle(con, "which books have I borrowed?", sid)
+
+check("7l a student asking about their own books gets their loans",
+
+      out.get("intent") == "library_loans" and STU["usn"] in json.dumps(out["blocks"]), str(out.get("intent")))
+
+orch.SESS.pop(sid, None)
+
+check("7m the LLM menu for every role includes it",
+
+      all("library_loans" in access.POLICY[r] for r in ("student", "faculty", "hod")))
+
+# ------------------------------------------- 8 · what a user writes is shown as text (#85)
+
+print("\n8 · the pages escape what users can write")
+
+print("-" * 78)
+
 # Defect found 2026-10-02: a student's certificate purpose became a request
+
 # title, and the Registrar's inbox put it into innerHTML raw. Through the LLM
+
 # engine a student could run script in the Registrar's session, which is
+
 # enough to "approve" gated writes as them. Escaping is checked by reading the
+
 # pages: any record field that can carry a person's words, interpolated bare
+
 # as ${x.title} or ${x.title||''}, fails here.
+
 import re                                                          # noqa: E402
 
+
+
 USER_TEXT = ("title", "details", "reason", "body", "audience", "channel", "purpose", "note", "payload",
+
              "actor", "action", "created_by", "raised_by", "target", "kind", "name", "email", "status",
+
              "outcome", "orig_name", "new_name", "mentor_name", "designation", "plan_ref", "error")
+
 BARE = re.compile(r"\$\{\s*[A-Za-z_]\w{0,3}\.(" + "|".join(USER_TEXT) + r")\s*(?:\|\|\s*'[^']*'\s*)?\}")
 
 
+
+
+
 def bare_fields(page):
+
     with open(os.path.join(HERE, "static", page), encoding="utf-8") as f:
+
         return [(i + 1, m.group(0)) for i, line in enumerate(f) for m in BARE.finditer(line)]
 
 
+
+
+
 check("8a the console interpolates no user-writable field without esc()", not bare_fields("index.html"),
+
       str(bare_fields("index.html")[:6]))
+
 check("8b ...and neither does the portal", not bare_fields("portal.html"), str(bare_fields("portal.html")[:6]))
+
 inbox = open(os.path.join(HERE, "static", "index.html"), encoding="utf-8").read()
+
 check("8c the inbox escapes the request title and details, the fields #85 used",
+
       "<b>${esc(x.title)}</b>" in inbox and "${esc(x.details)}" in inbox)
+
 check("8d the scan itself finds a bare field (it is not vacuous)",
+
       len(BARE.findall("<b>${x.title}</b> ${l.reason||''} ${esc(x.body)}")) == 2)
+
 
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")

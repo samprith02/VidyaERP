@@ -146,19 +146,44 @@ def dept_leave(con, P, a):
     return a, None
 
 
+SELF_WORDS = {"", "me", "my", "mine", "myself", "self", "i"}
+
+
+def own_loans(con, P, a):
+    """Library loans (#91): a student or a teacher sees their own; a HOD also
+    any student or colleague in the department. Narrows to "me" by default."""
+    me = P.get("usn") or P.get("fid")
+    ref = str(a.get("member") or "").strip()
+    s = _stu(con, ref) if ref.lower() not in SELF_WORDS else None
+    f = _fac(con, ref) if ref.lower() not in SELF_WORDS and not s else None
+    who = (s and s["usn"]) or (f and f["id"])
+    if ref.lower() in SELF_WORDS or ref.upper() == me or who == me:
+        a["member"] = me
+        return a, None
+    if P["role"] == "hod" and (s or f):
+        if (s or f)["dept"] != P["dept"]:
+            return None, f"{who} is not in {P['dept']}."
+        a["member"] = who
+        return a, None
+    if P["role"] == "hod":
+        return None, f"No student or colleague in {P['dept']} matches '{ref}'."
+    return None, "You can only see your own library loans."
+
+
 # ------------------------------------------------------------- the policy
 STUDENT = {
     "my_home": ALLOW, "my_requests": ALLOW, "my_placement": ALLOW,
     "request_gate_pass": ALLOW, "request_certificate": ALLOW,
     "student_360": self_usn, "no_dues_status": self_usn,
     "get_timetable": own_class, "exam_schedule": own_dept_sem, "library_search": ALLOW,
-    "makeup_schedule": own_class,
+    "makeup_schedule": own_class, "library_loans": own_loans,
     "cie_marks": self_usn,
 }
 FACULTY = {
     "my_home": ALLOW, "my_requests": ALLOW, "my_mentees": ALLOW, "my_leaves": ALLOW, "apply_leave": ALLOW,
     "faculty_timetable": self_fac, "faculty_profile": self_fac,
     "get_timetable": dept_class, "exam_schedule": ALLOW, "library_search": ALLOW, "find_free_rooms": ALLOW,
+    "library_loans": own_loans,
     "makeup_schedule": own_teaching,
     "academic_risk": lambda con, P, a: own_mentees(con, P, a),
     "faculty_availability": lambda con, P, a: self_fac(con, P, a, "faculty"),

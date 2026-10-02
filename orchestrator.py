@@ -90,6 +90,8 @@ def handle(con, text, sid="default", role="admin", actor="admin@vidyatech"):
     ent["date"], ent["date_label"] = d, dlbl
     f, fscore = nlu.match_faculty(text, fac_rows)
     ent["faculty"] = f
+    if ent["usn"] or intent in COREF_INTENTS:
+        _corefer(st, ent, text, tr)
     detail = " · ".join(f"{k}={v['name'] if k=='faculty' else v}" for k, v in ent.items()
                         if v not in (None, [], ""))
     tr.add("EntityResolver", "extract", detail or "no explicit entities — using defaults")
@@ -296,10 +298,51 @@ def resolve_pending(con, text, st, tr, actor):
 
 
 def _delivered(tr, out):
+
     """The rule engine's own dispatches report delivery the way tools.execute does (#26)."""
+
     s = notify_gateway.step(out)
+
     if s:
+
         tr.add(*s)
+
+
+PRONOUN_RX = re.compile(r"\b(?:he|she|him|his|her|hers|they|them|their)\b", re.I)
+
+COREF_INTENTS = {"library", "student.360", "student.query"}
+
+
+
+
+
+def _corefer(st, ent, text, tr):
+
+    """Remember the last student a turn named; let "he"/"she" mean them (#91).
+
+
+
+    "which book has he borrowed?" after "show me the details of <USN>" had no
+
+    USN and searched the catalogue for the sentence. Only a USN is carried, and
+
+    only from this same session; access.py still decides what it may show.
+
+    """
+
+    if ent.get("usn"):
+
+        st["ctx"]["last_usn"] = ent["usn"]
+
+        return
+
+    m = PRONOUN_RX.search(text)
+
+    if m and st["ctx"].get("last_usn"):
+
+        ent["usn"] = st["ctx"]["last_usn"]
+
+        tr.add("EntityResolver", "coreference", f"'{m.group(0)}' → {ent['usn']} (named earlier in this session)")
 
 
 def _relay(tr, res, tool):
@@ -345,6 +388,7 @@ def portal_turn(con, text, st, tr, P):
            "date": nlu.parse_date(text)[0],
            "faculty": nlu.match_faculty(text, rows(con, "SELECT id,name,dept,designation,expertise,max_load "
                                                          "FROM faculty"))[0]}
+    _corefer(st, ent, text, tr)
     tool, args = portal.route(con, text, P, ent)
     if not tool:
         tr.add("Router", "no_confident_intent", "showing what this account can do", status="warn")

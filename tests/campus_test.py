@@ -482,6 +482,81 @@ check("10f no source file contains a stray backspace character", not bs, str(bs)
 m = re.search(r"const APPROVING=/(.+?)/i;", html)
 check("10d the deep-link guard mirrors guard.APPROVAL_RX exactly",
       m and m.group(1) == tools.APPROVAL_RX.pattern, m and m.group(1)[:60])
+
+# ===================================================== 11 · one member's loans (#91)
+print("\n11 · which book has a student borrowed")
+print("-" * 78)
+# Reported 2026-10-02: a HOD asking which book a student had borrowed got the
+# whole Student 360 back (attendance, CGPA, fees...), because no read tool could
+# answer it. On the Registrar's rule engine it was worse: the fine question fell
+# to smalltalk and "when does the book borrowed by <USN> need to be returned?"
+# staged return_book, a write that checks the books in.
+la = campus.LibraryAgent()
+held = one(con, """SELECT member, COUNT(*) n FROM book_loans WHERE returned_on IS NULL AND member_kind='Student'
+                   GROUP BY member HAVING n >= 2 ORDER BY member LIMIT 1""")
+U9 = held["member"]
+r = run("library_loans", {"member": U9})
+mine = la.active(con, U9)
+check("11a the tool lists each loan by title, with issue date, due date, status and fine",
+      [x["title"] for x in r["data"]["loans"]] == [l["title"] for l in mine]
+      and all(set(x) >= {"book", "issued_on", "due_on", "status", "fine", "days_overdue"} for x in r["data"]["loans"]),
+      str(r["data"])[:160])
+check("11b its fines are the circulation desk's fines, to the rupee",
+      r["data"]["total_fine"] == sum(la.fine(l) for l in mine)
+      and r["data"]["total_fine"] == sum(o["fine_due"] for o in la.overdue(con) if o["member"] == U9))
+check("11c it carries nothing else: no attendance, CGPA or fees",
+      not re.search(r"attendance|cgpa|fee", json.dumps(r).lower()), json.dumps(r)[:160])
+free = one(con, """SELECT usn FROM students WHERE usn NOT IN (SELECT member FROM book_loans WHERE returned_on IS NULL)
+                   ORDER BY usn LIMIT 1""")["usn"]
+r = run("library_loans", {"member": free})
+check("11d a member with nothing out is told so", r["data"]["loans"] == [] and "no books on loan" in r["blocks"][0]["md"])
+fl = one(con, "SELECT member FROM book_loans WHERE returned_on IS NULL AND member_kind='Faculty' LIMIT 1")
+check("11e a staff id is a member too", fl is None or run("library_loans", {"member": fl["member"]})["data"]["member"]
+      == fl["member"])
+check("11f an unknown member is an error, not an empty list",
+      tools.failure_of(run("library_loans", {"member": "4VP99ZZ999"})))
+check("11g it is a read: not gated, owned by the LibraryAgent",
+      "library_loans" not in tools.GATED_WRITES and tools.agent_of("library_loans") == "LibraryAgent")
+
+ASKS = [f"{U9} can you tell me which book he has borrowed", f"how much fine does {U9} have?",
+        f"when does the book borrowed by {U9} need to be returned?", f"show me all books borrowed by {U9}",
+        f"which book did {U9} borrow?"]
+for q in ASKS:
+    sid = "loans-q"
+    orch.SESS.pop(sid, None)
+    out = orch.handle(con, q, sid)
+    ran = [s["detail"] for s in out["trace"] if s["agent"] == "ToolRouter"] + \
+          [s["action"] for s in out["trace"] if s["agent"] == "LibraryAgent"]
+    check(f"11h Registrar: “{q[:50]}” reads the loans and stages nothing",
+          "member_loans" in ran and orch.sess(sid)["pending"] is None, f"{out.get('intent')} {ran}")
+orch.SESS.pop("loans-q", None)
+sid = "loans-w"
+orch.SESS.pop(sid, None)
+orch.handle(con, f"Return {mine[0]['book_id']} for {U9}", sid)
+check("11i an ORDER to return still proposes the write", (orch.sess(sid)["pending"] or {}).get("tool") == "return_book")
+orch.SESS.pop(sid, None)
+ent9 = {"usn": U9, "dept": None, "faculty": None}
+check("11i2 ...even when it names overdue books: an order is not a question",
+      campus.rule_route(con, "library", f"Return the overdue books of {U9}", ent9)[0] == "return_book")
+check("11i3 ...and a polite question that ORDERS an issue is still an issue",
+      campus.rule_route(con, "library", f"Can you issue BK0012 to {free}?", {**ent9, "usn": free})[0] == "issue_book")
+check("11j 'show me the details of <USN>' is a student lookup, not smalltalk",
+      top(f"show me the details of {U9}") == "student.query", top(f"show me the details of {U9}"))
+sid = "loans-c"
+orch.SESS.pop(sid, None)
+orch.handle(con, f"show me the details of {U9}", sid)
+out = orch.handle(con, "which book has he borrowed?", sid)
+co = [s for s in out["trace"] if s["action"] == "coreference"]
+check("11k a follow-up's 'he' is the student named in the previous turn",
+      co and U9 in co[0]["detail"] and any(s["action"] == "member_loans" and U9 in s["detail"] for s in out["trace"]),
+      str([s["action"] for s in out["trace"]]))
+orch.SESS.pop(sid, None)
+out = orch.handle(con, "which book has he borrowed?", "loans-none")
+check("11l with no student named before, 'he' is not guessed",
+      not any(s["action"] == "coreference" for s in out["trace"]))
+orch.SESS.pop("loans-none", None)
+offered = {s["function"]["name"] for s in tools.select_tools(f"which book has {U9} borrowed", S())[0]}
+check("11m the language model is offered the loans tool for the question", "library_loans" in offered, str(offered))
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")
 for f in FAILED:

@@ -261,6 +261,36 @@ def t_library_search(con, S, U, query="", **kw):
             "trace": [("LibraryAgent", "catalogue_search", f"'{query[:40]}' → {len(hits)} title(s)")]}
 
 
+def t_library_loans(con, S, U, member="", **kw):
+    """One member's books on loan, by title, with due dates and fines (#91).
+    Read-only. Student 360 only ever gave a count, so "which book has he
+    borrowed?" had no tool that could answer it."""
+    la = LibraryAgent()
+    mem, err = la.member(con, member)
+    if err:
+        return {"data": err, "blocks": [B_text(err["error"])], "trace": []}
+    loans = []
+    for l in la.active(con, mem["id"]):
+        d = la.days_over(l)
+        loans.append({"book": l["book_id"], "title": l["title"], "issued_on": l["issued_on"],
+                      "due_on": l["due_on"], "days_overdue": d, "fine": la.fine(l),
+                      "status": "Overdue" if d else "On loan"})
+    fine = sum(x["fine"] for x in loans)
+    head = (f"**{mem['name']}** ({mem['id']}) has **{len(loans)} book{'s' if len(loans) != 1 else ''}** on loan"
+            + (f", **{inr(fine)}** in fines" if fine else "") + "." if loans else
+            f"**{mem['name']}** ({mem['id']}) has no books on loan.")
+    blocks = [B_text(head)]
+    if loans:
+        blocks.append(B_table(["Book", "Title", "Issued", "Due", "Status", "Fine"],
+                              [[x["book"], x["title"], x["issued_on"], x["due_on"],
+                                f"{x['status']} ({x['days_overdue']} days)" if x["days_overdue"] else x["status"],
+                                inr(x["fine"]) if x["fine"] else "—"] for x in loans], dense=True))
+    return {"data": {"member": mem["id"], "name": mem["name"], "kind": mem["kind"], "loans": loans,
+                     "total_fine": fine, "fine_per_day": cd.FINE_PER_DAY},
+            "blocks": blocks,
+            "trace": [("LibraryAgent", "member_loans", f"{mem['id']}: {len(loans)} on loan · {inr(fine)} fines")]}
+
+
 def t_library_overdue(con, S, U, dept=None, **kw):
     od = LibraryAgent().overdue(con, dept.upper() if dept else None)
     fines = sum(o["fine_due"] for o in od)
@@ -1681,6 +1711,10 @@ REGISTRY = [
     (t_library_overview, "library_overview", "Library circulation: loans, overdue, fines, titles fully out.", _p({})),
     (t_library_search, "library_search", "Search the library catalogue by title, subject, author or BK id.",
      _p({"query": _S}, ["query"])),
+    (t_library_loans, "library_loans",
+     "One member's books on loan (USN, staff name or staff id): title, BK id, issued, due date, days "
+     "overdue and fine. Read-only. Use this, not student_360, for 'which book has X borrowed', 'X's fine', "
+     "'when is X's book due'.", _p({"member": _S}, ["member"])),
     (t_library_overdue, "library_overdue", "Overdue loans with fines, optionally for one department.",
      _p({"dept": _S})),
     (t_issue_book, "issue_book",
@@ -1742,8 +1776,9 @@ GATED_WRITES = ("issue_book", "return_book", "library_remind_overdue", "allocate
 TOOL_GROUPS = {
     "ops.radar":    ["ops_radar", "institution_overview", "review_pending_leaves", "gate_pass_queue",
                      "list_requests"],
-    "student.360":  ["student_360", "no_dues_status", "student_lookup"],
-    "library":      ["library_overview", "library_search", "library_overdue", "issue_book", "return_book",
+    "student.360":  ["student_360", "no_dues_status", "student_lookup", "library_loans"],
+    "library":      ["library_loans", "library_overview", "library_search", "library_overdue", "issue_book",
+                     "return_book",
                      "library_remind_overdue"],
     "hostel":       ["hostel_status", "hostel_complaints", "allocate_hostel_room",
                      "dispatch_hostel_complaints", "student_360"],
@@ -1767,6 +1802,20 @@ for _fn, _name, _d, _s in REGISTRY:
 
 
 # ================================================================ rule routing
+LOANS_RX = re.compile(r"\bborrow(?:ed|ing|s)?\b|\bon loan\b|\bloans?\b|\bfines?\b|\boverdue\b|"
+                      r"\bbooks?\b[^.?!]{0,40}\b(?:due|returned|holding|has|have|got|taken|checked out)\b|"
+                      r"\bdue\b[^.?!]{0,40}\bbooks?\b")
+ASK_RX = re.compile(r"\?|\b(?:which|what|when|how much|how many|show|list|tell me|can you tell|"
+                    r"could you tell|does|did|has|have)\b")
+
+
+def loans_question(text):
+    """Is this a question about books someone holds (not an order to issue or
+    return one)? Shared by the Registrar's and the portal's rule routing."""
+    t = (text or "").lower()
+    return bool(LOANS_RX.search(t) and ASK_RX.search(t))
+
+
 def rule_route(con, intent, text, ent):
     """The deterministic engine's half: utterance -> (tool, args). Execution
     goes through tools.execute like every other caller, so the rule engine and
@@ -1779,6 +1828,11 @@ def rule_route(con, intent, text, ent):
     if intent == "student.360":
         return "student_360", {"usn": usn or ""}
     if intent == "library":
+        # A QUESTION about one member's loans is a read (#91). Before this,
+        # "when does the book borrowed by <USN> need to be returned?" staged
+        # return_book, a write that checks the books in.
+        if loans_question(text) and (usn or ent.get("faculty")):
+            return "library_loans", {"member": usn or ent["faculty"]["name"]}
         if re.search(r"remind|reminder|nudge|notify|chase", t):
             return "library_remind_overdue", {}
         if re.search(r"\breturn", t):
