@@ -430,6 +430,50 @@ check("5d requirements.txt is still two packages",
 os.remove(cold)
 
 
+# ======================================= 6 · wrong-typed input is a 400, not a 500 (#90)
+print("\n6 · wrong-typed input is refused in words")
+print("-" * 78)
+# Found 2026-10-02 by probing a running instance: {"username": 5} on the
+# public login endpoint, {"text": 5} on /api/chat, a non-numeric sem and an
+# unparseable date each raised inside the handler and came back as a bare 500.
+import asyncio                                                     # noqa: E402
+from types import SimpleNamespace as NS                            # noqa: E402
+
+
+def refused(fn, *a, **k):
+    """The BadInput message a handler raises, or None if it does not."""
+    try:
+        fn(*a, **k)
+    except A.BadInput as e:
+        return str(e)
+    except Exception:                    # any other exception is the 500 this section exists to prevent
+        return None
+    return None
+
+
+anon = NS(client=None, cookies={}, state=NS(user=None))
+reg = NS(client=None, cookies={}, state=NS(user={"id": "registrar", "role": "admin"}))
+check("6a login: a non-text username is a 400, before anything is looked up",
+      refused(A.login, anon, {"username": 5, "password": 5}) == "'username' must be text.")
+check("6b chat: non-text 'text' is a 400", refused(A.chat, reg, {"text": 5}) == "'text' must be text."
+      and refused(A.chat, reg, {"text": ["a"]}))
+check("6c password reset: a non-text username is a 400", refused(A.reset_password, {"username": 5}))
+check("6d timetable: an unparseable date is a 400, a real one is served",
+      refused(A.timetable, date="2026-13-45") and refused(A.timetable, date="notadate")
+      and A.timetable(date="2026-09-07")["type"] == "grid")
+check("6e generator: a non-numeric sem or a section that does not run is a 400 (#89)",
+      refused(A._gen_args, {"sem": "x"}) and "NOPE-5A" in (refused(A._gen_args, {"dept": "NOPE"}) or "")
+      and refused(A._gen_args, {"seed": "x"}))
+check("6f generator: lower-case arguments resolve to the real section",
+      A._gen_args({"dept": "cse", "sem": "5", "section": "a"})["dept"] == "CSE")
+r = asyncio.run(A._bad_input(None, A.BadInput("why")))
+check("6g BadInput is registered and becomes a 400 carrying the sentence",
+      A.app.exception_handlers.get(A.BadInput) is A._bad_input and r.status_code == 400
+      and json.loads(r.body) == {"error": "why"})
+check("6h missing or null is still empty text, not an error",
+      A._text({}, "x") == "" and A._text({"x": None}, "x") == "")
+
+
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")
 for f in FAILED:

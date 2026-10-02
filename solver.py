@@ -152,6 +152,39 @@ def standing_unavailability(con) -> dict:
     return out
 
 
+def classes(con):
+    """Every section that runs this semester: a curriculum for the (dept, sem)
+    and the sections its students are in. The one list both the solver and the
+    entry points read, so "which class?" has a single answer."""
+    out = []
+    for d in sorted(SUBJECTS):
+        for sm in sorted(SUBJECTS[d]):
+            for sec in sorted({r[0] for r in con.execute(
+                    "SELECT DISTINCT section FROM students WHERE dept=? AND sem=?", (d, sm))} or {"A"}):
+                out.append((d, sm, sec))
+    return out
+
+
+def resolve_class(con, dept, sem, section):
+    """(dept, sem, section) normalised to a section that runs, or (None, why).
+
+    A section that does not run used to be "rebuilt" as 0 of 0 periods and
+    reported as applied and verified clean - for "cse" in lower case too (#89).
+    """
+    d, x = str(dept or "").strip().upper(), str(section or "").strip().upper()
+    try:
+        s = int(sem)
+    except (TypeError, ValueError):
+        return None, f"Semester must be a number, not {sem!r}."
+    have = classes(con)
+    if (d, s, x) in have:
+        return (d, s, x), None
+    near = [f"{a}-{b}{c}" for a, b, c in have if a == d] or sorted({a for a, _b, _c in have})
+    return None, (f"No section {d}-{s}{x} runs this semester, so there is nothing to rebuild. "
+                  f"{'Sections in ' + d if any(a == d for a, _b, _c in have) else 'Departments'}: "
+                  f"{', '.join(near)}.")
+
+
 def build_input(con, scope="all", dept=None, sem=None, section=None, seed=7,
                 unavailable=None, time_budget_s=25.0) -> Input:
     """Read the institution out of the database and shape it for the solver.
@@ -190,12 +223,7 @@ def build_input(con, scope="all", dept=None, sem=None, section=None, seed=7,
         inp.subjects.append(s["code"])
 
     # ---- classes
-    want = []
-    for d in sorted(SUBJECTS):
-        for sm in sorted(SUBJECTS[d]):
-            for sec in sorted({r["section"] for r in rows(
-                    "SELECT DISTINCT section FROM students WHERE dept=? AND sem=?", (d, sm))} or {"A"}):
-                want.append((d, sm, sec))
+    want = classes(con)
 
     targets = set(want)
     if scope == "class":

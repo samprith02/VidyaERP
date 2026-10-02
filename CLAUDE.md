@@ -249,6 +249,13 @@ ships a timetable back.
   `--screenshot` cannot carry a session cookie, and headless Edge stops firing animation frames
   after ~100 — which is why `mesh.js` also steps from a timer when frames stall.
 
+- **A request that names nothing real is refused, never "done" as an empty set (#89, #90).**
+  `solver.resolve_class` is the one answer to "does this section run?" (`solver.classes`, the
+  list `build_input` itself uses), and both `tools._gen_scope` and `app._gen_args` go through it.
+  Before, "rebuild cse-5a" (a model's lower case) or NOPE-5A planned 0 of 0, applied, and
+  `solver.verify` honestly re-read an empty set as "clean". At the HTTP boundary, `app._text`
+  and `BadInput` turn a wrong-typed value into a 400 with a sentence; it used to be a bare 500,
+  including on the public login endpoint (`deploy_test.py` section 6).
 - **Always pass `encoding="utf-8"` to `open()`.** Windows defaults to cp1252 and the console
   contains typographic quotes and `·` separators. `app.py` served a 500 on the whole page for
   exactly this reason.

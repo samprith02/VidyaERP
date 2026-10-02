@@ -225,6 +225,41 @@ phases = [e["name"] for e in res["trace"] if e["t"] == "phase"]
 check("all five phases run", phases == ["Staffing", "Search", "Polish", "Fill"]
       or phases == ["Staffing", "Search", "Repair", "Polish", "Fill"], str(phases))
 
+# ------------------------------------------- a section that does not run (#89)
+print("\na section that does not run is refused, not rebuilt as 0 of 0")
+# Defect found 2026-10-02: "rebuild NOPE-5A", "CSE-4A" (no even semester runs)
+# and "cse"-in-lower-case were each planned as 0 of 0 periods, applied, and
+# verified "clean" - an honest re-read of an empty set, reported as success.
+import tools                                                       # noqa: E402
+
+want = solver.classes(con)
+allc = solver.build_input(con, scope="all", seed=7).classes
+check("classes() is the list the solver builds for scope='all'",
+      want == [(k.dept, k.sem, k.section) for k in allc], f"{len(want)} vs {len(allc)}")
+check("case is normalised: cse / '5' / a is CSE-5A",
+      solver.resolve_class(con, "cse", "5", "a") == (("CSE", 5, "A"), None))
+for d, s, x in (("NOPE", 5, "A"), ("CSE", 4, "A"), ("CSE", 5, "Z")):
+    got, why = solver.resolve_class(con, d, s, x)
+    check(f"{d}-{s}{x} is refused, and the refusal names real sections",
+          got is None and why and "CSE-5A" in why if d == "CSE" else got is None and "CSE" in (why or ""),
+          str(why)[:120])
+check("a non-numeric semester is refused in words",
+      solver.resolve_class(con, "CSE", "five", "A")[0] is None)
+
+S = {"pending": None, "history": [], "ctx": {}}
+r = tools.execute(con, S, "rebuild it", "plan_timetable_generation",
+                  {"scope": "class", "dept": "cse", "sem": 5, "section": "a"})
+check("the tool plans CSE-5A from lower-case arguments, with real periods",
+      r["data"].get("target") == "CSE-5A" and r["data"].get("total", 0) > 0, str(r["data"])[:120])
+S = {"pending": None, "history": [], "ctx": {}}
+r = tools.execute(con, S, "rebuild it", "plan_timetable_generation",
+                  {"scope": "class", "dept": "NOPE", "sem": 5, "section": "A"})
+check("the tool refuses NOPE-5A and stages nothing",
+      "error" in r["data"] and S["pending"] is None, str(r["data"])[:120])
+r = tools.execute(con, S, "yes, apply it", "apply_timetable_generation", {})
+check("...so there is nothing for a 'yes' to apply",
+      not r["data"].get("applied") and tools.failure_of(r), str(r["data"])[:120])
+
 # ---------------------------------------------------------------------- summary
 # Windows holds the file while the connection is open - close before unlinking.
 con.close()
