@@ -429,6 +429,77 @@ check("5d requirements.txt is still two packages",
       "a third dependency landed — CLAUDE.md says think hard first")
 os.remove(cold)
 
+# Defect (#102): an existing file counted as seeded, so an empty or half-built
+# one was never seeded and the app failed at import on "no such table".
+import sqlite3                                                     # noqa: E402
+
+
+def boots(prepare):
+    if os.path.exists(cold):
+        os.remove(cold)
+    prepare()
+    db.DB_PATH = cold
+    try:
+        db.seed()
+        c = sqlite3.connect(cold)
+        n = c.execute("SELECT COUNT(*) FROM students").fetchone()[0]
+        c.close()
+        return n
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
+    finally:
+        db.DB_PATH = _keep
+
+
+n = boots(lambda: sqlite3.connect(cold).close())
+check("5e a 0-byte database file (a stray connect) is seeded, not a crash", isinstance(n, int) and n > 1000, str(n))
+
+
+def half():
+    c = sqlite3.connect(cold)
+    c.executescript(db.SCHEMA)
+    c.close()
+
+
+n = boots(half)
+check("5f ...and so is one with the tables but no institution (a seed killed part-way)",
+      isinstance(n, int) and n > 1000, str(n))
+
+
+def students_only():
+    half()
+    c = sqlite3.connect(cold)
+    c.execute("INSERT INTO students(usn, name, dept, sem, section) VALUES('4VP99ZZ001','x','CSE',5,'A')")
+    c.commit()
+    c.close()
+
+
+n = boots(students_only)
+check("5h ...and one whose first table has rows but whose last does not", isinstance(n, int) and n > 1000, str(n))
+db.DB_PATH = cold
+c = sqlite3.connect(cold)
+c.execute("INSERT INTO exams(dept, sem, subject, date) VALUES('CSE', 5, 'X', '2026-09-27')")
+c.commit()
+c.close()
+sunday = db.verify()
+c = sqlite3.connect(cold)
+c.execute("DELETE FROM exams WHERE subject='X'")
+c.commit()
+c.close()
+check("5i db.verify() names an exam on a Sunday (#101), so 5c is not vacuous",
+      any(p.startswith("SUNDAY EXAM 2026-09-27") for p in sunday), str(sunday[:3]))
+c = sqlite3.connect(cold)
+c.execute("INSERT INTO audit(ts, actor, agent, action, payload, outcome) VALUES('t','marker','x','y','{}','z')")
+c.commit()
+c.close()
+db.seed()
+c = sqlite3.connect(cold)
+kept = c.execute("SELECT COUNT(*) FROM audit WHERE actor='marker'").fetchone()[0]
+c.close()
+db.DB_PATH = _keep
+check("5g a real institution is still left alone: seeding twice keeps what was written", kept == 1)
+os.remove(cold)
+
 
 # ======================================= 6 · wrong-typed input is a 400, not a 500 (#90)
 print("\n6 · wrong-typed input is refused in words")

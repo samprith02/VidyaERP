@@ -254,8 +254,25 @@ def _name(used):
 
 
 # ====================================================================== SEED
+def seeded():
+    """True when the file holds an institution: its first and last core tables
+    have rows. A file that merely exists (0 bytes after a stray connect(), or
+    a seed killed part-way) used to count, and the app then failed at import
+    on "no such table" (#102)."""
+    if not os.path.exists(DB_PATH):
+        return False
+    try:
+        c = sqlite3.connect(DB_PATH)
+        try:
+            return all(c.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("students", "placements"))
+        finally:
+            c.close()
+    except sqlite3.Error:
+        return False
+
+
 def seed(force=False):
-    if os.path.exists(DB_PATH) and not force:
+    if not force and seeded():
         _campus()                 # an older college.db picks the campus services up here
         return
     # Re-pin the stream on EVERY seed, not just once at import. It used to be
@@ -519,14 +536,17 @@ def seed(force=False):
     ex_start = today + dt.timedelta(days=21)
     for d in DEPTS:
         for sem in SEMS:
-            i = 0
+            day = ex_start
             for c, nm, cr, kind in SUBJECTS[d][sem]:
                 if kind != "T":
                     continue
+                # every other day, never a Sunday: "+2 days" once put 15 papers on Sun 27 Sep (#101)
+                if day.weekday() == 6:
+                    day += dt.timedelta(days=1)
                 cur.execute("INSERT INTO exams(dept,sem,subject,date,session,room,kind) VALUES(?,?,?,?,?,?,?)",
-                            (d, sem, c, (ex_start + dt.timedelta(days=i * 2)).isoformat(),
+                            (d, sem, c, day.isoformat(),
                              "FN (09:30-12:30)", random.choice(class_rooms), "SEE Theory"))
-                i += 1
+                day += dt.timedelta(days=2)
 
     for comp, ctc, offers in [("Infosys", 4.5, 62), ("TCS Digital", 7.0, 24), ("Bosch", 8.5, 11),
                               ("Mphasis", 5.2, 18), ("Zoho", 9.0, 6), ("L&T Construction", 6.0, 9),
@@ -578,6 +598,8 @@ def verify():
                           LEFT JOIN timetable t ON t.faculty=f.id GROUP BY f.id
                           HAVING load > f.max_load"""):
         problems.append(f"OVERLOAD {r['name']} {r['load']}/{r['max_load']}")
+    for r in c.execute("""SELECT date, COUNT(*) n FROM exams WHERE strftime('%w', date)='0' GROUP BY date"""):
+        problems.append(f"SUNDAY EXAM {r['date']} x{r['n']}")              # #101
     con.close()
     return problems
 
