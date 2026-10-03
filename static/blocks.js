@@ -128,6 +128,30 @@ function rBars(b){
       <div class="bt"><i class="${cls}" style="width:${w}%"></i></div>
       <div class="bv">${i.value}/${i.max} · ${pct}%</div></div>`}).join('')+'</div>';
 }
+// Subject performance (#96): attendance and internal marks as two labelled
+// meters per subject, each read from its own record, never one bar for both.
+// A tick marks each bar: 75% attendance, and 40% marks (20 of 50, the CIE minimum).
+function rPerf(b){
+  const w=v=>Math.max(0,Math.min(100,Number(v)||0));
+  const ST={'Secured':'ok','On track':'','At risk':'warn','Cannot reach':'bad'};
+  const meter=(cls,label,x,tick,val)=>`<div class="pm ${cls}${x.low?' low':''}"><span class="pk">${label}</span>`+
+    (x.pct==null?`<span class="pna">${esc(x.none||'Not available')}</span>`
+      :`<span class="pt" title="${attr(label+': '+x.pct+'%')}"><i style="width:${w(x.pct)}%"></i><b style="left:${tick}%"></b></span><span class="pv">${val}</span>`)+
+    (x.status?`<span class="pst ${ST[x.status]||''}">${esc(x.status)}</span>`:'')+'</div>';
+  return (b.title?`<h4 class="blk">${esc(b.title)}</h4>`:'')+'<div class="perf">'+
+    `<div class="plg"><span><i class="a"></i>Attendance (hours)</span><span><i class="m"></i>Internal marks (CIE so far)</span></div>`+
+    (b.summary&&b.summary.length?`<div class="psum">${b.summary.map(s=>`<span>${esc(s.label)} <b>${esc(s.value)}</b></span>`).join('')}</div>`:'')+
+    b.items.map(i=>{const a=i.attendance||{},m=i.marks||{};
+      return `<div class="prow"><div class="pn"><b>${esc(i.code)}</b> ${esc(i.name)}</div>`+
+        meter('att','Attendance',a,75,`${esc(a.pct)}% <small>${esc(a.attended)}/${esc(a.held)} hrs</small>`)+
+        meter('mk','Internal marks',m,40,`${esc(m.pct)}% <small>${esc(m.got)}/${esc(m.of)} so far</small>`)+'</div>'}).join('')+
+    (b.note?`<div class="pnote">${esc(b.note)}</div>`:'')+'</div>';
+}
+// Buttons that ask the assistant a read-only question (#97); the page sends data-say.
+function rQuick(b){
+  return (b.title?`<h4 class="blk">${esc(b.title)}</h4>`:'')+'<div class="quick">'+
+    b.items.map(i=>`<button type="button" class="btn sm ghost" data-say="${attr(i.ask)}">${esc(i.label)}</button>`).join('')+'</div>';
+}
 let DOCN=0;
 function rDocument(b){
   const id='doc'+(++DOCN), draft=b.status!=='issued';
@@ -171,6 +195,8 @@ function rBlock(b){
   if(b.type==='checklist') return rChecklist(b);
   if(b.type==='bars')      return rBars(b);
   if(b.type==='document')  return rDocument(b);
+  if(b.type==='perf')      return rPerf(b);
+  if(b.type==='quick')     return rQuick(b);
   return '';
 }
 

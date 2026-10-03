@@ -5,7 +5,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![Dependencies: 2](https://img.shields.io/badge/dependencies-2-brightgreen.svg)](requirements.txt)
-[![Tests: 1071 assertions](https://img.shields.io/badge/tests-1071_assertions_passing-brightgreen.svg)](#tests)
+[![Tests: 1104 assertions](https://img.shields.io/badge/tests-1104_assertions_passing-brightgreen.svg)](#tests)
 [![Tools: 66, 21 gated](https://img.shields.io/badge/tools-66_·_21_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
 [![Data: synthetic](https://img.shields.io/badge/data-100%25_synthetic-lightgrey.svg)](NOTICE)
 
@@ -40,7 +40,7 @@ LLM client included, and the console is plain HTML with three local files (`stat
 
 | | | | |
 |:--|:--|:--|:--|
-| **16** specialist agents | **66** tools · **21** writes, every one gated | **1071** test assertions, 0 failing | **2** dependencies |
+| **16** specialist agents | **66** tools · **21** writes, every one gated | **1104** test assertions, 0 failing | **2** dependencies |
 | **271** absences swept: the top plan fully covers **268** | **456 / 456** periods placed by the solver, 0 clashes | **92%** less tool payload per LLM turn | **0** external assets in the console |
 
 Every number above is measured by [`docs/charts/make_charts.py`](docs/charts/make_charts.py) and
@@ -173,7 +173,7 @@ The trace shows exactly which of these happened:
 ### Tests
 
 <p align="center">
-  <img src="docs/charts/tests.svg" alt="Bar chart: 1071 assertions across 16 suites, all passing. mcp_parity 270, campus_test 160, auth_test 108, deploy_test 79, cie_test 59, ranking_test 57, solver_test 53, notify_test 50, nlu_test 49, cohort_test 40, makeup_test 33, accreditation_test 28, mesh_test 25, academics_test 24, language_test 19, risk_test 17" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 1104 assertions across 17 suites, all passing. mcp_parity 270, campus_test 160, auth_test 108, deploy_test 79, cie_test 59, ranking_test 57, solver_test 53, notify_test 50, nlu_test 49, cohort_test 40, makeup_test 33, dashboard_test 33, accreditation_test 28, mesh_test 25, academics_test 24, language_test 19, risk_test 17" width="760">
 </p>
 
 ```bash
@@ -193,6 +193,7 @@ python3 tests/accreditation_test.py # NAAC/NBA evidence recomputed, moving with 
 python3 tests/risk_test.py    # the early-warning list, counted in full and recomputed; departments as whole words: 17 assertions, no server, no API cost
 python3 tests/notify_test.py  # notice delivery through a stub gateway: 50 assertions, no server, no API cost
 python3 tests/cohort_test.py  # section strength and CGPA ranking, recounted; missing classes refused: 40 assertions, no server, no API cost
+python3 tests/dashboard_test.py # the student dashboard: attendance and marks recomputed apart, gaps shown as gaps: 33 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 python3 docs/charts/make_charts.py --tests   # re-measure everything and redraw this README's charts
@@ -352,7 +353,7 @@ sequenceDiagram
 ### The ranking, measured across every absence the timetable can produce
 
 Each of the 53 teachers made absent on each teaching day of one week gives **271 absences**
-(9.6 ms each to plan). The recommendation is spread across all three strategies. None of them is
+(9.5 ms each to plan). The recommendation is spread across all three strategies. None of them is
 a default that wins by construction:
 
 <p align="center">
@@ -380,7 +381,7 @@ arranged), and those cards are flagged **incomplete** on the page rather than ra
 | Plan B folded into plan A (identical committed rows) | 90 |
 | Top plan covers every hour | 268 of 271 |
 | Rank of the recommended plan | min 48.5 · median 94.7 · max 98.95 |
-| Planning time | 9.6 ms per absence |
+| Planning time | 9.5 ms per absence |
 
 </details>
 
@@ -509,13 +510,13 @@ flowchart LR
 
 | Role | Their day | They can ask the agents to… |
 |---|---|---|
-| **Student** | today's classes, attendance by subject, dues, library books, next exam | file a **gate pass** (pre-screened by GatePassAgent), request a **certificate** (eligibility pre-checked by DocumentAgent), see placement eligibility, track requests |
+| **Student** | today's classes marked done / now / next, **subject performance** (attendance and internal marks as two labelled meters per subject, each from its own record), what needs attention, what is coming up, library books with days left or the fine, quick-access questions | file a **gate pass** (pre-screened by GatePassAgent), request a **certificate** (eligibility pre-checked by DocumentAgent), see placement eligibility, track requests |
 | **Faculty** | today's classes, load, mentees who need a conversation | **apply for leave with the timetable impact attached** (HRAgent runs the substitution planner for each day), see mentees and their own leave |
 | **HOD** | the above, plus the department's leave queue | department overview, workload and defaulters (their department only), **decide their department's leave**, plan absence cover for their own staff |
 
 <table>
 <tr>
-<td width="24%" valign="top"><img src="docs/img/portal-student.png" alt="Student portal on a phone: attendance 86%, CGPA 8.54, no fees due, today's classes"></td>
+<td width="24%" valign="top"><img src="docs/img/portal-student.png" alt="Student portal on a phone: attendance 86%, CGPA 8.54, internal marks 89.9%, no fees due, quick access, today's classes marked now and next"></td>
 <td width="24%" valign="top"><img src="docs/img/portal-student-gatepass.png" alt="Student asks for a gate pass tomorrow 2pm to 7pm; the request is pre-screened as Approve and waits for the student's yes"></td>
 <td width="52%" valign="top"><img src="docs/img/portal-faculty-leave.png" alt="Faculty portal: 'I need leave next Monday' shows the timetable impact (2 periods, best cover plan C, 100% coverage) before anything is filed"></td>
 </tr>
@@ -947,6 +948,7 @@ VidyaERP/
     ├── academics_test.py standing availability: seeded consistently, honoured by solver and planners
     ├── notify_test.py  notice delivery: one batch per dispatch, failures shown, blocked writes send nothing
     ├── cohort_test.py  strength and CGPA ranking: recounted, ties kept, missing classes refused, scoped by role
+    ├── dashboard_test.py the student dashboard: two measures from two sources, attention only when due
     └── mock_llm.py     fake OpenAI endpoint + rogue-agent guard test
 ```
 

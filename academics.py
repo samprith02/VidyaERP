@@ -342,6 +342,19 @@ def standing(kind, m):
             "needs": round(max(0.0, CIE_MIN - sec), 1)}
 
 
+def so_far(kind, m):
+    """(scored, out of) over the components assessed and entered so far, on the
+    CIE scale - what a student's "marks" are before the CIE is complete. An
+    absence counts as assessed and scored 0. None when nothing is entered."""
+    got = of = 0.0
+    for code, mx, w, _d in CIE_SCHEME[kind]:
+        r = m.get(code)
+        if r is not None:
+            got += w * float(r["marks"] or 0)
+            of += w * mx
+    return (round(got, 1), round(of, 1)) if of else None
+
+
 def _entry(c, comp, entered):
     """The entry state of one component of one course, as of TODAY."""
     code, mx, _w, _d = comp

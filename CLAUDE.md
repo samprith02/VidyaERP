@@ -259,6 +259,14 @@ ships a timetable back.
   every match, says whether a bound was strict (`cgpa_above`) or not (`cgpa_at_least`; a CSE
   student has exactly 8.00), and keeps everyone tied at the cut-off. Names and CGPAs: Registrar
   and HOD (own department) only.
+- **The student dashboard shows two measures from two sources (#96, #97).** Each subject has an
+  Attendance meter (hours, `attendance` table, blue) and an Internal marks meter (CIE scored so
+  far over what has been assessed, `academics.so_far`, teal), never one bar for both. A course
+  with nothing entered says "Not entered yet"; nothing is filled in. "Needs your attention"
+  appears only when something does, each item measured ("attend the next 4 classes" is
+  `portal.classes_to_reach`). Today's periods are Done / Now / Next against `campus.NOW`, the
+  demo's one clock, never the server's. The quick-access buttons send their words as the
+  student's own turn, so `dashboard_test.py:6a` holds them free of approval words.
 - **`CSE-7A` is semester 7 (#98).** `extract_sem` read only "sem 7" / "7th sem", so the class
   name the console itself prints gave `None`, two handlers defaulted to 5, and "Rebuild the
   timetable for CSE-7A" staged CSE-5A. `nlu.CLASS_RX` reads `CSE-7A`, `CSE 7A`, `cse7a`;
@@ -346,6 +354,7 @@ python tests/accreditation_test.py # 28 assertions, no server, no API cost
 python tests/risk_test.py      # 17 assertions, no server, no API cost
 python tests/notify_test.py    # 50 assertions, no server, no API cost (a stub gateway on loopback)
 python tests/cohort_test.py    # 40 assertions, no server, no API cost
+python tests/dashboard_test.py # 33 assertions, no server, no API cost (7a-7d need node)
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)
