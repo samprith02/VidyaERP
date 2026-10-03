@@ -5,7 +5,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![Dependencies: 2](https://img.shields.io/badge/dependencies-2-brightgreen.svg)](requirements.txt)
-[![Tests: 1104 assertions](https://img.shields.io/badge/tests-1104_assertions_passing-brightgreen.svg)](#tests)
+[![Tests: 1109 assertions](https://img.shields.io/badge/tests-1109_assertions_passing-brightgreen.svg)](#tests)
 [![Tools: 66, 21 gated](https://img.shields.io/badge/tools-66_·_21_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
 [![Data: synthetic](https://img.shields.io/badge/data-100%25_synthetic-lightgrey.svg)](NOTICE)
 
@@ -40,7 +40,7 @@ LLM client included, and the console is plain HTML with three local files (`stat
 
 | | | | |
 |:--|:--|:--|:--|
-| **16** specialist agents | **66** tools · **21** writes, every one gated | **1104** test assertions, 0 failing | **2** dependencies |
+| **16** specialist agents | **66** tools · **21** writes, every one gated | **1109** test assertions, 0 failing | **2** dependencies |
 | **271** absences swept: the top plan fully covers **268** | **456 / 456** periods placed by the solver, 0 clashes | **92%** less tool payload per LLM turn | **0** external assets in the console |
 
 Every number above is measured by [`docs/charts/make_charts.py`](docs/charts/make_charts.py) and
@@ -173,7 +173,7 @@ The trace shows exactly which of these happened:
 ### Tests
 
 <p align="center">
-  <img src="docs/charts/tests.svg" alt="Bar chart: 1104 assertions across 17 suites, all passing. mcp_parity 270, campus_test 160, auth_test 108, deploy_test 79, cie_test 59, ranking_test 57, solver_test 53, notify_test 50, nlu_test 49, cohort_test 40, makeup_test 33, dashboard_test 33, accreditation_test 28, mesh_test 25, academics_test 24, language_test 19, risk_test 17" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 1109 assertions across 17 suites, all passing. mcp_parity 270, campus_test 160, auth_test 108, deploy_test 84, cie_test 59, ranking_test 57, solver_test 53, notify_test 50, nlu_test 49, cohort_test 40, makeup_test 33, dashboard_test 33, accreditation_test 28, mesh_test 25, academics_test 24, language_test 19, risk_test 17" width="760">
 </p>
 
 ```bash
@@ -185,7 +185,7 @@ python3 tests/auth_test.py    # logins, route gating, per-role policy: 108 asser
 python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits verified by re-read: 33 assertions, no server, no API cost
 python3 tests/academics_test.py # standing faculty availability, honoured by every planner: 24 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
-python3 tests/deploy_test.py  # deployment readiness: 79 assertions, no server, no API cost
+python3 tests/deploy_test.py  # deployment readiness: 84 assertions, no server, no API cost
 python3 tests/nlu_test.py     # date resolution, ISO dates included: 49 assertions, no server, no API cost
 python3 tests/language_test.py # Kannada and Hindi input, never widening the write gate: 19 assertions, no server, no API cost
 python3 tests/cie_test.py     # CIE marks: seed, standing, validated gated entry, role scope: 59 assertions, no server, no API cost
@@ -353,7 +353,7 @@ sequenceDiagram
 ### The ranking, measured across every absence the timetable can produce
 
 Each of the 53 teachers made absent on each teaching day of one week gives **271 absences**
-(9.5 ms each to plan). The recommendation is spread across all three strategies. None of them is
+(9.7 ms each to plan). The recommendation is spread across all three strategies. None of them is
 a default that wins by construction:
 
 <p align="center">
@@ -381,7 +381,7 @@ arranged), and those cards are flagged **incomplete** on the page rather than ra
 | Plan B folded into plan A (identical committed rows) | 90 |
 | Top plan covers every hour | 268 of 271 |
 | Rank of the recommended plan | min 48.5 · median 94.7 · max 98.95 |
-| Planning time | 9.5 ms per absence |
+| Planning time | 9.7 ms per absence |
 
 </details>
 

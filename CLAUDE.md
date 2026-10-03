@@ -281,6 +281,10 @@ ships a timetable back.
 - **Always pass `encoding="utf-8"` to `open()`.** Windows defaults to cp1252 and the console
   contains typographic quotes and `·` separators. `app.py` served a 500 on the whole page for
   exactly this reason.
+- **"Seeded" means the institution is there, not that the file is (#102).** `db.seeded()` checks
+  that `students` and `placements` have rows. A 0-byte file from a stray `db.connect()`, or a
+  seed killed part-way, used to count as seeded, and the app then failed at import. The seed
+  also never puts a SEE paper on a Sunday (#101); `db.verify()` says so if one appears.
 - **Stop the server before deleting or restoring `college.db`.** A running server holds the file
   and the delete fails — on Windows `git checkout` reports `unable to unlink old ... Invalid
   argument`. Kill the uvicorn process first.
@@ -346,7 +350,7 @@ python tests/auth_test.py      # 108 assertions, no server, no API cost
 python tests/makeup_test.py    # 33 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
-python tests/deploy_test.py    # 79 assertions, no server, no API cost
+python tests/deploy_test.py    # 84 assertions, no server, no API cost
 python tests/nlu_test.py       # 49 assertions, no server, no API cost
 python tests/language_test.py  # 19 assertions, no server, no API cost
 python tests/cie_test.py       # 59 assertions, no server, no API cost
