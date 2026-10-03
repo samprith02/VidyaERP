@@ -414,23 +414,119 @@ def extract_dept(text):
 
 
 def extract_sem(text):
-    m = re.search(r"(?:sem|semester)\s*[-: ]?\s*([1-8])", text.lower())
+    # 9 is read too, so that "sem 9" reaches a tool that says no such semester
+    # runs, rather than being dropped and answered for the whole department (#94)
+    m = re.search(r"(?:sem|semester)\s*[-: ]?\s*([1-9])(?!\d)", text.lower())
     if m:
         return int(m.group(1))
-    m = re.search(r"\b([1-8])(?:st|nd|rd|th)\s*(?:sem|semester)", text.lower())
+    m = re.search(r"\b([1-9])(?:st|nd|rd|th)\s*(?:sem|semester)", text.lower())
     if m:
         return int(m.group(1))
+    # the console's own way of naming a class: CSE-7A, CSE 7A, cse7a, CSE-7 (#98).
+    # Without it the semester was None and "rebuild CSE-7A" proposed CSE-5A.
+    # A bare "CSE 7" is not a class (it needs the hyphen or a section letter),
+    # and a USN's "CS" is not a department.
+    m = CLASS_RX.search(text.lower())
+    if m:
+        return int(m.group(1) or m.group(2))
     return None
+
+
+CLASS_RX = re.compile(r"(?<![a-z0-9])(?:cse|ise|ece|mech|civil)(?:\s*-\s*([1-9])(?:\s*[a-h])?|\s*([1-9])\s*[a-h])"
+                      r"(?![a-z0-9])")
 
 
 def extract_section(text):
-    m = re.search(r"\b(?:sec|section)\s*[-: ]?\s*([abcd])\b", text.lower())
+    m = re.search(r"\b(?:sec|section)\s*[-: ]?\s*([a-h])\b", text.lower())
     if m:
         return m.group(1).upper()
-    m = re.search(r"\b[1-8]\s*(?:sem|semester)?\s*['\"]?([ab])\b", text.lower())
+    m = re.search(r"\b[1-9]\s*(?:sem|semester)?\s*['\"]?([ab])\b", text.lower())
     if m:
         return m.group(1).upper()
     return None
+
+
+# A class written as one token, for a department this college may not have:
+# "EEE-3A" is a question about EEE, not about every department's 3A (#94).
+ANY_CLASS_RX = re.compile(r"(?<![a-z0-9])([a-z]{2,5})\s*-?\s*([1-9])([a-h])(?![a-z0-9])")
+NOT_DEPT = {"sem", "semes", "sec", "class", "top", "best", "the", "in", "of", "for", "year", "batch", "div",
+            "room", "lab", "block", "bus", "route", "ia", "and", "to", "is", "at", "on", "p", "period"}
+
+
+def cohort(text, ent=None):
+    """dept / sem / section as the sentence names them - including a class
+    that does not exist, so the tool can say so instead of widening."""
+    ent = ent or {}
+    a = {k: ent.get(k) for k in ("dept", "sem", "section") if ent.get(k)}
+    m = ANY_CLASS_RX.search(text.lower())
+    if m and m.group(1) not in NOT_DEPT:
+        a.setdefault("dept", extract_dept(m.group(1)) or m.group(1).upper())
+        a.setdefault("sem", int(m.group(2)))
+        a.setdefault("section", m.group(3).upper())
+    return a
+
+
+# ----------------------------------------------- strength and ranking (#94, #95)
+# Topics that own a "how many students ..." of their own: fees, hostel, books,
+# a drive, attendance and CGPA each have a tool that counts their students.
+_NOT_STRENGTH = (r"(?!.*\b(?:faculty|staff|teachers?|professors?|lecturers?|fees?|dues|hostels?|bus(?:es)?|"
+                 r"library|books?|fines?|placed|placements?|offers?|drives?|backlogs?|attendance|defaulters?|"
+                 r"cgpa|gpa|gate ?pass(?:es)?|eligib\w*|absent|risk)\b)")
+STRENGTH_RX = re.compile(
+    r"^" + _NOT_STRENGTH + r".*(?:\bstrength\b|\bhead ?counts?\b|\benrol(?:l)?ments?\b|\bclass size\b|"
+    r"\b(?:number|no\.?|count|total) of students\b|\bstudents? (?:count|strength|numbers?)\b|"
+    r"\bhow many students\b)", re.I)
+RANK_RX = re.compile(
+    r"^(?!.*\b(?:drives?|placements?|eligib\w*|attendance|books?|fines?|marks|internals?|cie|ia ?[12]?)\b).*(?:"
+    r"\b(?:top|best|highest|bottom|lowest|toppers?|rank(?:ed|ing|s)?|merit list)\b[^.?!]{0,50}"
+    r"\b(?:students?|cgpa|gpa|scorers?|performers?|rankers?)\b|\btoppers?\b|"
+    r"\b(?:students?|names?|who)\b[^.?!]{0,60}\bc?gpa\b[^.?!]{0,12}\b(?:above|over|greater|more|higher|below|"
+    r"under|less|lower|at least|atleast|at most|between|>|<)|"
+    r"\bc?gpa\s*(?:of\s*)?(?:above|over|greater than|more than|higher than|below|under|less than|lower than|"
+    r"at least|atleast|at most|between|>=?|<=?)\s*\d)", re.I)
+
+# Scored like the PRIORITY rules: "What is the strength of the CSE 7th sem
+# SEC A" matched no keyword at all and fell to smalltalk (#94).
+PRIORITY += [(STRENGTH_RX.pattern, "student.query", 16), (RANK_RX.pattern, "student.query", 18)]
+
+_NUM = r"(\d{1,2}(?:\.\d{1,2})?)"
+
+
+def rank_args(text, ent=None):
+    """'top 10 students with CGPA above 8 in CSE' -> top_students arguments.
+    'above' is strict and 'at least' / '8 and above' is not; the tool says
+    which one it used, because one CSE student has exactly 8.00."""
+    t = text.lower()
+    a = cohort(text, ent)
+    m = (re.search(r"\b(?:top|best|bottom|lowest|first|last)\s+(\d{1,3})\b", t)
+         or re.search(r"\b(\d{1,3})\s+(?:top |best |bottom |lowest )?(?:students|toppers|rankers|names|scorers)\b", t))
+    if m:
+        a["limit"] = int(m.group(1))
+    elif re.search(r"\b(?:the )?(?:topper|highest|best student|top student|first rank|rank ?1)\b", t) \
+            and not re.search(r"\b(?:toppers|students|names)\b", t):
+        a["limit"] = 1
+    # "least" alone, not "at least 8.5" - a floor, which once read as the bottom of the list
+    if re.search(r"\b(?:bottom|lowest|worst|weakest)\b|(?<!at )\bleast\b", t):
+        a["order"] = "bottom"
+    if re.search(r"\bc?gpa\b|grade point|pointer", t):
+        bounds = (("cgpa_at_least", r"(?:at ?least|minimum(?: of)?|not less than|>=)\s*" + _NUM),
+                  ("cgpa_at_least", _NUM + r"\s*(?:and|or|&)\s*(?:above|more|higher|over)"),
+                  ("cgpa_above", r"(?:above|over|greater than|more than|higher than|>)\s*" + _NUM),
+                  ("cgpa_at_most", r"(?:at ?most|maximum(?: of)?|not more than|<=)\s*" + _NUM),
+                  ("cgpa_at_most", _NUM + r"\s*(?:and|or|&)\s*(?:below|less|lower|under)"),
+                  ("cgpa_below", r"(?:below|under|less than|lower than|<)\s*" + _NUM))
+        b = re.search(r"between\s*" + _NUM + r"\s*(?:and|to|-)\s*" + _NUM, t)
+        if b:
+            a["cgpa_at_least"], a["cgpa_at_most"] = sorted((float(b.group(1)), float(b.group(2))))
+        for key, rx in bounds:
+            lo_side = key in ("cgpa_at_least", "cgpa_above")
+            if b or any(k in a for k in (("cgpa_at_least", "cgpa_above") if lo_side
+                                          else ("cgpa_at_most", "cgpa_below"))):
+                continue
+            m = re.search(rx, t)
+            if m and float(m.group(1)) <= 10:
+                a[key] = float(m.group(1))
+    return a
 
 
 def extract_usn(text):

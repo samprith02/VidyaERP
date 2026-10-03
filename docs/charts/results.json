@@ -18,8 +18,8 @@
   },
   "folded_duplicates": 90,
   "top_plan_fully_covered": 268,
-  "ms_total": 2867,
-  "ms_per_absence": 10.6,
+  "ms_total": 2602,
+  "ms_per_absence": 9.6,
   "top_rank": {
    "min": 48.5,
    "median": 94.7,
@@ -31,7 +31,7 @@
   "total": 456,
   "backtracks": 0,
   "conflicts": 7103,
-  "ms": 290,
+  "ms": 274,
   "activity_slots": 167,
   "capacity_relaxed": 40,
   "events": {
@@ -54,61 +54,61 @@
   "seeds": [
    {
     "seed": 1,
-    "ms": 302,
+    "ms": 271,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 2,
-    "ms": 291,
+    "ms": 272,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 3,
-    "ms": 290,
+    "ms": 286,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 4,
-    "ms": 286,
+    "ms": 277,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 5,
-    "ms": 296,
+    "ms": 272,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 6,
-    "ms": 282,
+    "ms": 273,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 7,
-    "ms": 286,
+    "ms": 271,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 8,
-    "ms": 274,
+    "ms": 269,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 9,
-    "ms": 321,
+    "ms": 272,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 10,
-    "ms": 288,
+    "ms": 270,
     "placed": 456,
     "total": 456
    }
@@ -118,53 +118,53 @@
     "lab_rooms": 6,
     "placed": 456,
     "total": 456,
-    "ms": 276,
+    "ms": 272,
     "backtracks": 0
    },
    {
     "lab_rooms": 5,
     "placed": 456,
     "total": 456,
-    "ms": 271,
+    "ms": 270,
     "backtracks": 0
    },
    {
     "lab_rooms": 4,
     "placed": 452,
     "total": 456,
-    "ms": 296,
+    "ms": 285,
     "backtracks": 20
    },
    {
     "lab_rooms": 3,
     "placed": 446,
     "total": 456,
-    "ms": 310,
+    "ms": 297,
     "backtracks": 30
    },
    {
     "lab_rooms": 2,
     "placed": 436,
     "total": 456,
-    "ms": 334,
+    "ms": 323,
     "backtracks": 60
    },
    {
     "lab_rooms": 1,
     "placed": 425,
     "total": 456,
-    "ms": 347,
+    "ms": 350,
     "backtracks": 88
    }
   ],
   "lab_rooms_total": 15
  },
  "tools": {
-  "total": 64,
+  "total": 66,
   "gated": 21,
   "by_module": {
    "core (tools.py)": {
-    "reads": 19,
+    "reads": 21,
     "gated_writes": 5
    },
    "campus.py": {
@@ -194,8 +194,8 @@
    5,
    4,
    4,
-   4,
-   4,
+   6,
+   6,
    3,
    4,
    4,
@@ -229,9 +229,9 @@
    5,
    7
   ],
-  "full_schema_bytes": 21407,
-  "mean_offered_bytes": 1707,
-  "payload_saving_pct": 92.0
+  "full_schema_bytes": 22756,
+  "mean_offered_bytes": 1802,
+  "payload_saving_pct": 92.1
  },
  "data": {
   "students_by_dept": {
@@ -276,14 +276,14 @@
    "passed": 270,
    "failed": 0,
    "exit": 0,
-   "seconds": 1.8
+   "seconds": 1.7
   },
   {
    "suite": "campus_test",
    "passed": 160,
    "failed": 0,
    "exit": 0,
-   "seconds": 2.7
+   "seconds": 2.6
   },
   {
    "suite": "auth_test",
@@ -297,21 +297,21 @@
    "passed": 79,
    "failed": 0,
    "exit": 0,
-   "seconds": 1.4
+   "seconds": 1.5
   },
   {
    "suite": "ranking_test",
    "passed": 57,
    "failed": 0,
    "exit": 0,
-   "seconds": 0.8
+   "seconds": 0.7
   },
   {
    "suite": "solver_test",
    "passed": 53,
    "failed": 0,
    "exit": 0,
-   "seconds": 3.8
+   "seconds": 3.6
   },
   {
    "suite": "makeup_test",
@@ -346,7 +346,7 @@
    "passed": 59,
    "failed": 0,
    "exit": 0,
-   "seconds": 2.5
+   "seconds": 2.4
   },
   {
    "suite": "accreditation_test",
@@ -375,6 +375,13 @@
    "failed": 0,
    "exit": 0,
    "seconds": 5.2
+  },
+  {
+   "suite": "cohort_test",
+   "passed": 40,
+   "failed": 0,
+   "exit": 0,
+   "seconds": 0.6
   }
  ]
 }

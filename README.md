@@ -5,8 +5,8 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![Dependencies: 2](https://img.shields.io/badge/dependencies-2-brightgreen.svg)](requirements.txt)
-[![Tests: 1031 assertions](https://img.shields.io/badge/tests-1031_assertions_passing-brightgreen.svg)](#tests)
-[![Tools: 64, 21 gated](https://img.shields.io/badge/tools-64_·_21_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
+[![Tests: 1071 assertions](https://img.shields.io/badge/tests-1071_assertions_passing-brightgreen.svg)](#tests)
+[![Tools: 66, 21 gated](https://img.shields.io/badge/tools-66_·_21_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
 [![Data: synthetic](https://img.shields.io/badge/data-100%25_synthetic-lightgrey.svg)](NOTICE)
 
 A working prototype of a **SMART, agentic ERP for an Indian engineering college** (autonomous /
@@ -40,7 +40,7 @@ LLM client included, and the console is plain HTML with three local files (`stat
 
 | | | | |
 |:--|:--|:--|:--|
-| **16** specialist agents | **64** tools · **21** writes, every one gated | **1031** test assertions, 0 failing | **2** dependencies |
+| **16** specialist agents | **66** tools · **21** writes, every one gated | **1071** test assertions, 0 failing | **2** dependencies |
 | **271** absences swept: the top plan fully covers **268** | **456 / 456** periods placed by the solver, 0 clashes | **92%** less tool payload per LLM turn | **0** external assets in the console |
 
 Every number above is measured by [`docs/charts/make_charts.py`](docs/charts/make_charts.py) and
@@ -114,12 +114,12 @@ listed in `.env.example`. No SDK is installed: `llm.py` talks raw HTTP over `url
 is nothing to `pip install`. Restart the server and the badge flips to green.
 
 <p align="center">
-  <img src="docs/charts/tools_by_module.svg" alt="Bar chart: 64 tools by module. core tools.py 19 reads and 5 writes; campus.py 15 reads and 11 writes; portal.py 6 reads and 3 writes; academics.py 2 reads and 2 writes; accreditation.py 1 read" width="760">
+  <img src="docs/charts/tools_by_module.svg" alt="Bar chart: 66 tools by module. core tools.py 21 reads and 5 writes; campus.py 15 reads and 11 writes; portal.py 6 reads and 3 writes; academics.py 2 reads and 2 writes; accreditation.py 1 read" width="760">
 </p>
 
-**The 64 tools the model can call** (a student, teacher or HOD is offered only their role's). 24 academic/admin:
+**The 66 tools the model can call** (a student, teacher or HOD is offered only their role's). 26 academic/admin:
 `institution_overview · get_timetable · faculty_timetable · find_free_faculty · find_free_rooms ·
-faculty_profile · faculty_workload · student_lookup · attendance_defaulters · academic_risk · fee_summary ·
+faculty_profile · faculty_workload · student_lookup · class_strength · top_students · attendance_defaulters · academic_risk · fee_summary ·
 exam_schedule · exam_eligibility · list_requests · list_leaves · plan_absence_coverage ·
 apply_coverage_plan · plan_timetable_generation · apply_timetable_generation · undo_last_change ·
 makeup_schedule · decide_request · create_request · broadcast_notice`. 26 campus services (§5a):
@@ -133,7 +133,7 @@ request_gate_pass · request_certificate · my_mentees · my_leaves · apply_lea
 academic records: `faculty_availability · set_faculty_availability` (standing availability) and
 `cie_marks · record_cie_marks` (internal marks, §5d). And 1 for accreditation evidence (§5e):
 `accreditation_evidence`.
-**21 of the 64 are writes, and every one is gated.**
+**21 of the 66 are writes, and every one is gated.**
 
 **Write-guard, proven by test:** `tests/mock_llm.py` includes a *rogue agent* endpoint that tries
 to call `apply_coverage_plan` with no admin approval. PolicyGuard returns `{"BLOCKED": ...}`,
@@ -150,13 +150,13 @@ multi-hop turn was spending 7,196 of them. Four things fixed that:
 
 | Technique | Effect |
 |---|---|
-| **Tool router**: the rule-engine NLU pre-selects 3–9 of the 64 tools per utterance | tool-schema payload **−92%** on the 40 example requests below, and the model picks better from a short menu |
+| **Tool router**: the rule-engine NLU pre-selects 3–9 of the 66 tools per utterance | tool-schema payload **−92%** on the 40 example requests below, and the model picks better from a short menu |
 | **Prompt diet**: live-context preamble trimmed, history 8→4 turns, tool results capped at 2.8 KB | system prompt ~1,500 → ~600 tokens |
 | **Model failover chain**: `LLM_FALLBACK_MODELS`, tried in order on 429/5xx/`tool_use_failed` | quotas are *per model*, so the chain multiplies usable throughput |
 | **Nullable optional params**: every non-required arg accepts `null` | models emit `{"dept": null}` constantly; strict validators 400 on it. 41 params were latent landmines |
 
 <p align="center">
-  <img src="docs/charts/router.svg" alt="Histogram: tools offered per request for 40 example requests, between 3 and 9, never all 64. Mean schema payload 1.7 KB instead of 20.9 KB" width="760">
+  <img src="docs/charts/router.svg" alt="Histogram: tools offered per request for 40 example requests, between 3 and 9, never all 66. Mean schema payload 1.7 KB instead of 20.9 KB" width="760">
 </p>
 
 Result: a typical turn now costs **~2,000 tokens and answers in ~1.2 s**, and the
@@ -165,7 +165,7 @@ if the whole chain is exhausted by falling back to the rule engine with an hones
 The trace shows exactly which of these happened:
 
 ```
-· ToolRouter    narrow_toolset    7 of 64 tools offered: plan_absence_coverage, …
+· ToolRouter    narrow_toolset    7 of 66 tools offered: plan_absence_coverage, …
 · LLM Planner   reason (hop 1)    openai/gpt-oss-120b · 1032→107 tok · 513ms
 · LLM Planner   model_failover    primary rate-limited → answered on qwen/qwen3.8-27b
 ```
@@ -173,7 +173,7 @@ The trace shows exactly which of these happened:
 ### Tests
 
 <p align="center">
-  <img src="docs/charts/tests.svg" alt="Bar chart: 1031 assertions across 15 suites, all passing. mcp_parity 270, campus_test 160, auth_test 108, deploy_test 79, cie_test 59, ranking_test 57, solver_test 53, notify_test 50, nlu_test 49, makeup_test 33, accreditation_test 28, mesh_test 25, academics_test 24, language_test 19, risk_test 17" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 1071 assertions across 16 suites, all passing. mcp_parity 270, campus_test 160, auth_test 108, deploy_test 79, cie_test 59, ranking_test 57, solver_test 53, notify_test 50, nlu_test 49, cohort_test 40, makeup_test 33, accreditation_test 28, mesh_test 25, academics_test 24, language_test 19, risk_test 17" width="760">
 </p>
 
 ```bash
@@ -192,6 +192,7 @@ python3 tests/cie_test.py     # CIE marks: seed, standing, validated gated entry
 python3 tests/accreditation_test.py # NAAC/NBA evidence recomputed, moving with the data, writing nothing: 28 assertions, no server, no API cost
 python3 tests/risk_test.py    # the early-warning list, counted in full and recomputed; departments as whole words: 17 assertions, no server, no API cost
 python3 tests/notify_test.py  # notice delivery through a stub gateway: 50 assertions, no server, no API cost
+python3 tests/cohort_test.py  # section strength and CGPA ranking, recounted; missing classes refused: 40 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 python3 docs/charts/make_charts.py --tests   # re-measure everything and redraw this README's charts
@@ -213,7 +214,7 @@ flowchart TB
   AG --> EN{Engine}
   EN -->|default, free| RE[orchestrator.py: rule engine + nlu.py]
   EN -->|LLM key set| LA[llm_agent.py: plan, call tools, answer]
-  LA --> TR[tools.select_tools: 3 to 9 of 64]
+  LA --> TR[tools.select_tools: 3 to 9 of 66]
   MC --> CA[mcp_server.call_as]
   TR --> EX[[tools.execute: the only dispatch point]]
   CA --> EX
@@ -351,7 +352,7 @@ sequenceDiagram
 ### The ranking, measured across every absence the timetable can produce
 
 Each of the 53 teachers made absent on each teaching day of one week gives **271 absences**
-(10.6 ms each to plan). The recommendation is spread across all three strategies. None of them is
+(9.6 ms each to plan). The recommendation is spread across all three strategies. None of them is
 a default that wins by construction:
 
 <p align="center">
@@ -379,7 +380,7 @@ arranged), and those cards are flagged **incomplete** on the page rather than ra
 | Plan B folded into plan A (identical committed rows) | 90 |
 | Top plan covers every hour | 268 of 271 |
 | Rank of the recommended plan | min 48.5 · median 94.7 · max 98.95 |
-| Planning time | 10.6 ms per absence |
+| Planning time | 9.6 ms per absence |
 
 </details>
 
@@ -499,7 +500,7 @@ that is decided per tool call in `tools.execute` (`access.py`), not in the UI or
 ```mermaid
 flowchart LR
   U[Signed-in person] --> R{Role}
-  R -->|Registrar| ALL[All 64 tools, institution-wide]
+  R -->|Registrar| ALL[All 66 tools, institution-wide]
   R -->|HOD| H[Self-service + department overview, workload, defaulters, leave decisions, absence cover: own department only]
   R -->|Faculty| F[Own day, mentees, leave with timetable impact]
   R -->|Student| S[Own day, gate pass, certificates, placement eligibility, requests]
@@ -628,7 +629,7 @@ every rule mutation-checked.
 
 ### 6a. Driving the ERP from Claude Desktop (MCP)
 
-`mcp_server.py` puts the same 64 tools in front of any MCP client. Registration needs no install
+`mcp_server.py` puts the same 66 tools in front of any MCP client. Registration needs no install
 step, because there is no SDK to install:
 
 ```json
@@ -908,7 +909,7 @@ VidyaERP/
 ├── guard.py            approved_this_turn(): the one write gate, importable by every tool module
 ├── orchestrator.py     rule-engine supervisor: routing, HITL state machine
 ├── llm.py              provider-agnostic OpenAI-compatible client (urllib, no SDK)
-├── tools.py            the 64 tool schemas + the single dispatch point (gate + role policy)
+├── tools.py            the 66 tool schemas + the single dispatch point (gate + role policy)
 ├── auth.py             sign-in: principals, PBKDF2, hashed sessions, auth.gate() for every route
 ├── access.py           per-role tool policy: default deny, rules that only ever narrow
 ├── portal.py           self-service tools for students, faculty and HODs
@@ -945,6 +946,7 @@ VidyaERP/
     ├── makeup_test.py  make-ups booked and held, coverage commits verified by an independent re-read
     ├── academics_test.py standing availability: seeded consistently, honoured by solver and planners
     ├── notify_test.py  notice delivery: one batch per dispatch, failures shown, blocked writes send nothing
+    ├── cohort_test.py  strength and CGPA ranking: recounted, ties kept, missing classes refused, scoped by role
     └── mock_llm.py     fake OpenAI endpoint + rogue-agent guard test
 ```
 
