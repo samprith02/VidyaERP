@@ -96,47 +96,203 @@ def _makeups_block(con, where, args, teacher=True):
                      for m in ms], title="Make-up classes booked", dense=True)]
 
 
+# Read-only questions the student dashboard offers as buttons (#97). A button
+# sends its words as the student's own turn, so none may carry an approval word
+# (dashboard_test checks each against guard.APPROVAL_RX and the route it takes).
+STUDENT_QUICK = ["My attendance", "My internal marks", "Exam schedule", "My library books", "My no-dues status",
+                 "My requests"]
+ATT_BAR = 75
+
+
+def _day(iso):
+    return dt.date.fromisoformat(iso).strftime("%a %d %b")
+
+
+def _in(iso):
+    n = (dt.date.fromisoformat(iso) - TODAY).days
+    return "today" if n == 0 else "tomorrow" if n == 1 else f"in {n} days"
+
+
+def class_status(periods, now=None):
+    """Done / Now / Next / Later for each of today's periods, read against the
+    demo's one operational clock (campus.NOW), never the server's wall clock."""
+    now, out, nxt = (now or NOW).time(), [], False
+    for p in periods:
+        a, b = (dt.time.fromisoformat(x) for x in db.PERIODS[p].split("-"))
+        if b <= now:
+            out.append("Done")
+        elif a <= now:
+            out.append("Now")
+        elif not nxt:
+            out.append("Next")
+            nxt = True
+        else:
+            out.append("Later")
+    return out
+
+
+def classes_to_reach(attended, held, bar=ATT_BAR):
+    """Consecutive classes a student must attend to bring a subject to the bar:
+    the smallest x with (attended + x) / (held + x) >= bar%."""
+    x = 0
+    while held + x and 100 * (attended + x) < bar * (held + x):
+        x += 1
+    return x
+
+
+def subject_performance(con, s):
+    """One row per subject: attendance and internal marks, each from its own
+    table and never from the other (#96). Marks are the CIE scored so far over
+    what has been assessed; a course with nothing entered says so."""
+    import academics                       # lazily: academics imports this module's _staged
+    att = {a["subject"]: a for a in rows(con, """SELECT a.*, sb.name sname FROM attendance a
+                                                 JOIN subjects sb ON sb.code=a.subject WHERE a.usn=?""", (s["usn"],))}
+    courses = {c["subject"]: c for c in academics._courses(con, s["dept"], s["sem"], s["section"])}
+    book = academics._book(con, list(courses.values()))
+    out = []
+    for code in sorted(set(att) | set(courses)):
+        a, c = att.get(code), courses.get(code)
+        item = {"code": code, "name": (a or {}).get("sname") or (c or {}).get("sname") or subj_name(con, code),
+                "kind": (c or {}).get("kind")}
+        if a and a["held"]:
+            pct = round(100 * a["attended"] / a["held"], 1)
+            item["attendance"] = {"attended": a["attended"], "held": a["held"], "pct": pct, "low": pct < ATT_BAR,
+                                  "to_reach": classes_to_reach(a["attended"], a["held"])}
+        else:
+            item["attendance"] = {"none": "Not recorded"}
+        if not c:
+            item["marks"] = {"none": "No internal marks for this course"}
+        else:
+            m = book.get((code, s["usn"]), {})
+            sf, st = academics.so_far(c["kind"], m), academics.standing(c["kind"], m)
+            item["marks"] = ({"none": "Not entered yet"} if not sf else
+                             {"got": sf[0], "of": sf[1], "pct": round(100 * sf[0] / sf[1], 1), "status": st["status"],
+                              "low": st["status"] in academics.RISKY, "needs": st["needs"],
+                              "left": round(st["ceiling"] - st["secured"], 1), "total": academics.CIE_MAX})
+        out.append(item)
+    return out
+
+
+def _student_home(con, s):
+    import academics
+    dy = day_of(TODAY)
+    today = rows(con, """SELECT t.*, sb.name sname FROM timetable t LEFT JOIN subjects sb ON sb.code=t.subject
+                         WHERE t.dept=? AND t.sem=? AND t.section=? AND t.day=? ORDER BY t.period""",
+                 (s["dept"], s["sem"], s["section"], dy))
+    perf = subject_performance(con, s)
+    loans = LibraryAgent().active(con, s["usn"])
+    passes = rows(con, "SELECT * FROM gate_passes WHERE usn=? AND status='Pending'", (s["usn"],))
+    exams = rows(con, """SELECT e.date, e.subject, sb.name sname FROM exams e LEFT JOIN subjects sb ON sb.code=e.subject
+                         WHERE e.dept=? AND e.sem=? AND e.date>=? ORDER BY e.date, e.subject""",
+                 (s["dept"], s["sem"], TODAY.isoformat()))
+    low = [p for p in perf if p["attendance"].get("low")]
+    marked = [p["marks"] for p in perf if "got" in p["marks"]]
+    risky = [p for p in perf if p["marks"].get("low")]
+    avg = round(100 * sum(m["got"] for m in marked) / sum(m["of"] for m in marked), 1) if marked else None
+    at_bar = sum(1 for p in perf if "pct" in p["attendance"] and not p["attendance"]["low"])
+    with_att = sum(1 for p in perf if "pct" in p["attendance"])
+
+    cards = [{"label": "Attendance", "value": f"{s['attendance']}%", "tone": "good" if s["attendance"] >= ATT_BAR else "bad",
+              "sub": f"{len(low)} subject(s) below {ATT_BAR}%" if low else f"every subject at {ATT_BAR}% or above"},
+             {"label": "CGPA", "value": f"{s['cgpa']:.2f}",
+              "sub": f"{s['backlogs']} backlog(s)" if s["backlogs"] else "no backlogs"},
+             {"label": "Internal marks", "value": f"{avg:g}%" if avg is not None else "—",
+              "tone": "bad" if risky else "good" if avg is not None else "",
+              "sub": f"{len(risky)} course(s) at risk" if risky else "so far · none at risk" if marked
+              else "nothing entered yet"},
+             {"label": "Fee due", "value": inr(s["fee_due"]), "tone": "bad" if s["fee_due"] else "good",
+              "sub": "outstanding" if s["fee_due"] else "nothing outstanding"},
+             {"label": "Next exam", "value": dt.date.fromisoformat(exams[0]["date"]).strftime("%d %b") if exams else "—",
+              "sub": f"SEE · {exams[0]['subject']} · {_in(exams[0]['date'])}" if exams else "none scheduled"}]
+    blocks = [B_cards(cards, title=f"Good morning, {s['name'].split()[0]} · {_cls(s)}"),
+              {"type": "quick", "title": "Quick access", "items": [{"label": q, "ask": q} for q in STUDENT_QUICK]}]
+
+    # only what needs doing; nothing is shown when nothing does
+    todo = [{"ok": False, "agent": "AttendanceAgent",
+             "label": f"{p['code']} {p['name']}: attendance {p['attendance']['pct']:g}%",
+             "detail": f"attend the next {p['attendance']['to_reach']} class(es) to reach {ATT_BAR}%"} for p in low]
+    todo += [{"ok": False, "agent": "ExamAgent",
+              "label": f"{p['code']} {p['name']}: internal marks {p['marks']['status'].lower()}",
+              "detail": (f"{academics.CIE_MIN}/{academics.CIE_MAX} is out of reach even with full marks in what is left"
+                         if p["marks"]["status"] == "Cannot reach" else
+                         f"needs {p['marks']['needs']:g} more of the {p['marks']['left']:g} still to be assessed")}
+             for p in risky]
+    if s["fee_due"]:
+        todo.append({"ok": False, "agent": "FinanceAgent", "label": f"Fee due: {inr(s['fee_due'])}",
+                     "detail": "ask for your no-dues status for the breakdown"})
+    todo += [{"ok": False, "agent": "LibraryAgent",
+              "label": f"{l['title']}: overdue by {LibraryAgent.days_over(l)} day(s)",
+              "detail": f"fine so far {inr(LibraryAgent().fine(l))}"} for l in loans if LibraryAgent.days_over(l)]
+    if todo:
+        blocks.append(B_checklist(todo, title="Needs your attention"))
+
+    if today:
+        status = class_status([r["period"] for r in today])
+        blocks.append(B_table(["Period", "Time", "Subject", "Faculty", "Room", "Status"],
+                              [[f"P{r['period']}", db.PERIODS[r["period"]], f"{r['subject']} · {r['sname'] or ''}",
+                                fac_name(con, r["faculty"]) if r["faculty"] else "Class mentor", r["room"], st]
+                               for r, st in zip(today, status)],
+                              title=f"Today · {TODAY.strftime('%A %d %b')} · as of {NOW.strftime('%H:%M')}", dense=True))
+    else:
+        blocks.append(B_text(f"No classes on {TODAY.strftime('%A')}."))
+
+    blocks.append({"type": "perf", "title": "Subject performance", "items": perf,
+                   "summary": [{"label": "Average internal marks", "value": f"{avg:g}%" if avg is not None else "—"},
+                               {"label": "Attendance", "value": f"{s['attendance']}%"},
+                               {"label": f"Subjects at {ATT_BAR}% or above", "value": f"{at_bar} / {with_att}"}],
+                   "note": "Attendance is hours attended of hours held. Internal marks are the CIE scored so far, "
+                           f"out of what has been assessed; the full CIE is out of {academics.CIE_MAX}, and "
+                           f"{academics.CIE_MIN} is needed to sit the SEE."})
+
+    # what is coming: SEE papers, CIE assessments still to be held (one line per
+    # day and component, not one per course), soonest first
+    ahead = [(e["date"], f"SEE · {e['subject']} {e['sname'] or ''}".strip()) for e in exams]
+    comp = {}
+    for p in perf:
+        for code, _mx, _w, d in academics.CIE_SCHEME.get(p["kind"], ()):
+            if d > TODAY.isoformat():
+                comp.setdefault((d, code), []).append(p["code"])
+    ahead += [(d, f"{academics.COMP_LABEL[code]} · {', '.join(subs)}") for (d, code), subs in comp.items()]
+    ahead.sort()
+    if ahead:
+        blocks.append(B_table(["Date", "When", "What"], [[_day(d), _in(d), w] for d, w in ahead[:6]],
+                              title="Coming up" + (f" (the next 6 of {len(ahead)})" if len(ahead) > 6 else ""),
+                              dense=True))
+
+    if loans:
+        def due_state(l):
+            over = LibraryAgent.days_over(l)
+            if over:
+                return f"Overdue by {over} day(s) · fine {inr(LibraryAgent().fine(l))}"
+            left = (dt.date.fromisoformat(l["due_on"]) - TODAY).days
+            return "Due today" if left == 0 else f"{left} day(s) left"
+        blocks.append(B_table(["Book", "Borrowed", "Due", "Status"],
+                              [[l["title"], _day(l["issued_on"]) if l.get("issued_on") else "—", _day(l["due_on"]),
+                                due_state(l)] for l in loans], title="Library books with you", dense=True))
+    blocks += _makeups_block(con, "dept=? AND sem=? AND section=?", (s["dept"], s["sem"], s["section"]))
+    if passes:
+        blocks.append(B_text(f"{len(passes)} gate pass request(s) waiting for the warden."))
+    return {"data": {"attendance": s["attendance"], "cgpa": s["cgpa"], "fee_due": s["fee_due"],
+                     "classes_today": len(today), "subjects_below_75": [p["code"] for p in low],
+                     "books_on_loan": len(loans), "next_exam": exams[0]["date"] if exams else None,
+                     "internal_marks_pct": avg, "courses_at_risk": [p["code"] for p in risky],
+                     "subjects": perf, "needs_attention": len(todo)},
+            "blocks": blocks,
+            "trace": [("StudentAgent", "home", s["usn"]),
+                      ("AttendanceAgent", "subject_rollup", f"{len(low)} below {ATT_BAR}%"),
+                      ("ExamAgent", "cie_standing", f"{len(marked)} course(s) assessed · {len(risky)} at risk"),
+                      ("TimetableAgent", "today", f"{len(today)} periods"),
+                      ("LibraryAgent", "member_loans", str(len(loans)))],
+            "chips": STUDENT_QUICK}
+
+
 def t_my_home(con, S, U, **kw):
     P = (S or {}).get("user")
     if not P or P.get("role") == "admin":
         return _err("The Registrar's home is the console.")
     dy = day_of(TODAY)
     if P["role"] == "student":
-        s = _stu(con, P["usn"])
-        today = rows(con, """SELECT t.*, sb.name sname FROM timetable t LEFT JOIN subjects sb ON sb.code=t.subject
-                             WHERE t.dept=? AND t.sem=? AND t.section=? AND t.day=? ORDER BY t.period""",
-                     (s["dept"], s["sem"], s["section"], dy))
-        att = rows(con, """SELECT a.*, sb.name sname FROM attendance a JOIN subjects sb ON sb.code=a.subject
-                           WHERE a.usn=? ORDER BY a.subject""", (s["usn"],))
-        loans = LibraryAgent().active(con, s["usn"])
-        passes = rows(con, "SELECT * FROM gate_passes WHERE usn=? AND status='Pending'", (s["usn"],))
-        nxt = one(con, "SELECT MIN(date) d FROM exams WHERE dept=? AND sem=?", (s["dept"], s["sem"]))["d"]
-        short = [a for a in att if a["held"] and 100 * a["attended"] / a["held"] < 75]
-        return {"data": {"attendance": s["attendance"], "cgpa": s["cgpa"], "fee_due": s["fee_due"],
-                         "classes_today": len(today), "subjects_below_75": [a["subject"] for a in short],
-                         "books_on_loan": len(loans), "next_exam": nxt},
-                "blocks": [B_cards([{"label": "Attendance", "value": f"{s['attendance']}%",
-                                     "tone": "good" if s["attendance"] >= 75 else "bad",
-                                     "sub": f"{len(short)} subject(s) below 75%" if short else "all subjects ≥75%"},
-                                    {"label": "CGPA", "value": s["cgpa"]},
-                                    {"label": "Fee due", "value": inr(s["fee_due"]), "tone": "bad" if s["fee_due"] else "good"},
-                                    {"label": "Next exam", "value": nxt or "—", "sub": "SEE begins"}],
-                                   title=f"Good morning, {s['name'].split()[0]} · {_cls(s)}"),
-                           B_table(["Period", "Time", "Subject", "Faculty", "Room"],
-                                   [[f"P{r['period']}", db.PERIODS[r["period"]], f"{r['subject']} · {r['sname'] or ''}",
-                                     fac_name(con, r["faculty"]) if r["faculty"] else "Class mentor", r["room"]]
-                                    for r in today], title=f"Today · {TODAY.strftime('%A %d %b')}", dense=True),
-                           B_bars([{"label": f"{a['subject']} {a['sname']}", "value": a["attended"], "max": a["held"]}
-                                   for a in att], title="Attendance by subject (hours)", unit="hrs")]
-                          + ([B_table(["Book", "Due", "Late by"], [[l["title"], l["due_on"], f"{LibraryAgent.days_over(l)} d"]
-                                                                   for l in loans], title="Library books with you", dense=True)]
-                             if loans else [])
-                          + _makeups_block(con, "dept=? AND sem=? AND section=?", (s["dept"], s["sem"], s["section"]))
-                          + ([B_text(f"{len(passes)} gate pass request(s) waiting for the warden.")] if passes else []),
-                "trace": [("StudentAgent", "home", s["usn"]), ("AttendanceAgent", "subject_rollup", f"{len(short)} below 75%"),
-                          ("TimetableAgent", "today", f"{len(today)} periods"), ("LibraryAgent", "member_loans", str(len(loans)))],
-                "chips": ["Request a gate pass for tomorrow 2pm to 7pm", "Request a bonafide certificate for passport",
-                          "Am I eligible for any placement drive?", "My requests"]}
+        return _student_home(con, _stu(con, P["usn"]))
     f = one(con, "SELECT * FROM faculty WHERE id=?", (P["fid"],))
     today = rows(con, """SELECT t.*, sb.name sname FROM timetable t LEFT JOIN subjects sb ON sb.code=t.subject
                          WHERE t.faculty=? AND t.day=? ORDER BY t.period""", (f["id"], dy))

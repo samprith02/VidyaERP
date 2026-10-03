@@ -83,6 +83,8 @@ $('#refresh').onclick=loadHome;
 $('#me').onclick=e=>{const b=e.target.closest('[data-m]');if(!b){$('#me').classList.toggle('open');return;}
   $('#me').classList.remove('open');b.dataset.m==='out'?signOut():changePassword();};
 document.addEventListener('click',e=>{if(!e.target.closest('#me'))$('#me').classList.remove('open')});
+// the dashboard's quick-access buttons ask the assistant a read-only question (#97)
+document.addEventListener('click',e=>{const q=e.target.closest('[data-say]');if(q)say(q.dataset.say)});
 document.addEventListener('click',e=>{const p=e.target.closest('[data-print]');if(!p)return;const d=document.getElementById(p.dataset.print);
   if(d){d.classList.add('printing');window.print();setTimeout(()=>d.classList.remove('printing'),300);}});
 (async function boot(){

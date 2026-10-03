@@ -18,8 +18,8 @@
   },
   "folded_duplicates": 90,
   "top_plan_fully_covered": 268,
-  "ms_total": 2602,
-  "ms_per_absence": 9.6,
+  "ms_total": 2580,
+  "ms_per_absence": 9.5,
   "top_rank": {
    "min": 48.5,
    "median": 94.7,
@@ -31,7 +31,7 @@
   "total": 456,
   "backtracks": 0,
   "conflicts": 7103,
-  "ms": 274,
+  "ms": 270,
   "activity_slots": 167,
   "capacity_relaxed": 40,
   "events": {
@@ -54,61 +54,61 @@
   "seeds": [
    {
     "seed": 1,
-    "ms": 271,
+    "ms": 274,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 2,
-    "ms": 272,
+    "ms": 268,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 3,
-    "ms": 286,
+    "ms": 278,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 4,
-    "ms": 277,
+    "ms": 281,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 5,
-    "ms": 272,
-    "placed": 456,
-    "total": 456
-   },
-   {
-    "seed": 6,
     "ms": 273,
     "placed": 456,
     "total": 456
    },
    {
+    "seed": 6,
+    "ms": 268,
+    "placed": 456,
+    "total": 456
+   },
+   {
     "seed": 7,
-    "ms": 271,
+    "ms": 273,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 8,
-    "ms": 269,
+    "ms": 266,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 9,
-    "ms": 272,
+    "ms": 273,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 10,
-    "ms": 270,
+    "ms": 272,
     "placed": 456,
     "total": 456
    }
@@ -118,42 +118,42 @@
     "lab_rooms": 6,
     "placed": 456,
     "total": 456,
-    "ms": 272,
+    "ms": 266,
     "backtracks": 0
    },
    {
     "lab_rooms": 5,
     "placed": 456,
     "total": 456,
-    "ms": 270,
+    "ms": 265,
     "backtracks": 0
    },
    {
     "lab_rooms": 4,
     "placed": 452,
     "total": 456,
-    "ms": 285,
+    "ms": 286,
     "backtracks": 20
    },
    {
     "lab_rooms": 3,
     "placed": 446,
     "total": 456,
-    "ms": 297,
+    "ms": 296,
     "backtracks": 30
    },
    {
     "lab_rooms": 2,
     "placed": 436,
     "total": 456,
-    "ms": 323,
+    "ms": 321,
     "backtracks": 60
    },
    {
     "lab_rooms": 1,
     "placed": 425,
     "total": 456,
-    "ms": 350,
+    "ms": 340,
     "backtracks": 88
    }
   ],
@@ -290,14 +290,14 @@
    "passed": 108,
    "failed": 0,
    "exit": 0,
-   "seconds": 1.9
+   "seconds": 1.8
   },
   {
    "suite": "deploy_test",
    "passed": 79,
    "failed": 0,
    "exit": 0,
-   "seconds": 1.5
+   "seconds": 1.4
   },
   {
    "suite": "ranking_test",
@@ -311,7 +311,7 @@
    "passed": 53,
    "failed": 0,
    "exit": 0,
-   "seconds": 3.6
+   "seconds": 3.7
   },
   {
    "suite": "makeup_test",
@@ -367,7 +367,7 @@
    "passed": 17,
    "failed": 0,
    "exit": 0,
-   "seconds": 0.8
+   "seconds": 1.1
   },
   {
    "suite": "notify_test",
@@ -382,6 +382,13 @@
    "failed": 0,
    "exit": 0,
    "seconds": 0.6
+  },
+  {
+   "suite": "dashboard_test",
+   "passed": 33,
+   "failed": 0,
+   "exit": 0,
+   "seconds": 1.9
   }
  ]
 }
