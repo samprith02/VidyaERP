@@ -505,6 +505,13 @@ def route(con, text, P, ent):
         return "my_home", {}
     if re.search(r"make-?up|extra class|extra hour|rescheduled class", t):
         return "makeup_schedule", {}
+    # Before the HOD's "department" overview, which "top 10 students ... in CSE
+    # department" would otherwise reach (#94, #95). access.py narrows both
+    # to the caller's scope, and refuses the ranking outside a HOD's.
+    if nlu.RANK_RX.search(t):
+        return "top_students", nlu.rank_args(text, ent)
+    if nlu.STRENGTH_RX.search(t):
+        return "class_strength", nlu.cohort(text, ent)
     if role == "student":
         # deciding passes is the warden's: routed to the tool that decides them,
         # which access.py refuses for a student - not filed as a new pass (#77)
@@ -636,7 +643,7 @@ def route(con, text, P, ent):
 HELP = {
     "student": [["My day", "“Good morning” · “My attendance”"], ["Gate pass", "“Gate pass for Saturday 2pm to 7pm, parents know”"],
                 ["Certificates", "“Request a bonafide certificate for passport”"], ["Fees & dues", "“My no-dues status”"],
-                ["Placements", "“Am I eligible for any drive?”"], ["Internal marks", "“My internal marks”"], ["Timetable & exams", "“My timetable” · “Exam schedule”"],
+                ["Placements", "“Am I eligible for any drive?”"], ["Internal marks", "“My internal marks”"], ["My class", "“How many students are in my class?”"], ["Timetable & exams", "“My timetable” · “Exam schedule”"],
                 ["Library", "“Library books on machine learning”"], ["Tracking", "“My requests”"]],
     "faculty": [["My day", "“Good morning”"], ["Leave", "“Apply for casual leave on 10 sep for a family function”"],
                 ["Mentees", "“My mentees”"],
@@ -644,5 +651,6 @@ HELP = {
                 ["Rooms", "“Free rooms at period 4”"], ["Tracking", "“My leave” · “My requests”"]],
 }
 HELP["hod"] = [["Department", "“Department overview”"], ["Leave", "“Pending leave applications” · “Approve leave 4”"],
-               ["Absence cover", "“Dr. X is absent tomorrow”"], ["Workload & attendance", "“Faculty workload” · “Attendance defaulters”"]] \
+               ["Absence cover", "“Dr. X is absent tomorrow”"], ["Workload & attendance", "“Faculty workload” · “Attendance defaulters”"],
+               ["Students", "“Strength of CSE-7A” · “Top 10 students with CGPA above 8”"]] \
               + HELP["faculty"]

@@ -33,7 +33,7 @@ key into `.env` (gitignored) and the LLM agent takes over — same guardrails ei
 ## Architecture in one pass
 
 `app.py` routes → `orchestrator.py` (rule engine) **or** `llm_agent.py` (model plans and calls
-tools) → `tools.py` (64 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
+tools) → `tools.py` (66 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
 + `portal.py` (the specialists). Everyone signs in first (`auth.py`).
 
 | Piece | Where | Note |
@@ -63,7 +63,7 @@ the exception on the rule side: `orchestrator.h_campus` picks a tool with `campu
 runs it through `tools.execute`, so for them all three callers share one path. The parity that is
 actually enforced is between the **LLM agent and MCP** — both reach `tools.execute` and cannot
 differ, which is what `tests/mcp_parity.py` asserts.
-`tools.select_tools()` narrows 64 tools to 3–9 per utterance (a non-admin is offered exactly their role's menu) —
+`tools.select_tools()` narrows 66 tools to 3–9 per utterance (a non-admin is offered exactly their role's menu) —
 −92% tool-schema bytes on the README's 40 example requests (`docs/charts/results.json`; this replaces an
 older, unsourced −64%). Free tiers are stingy and this is what keeps multi-hop turns
 inside the budget.
@@ -249,6 +249,20 @@ ships a timetable back.
   `--screenshot` cannot carry a session cookie, and headless Edge stops firing animation frames
   after ~100 — which is why `mesh.js` also steps from a timer when frames stall.
 
+- **A figure is for the cohort that was asked about, or it is refused (#94).** "Strength of CSE
+  7th sem sec A" used to fall to smalltalk, and the LLM, offered only `institution_overview`,
+  answered with the department's 350. `class_strength` counts a section, a semester or a
+  department and labels each figure as what it is; `tools._cohort` refuses a class with nobody on
+  the rolls (CSE-9A, EEE-3A, sem 9) and names the ones that exist. That is why `extract_sem`
+  reads a 9 and `nlu.cohort` reads an unknown department code: dropping what it cannot place
+  is exactly how a wider figure gets substituted. `top_students` (#95) ranks by CGPA, counts
+  every match, says whether a bound was strict (`cgpa_above`) or not (`cgpa_at_least`; a CSE
+  student has exactly 8.00), and keeps everyone tied at the cut-off. Names and CGPAs: Registrar
+  and HOD (own department) only.
+- **`CSE-7A` is semester 7 (#98).** `extract_sem` read only "sem 7" / "7th sem", so the class
+  name the console itself prints gave `None`, two handlers defaulted to 5, and "Rebuild the
+  timetable for CSE-7A" staged CSE-5A. `nlu.CLASS_RX` reads `CSE-7A`, `CSE 7A`, `cse7a`;
+  a bare "CSE 7" is not a class.
 - **A request that names nothing real is refused, never "done" as an empty set (#89, #90).**
   `solver.resolve_class` is the one answer to "does this section run?" (`solver.classes`, the
   list `build_input` itself uses), and both `tools._gen_scope` and `app._gen_args` go through it.
@@ -331,6 +345,7 @@ python tests/cie_test.py       # 59 assertions, no server, no API cost
 python tests/accreditation_test.py # 28 assertions, no server, no API cost
 python tests/risk_test.py      # 17 assertions, no server, no API cost
 python tests/notify_test.py    # 50 assertions, no server, no API cost (a stub gateway on loopback)
+python tests/cohort_test.py    # 40 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)
@@ -486,41 +501,23 @@ and room scarcity must degrade rather than collapse.
   `OUTING_CLASS_HOURS_BAR`, `LOAN_LIMIT`, `FINE_PER_DAY`, `DREAM_MULTIPLE`), stated in the console
   and pinned by tests. They are one college's plausible policy, not findings.
 - **The CIE scheme is a policy constant, and so is "at risk" (#32).** `academics.CIE_SCHEME` /
-
   `CIE_MIN` (average of two IA tests /25 + assignment /25; lab record /30 + lab test /20; 20/50 to sit
-
   the SEE) are one college's plausible policy, printed under every CIE answer. *Projected* extends
-
   the rate so far, so before the assignment is in, "at risk" means an IA average below 40%. The
-
   seeded marks are drawn from CGPA and per-subject attendance (`cie_test.py:1g` asserts r > 0.3),
-
   which means they inherit the attendance weakness above. The teacher of record is whoever takes
-
   most of a course's periods in the *current* timetable, so a rebuild moves the register with it.
-
   SEE results and SGPA are not modelled yet.
-
 - **A notice is delivered only if a gateway is configured (#26).** Every notice lands in
-
   `notifications` first. With no `VIDYAERP_NOTIFY_URL` its status is `Recorded`; it used to say
-
   `Sent`, which was false (#83). With one, `notify_gateway.deliver` hands the batch over AFTER
-
   the write commits: `Accepted` / `Failed`, never raising, so a dead gateway cannot undo or hide a
-
   write. `tools.execute` collects each call's deliveries (`notify_gateway.begin/end`, a per-thread
-
   stack) and appends a NotifyAgent `deliver` step, `status: "error"` on a failure; the rule
-
   engine's own dispatches do the same through `orchestrator._delivered`. **Never store or return
-
   `str(e)` from a delivery failure**: an `HTTPError` carries the URL, which may carry a token
-
   (`_why`, pinned by `notify_test.py` 7a-7c). A token is never sent over plain http except to the
-
   loopback interface. There is no SMS/email/WhatsApp code here on purpose: the gateway owns the
-
   last mile and the recipient lookup, which keeps phone numbers out of this repo.
 - **The fee-structure certificate uses synthetic fee heads** (`campus.FEE_HEADS`), and every
   printed document carries a footer saying it is a specimen from synthetic data.

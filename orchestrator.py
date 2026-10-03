@@ -298,50 +298,29 @@ def resolve_pending(con, text, st, tr, actor):
 
 
 def _delivered(tr, out):
-
     """The rule engine's own dispatches report delivery the way tools.execute does (#26)."""
-
     s = notify_gateway.step(out)
-
     if s:
-
         tr.add(*s)
 
 
 PRONOUN_RX = re.compile(r"\b(?:he|she|him|his|her|hers|they|them|their)\b", re.I)
-
 COREF_INTENTS = {"library", "student.360", "student.query"}
 
 
-
-
-
 def _corefer(st, ent, text, tr):
-
     """Remember the last student a turn named; let "he"/"she" mean them (#91).
 
-
-
     "which book has he borrowed?" after "show me the details of <USN>" had no
-
     USN and searched the catalogue for the sentence. Only a USN is carried, and
-
     only from this same session; access.py still decides what it may show.
-
     """
-
     if ent.get("usn"):
-
         st["ctx"]["last_usn"] = ent["usn"]
-
         return
-
     m = PRONOUN_RX.search(text)
-
     if m and st["ctx"].get("last_usn"):
-
         ent["usn"] = st["ctx"]["last_usn"]
-
         tr.add("EntityResolver", "coreference", f"'{m.group(0)}' → {ent['usn']} (named earlier in this session)")
 
 
@@ -811,14 +790,17 @@ def h_student(con, text, ent, st, tr, actor):
         return {"blocks": res.get("blocks") or [B_text(_data_text(res.get("data")))], "agent": "RiskAgent",
                 "chips": res.get("chips")}
 
-    q = "SELECT dept, sem, COUNT(*) n, ROUND(AVG(attendance),1) att, ROUND(AVG(cgpa),2) cg FROM students"
-    a = []
-    if ent["dept"]: q += " WHERE dept=?"; a.append(ent["dept"])
-    data = rows(con, q + " GROUP BY dept, sem", tuple(a))
-    return {"blocks": [B_text("Student strength & academic snapshot:"),
-                       B_table(["Dept", "Sem", "Students", "Avg attendance", "Avg CGPA"],
-                               [[d["dept"], d["sem"], d["n"], f"{d['att']}%", d["cg"]] for d in data])],
-            "agent": "StudentAgent"}
+    # Ranking and strength go through the tools the LLM calls (#94, #95). The
+    # strength answer used to be this handler's own department-by-semester
+    # table, whatever section was asked about.
+    if nlu.RANK_RX.search(t):
+        tool, args = "top_students", nlu.rank_args(text, ent)
+    else:
+        tool, args = "class_strength", nlu.cohort(text, ent)
+    res = tools.execute(con, st, text, tool, args)
+    _relay(tr, res, tool)
+    return {"blocks": res.get("blocks") or [B_text(_data_text(res.get("data")))], "agent": "StudentAgent",
+            "chips": res.get("chips")}
 
 
 # =====================================================================
@@ -1071,7 +1053,8 @@ def h_fallback(con, text, ent, st, tr, actor):
     tr.add("Router", "no_confident_intent", "falling back to capability guidance", status="warn")
     caps = [["Timetable & absence", "“Dr. Shwetha is absent on 9 Sep — arrange substitutes”"],
             ["Availability", "“Which ECE faculty are free on Monday period 4?”"],
-            ["Students", "“Attendance defaulters below 65% in CSE sem 5”"],
+            ["Students", "“Attendance defaulters below 65% in CSE sem 5” · “Strength of CSE-7A” · "
+                         "“Top 10 CSE students with CGPA above 8”"],
             ["Faculty", "“Faculty workload above 90%” · “Who teaches Machine Learning?”"],
             ["Finance", "“Fee dues by department”"],
             ["Exams", "“SEE eligibility check for MECH” · “Draft invigilation roster”"],

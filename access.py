@@ -46,10 +46,10 @@ def self_usn(con, P, a, key="usn"):
     return a, None
 
 
-def own_class(con, P, a):
+def own_class(con, P, a, what="class timetable"):
     for k, v in (("dept", P["dept"]), ("sem", P["sem"]), ("section", P["section"])):
         if a.get(k) not in (None, "") and str(a[k]).upper() != str(v).upper():
-            return None, "You can only see your own class timetable."
+            return None, f"You can only see your own {what}."
         a[k] = v
     return a, None
 
@@ -178,6 +178,8 @@ STUDENT = {
     "get_timetable": own_class, "exam_schedule": own_dept_sem, "library_search": ALLOW,
     "makeup_schedule": own_class, "library_loans": own_loans,
     "cie_marks": self_usn,
+    # how many are in my class; never a ranking of other students' CGPAs (#94, #95)
+    "class_strength": lambda con, P, a: own_class(con, P, a, "class's strength"),
 }
 FACULTY = {
     "my_home": ALLOW, "my_requests": ALLOW, "my_mentees": ALLOW, "my_leaves": ALLOW, "apply_leave": ALLOW,
@@ -188,6 +190,7 @@ FACULTY = {
     "academic_risk": lambda con, P, a: own_mentees(con, P, a),
     "faculty_availability": lambda con, P, a: self_fac(con, P, a, "faculty"),
     "cie_marks": own_courses, "record_cie_marks": own_courses,
+    "class_strength": lambda con, P, a: own_dept(con, P, a),
 }
 HOD = {
     **FACULTY,
@@ -200,6 +203,7 @@ HOD = {
     "faculty_availability": lambda con, P, a: own_dept(con, P, a),
     "student_360": lambda con, P, a: dept_student(con, P, a, "usn"),
     "student_lookup": lambda con, P, a: dept_student(con, P, a, "query"),
+    "top_students": lambda con, P, a: own_dept(con, P, a),     # names and CGPAs: the department's only
     "review_pending_leaves": lambda con, P, a: own_dept(con, P, a),
     "decide_leave": dept_leave,
     "plan_absence_coverage": lambda con, P, a: dept_fac(con, P, a, "faculty_name"),

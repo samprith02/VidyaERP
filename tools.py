@@ -210,6 +210,149 @@ def t_student_lookup(con, S, U, query=None, **kw):
             "trace": [("StudentAgent", "record_fetch", s["usn"])]}
 
 
+def _cohort(con, dept, sem, section):
+    """(where, args, label) for a dept / sem / section filter, or (None, error).
+    A cohort that names nothing on the rolls is refused, never answered with a
+    wider figure: "CSE-9A" once came back as the department's 350 (#94)."""
+    d = str(dept or "").strip().upper() or None
+    x = str(section or "").strip().upper() or None
+    try:
+        s = int(sem) if sem not in (None, "") else None
+    except (TypeError, ValueError):
+        return None, f"Semester must be a number, not {sem!r}."
+    where, args = [], []
+    for col, v in (("dept", d), ("sem", s), ("section", x)):
+        if v is not None:
+            where.append(f"{col}=?")
+            args.append(v)
+    label = (f"{d}-{s}{x}" if d and s and x else
+             " · ".join(p for p in (d, s and f"sem {s}", x and f"section {x}") if p) or "the institution")
+    sql = " WHERE " + " AND ".join(where) if where else ""
+    if where and not one(con, "SELECT 1 FROM students" + sql, tuple(args)):
+        have = rows(con, "SELECT DISTINCT dept, sem, section FROM students" + (" WHERE dept=?" if d else "")
+                    + " ORDER BY dept, sem, section", (d,) if d else ())
+        near = ", ".join(f"{r['dept']}-{r['sem']}{r['section']}" for r in have) or \
+            ", ".join(r["dept"] for r in rows(con, "SELECT DISTINCT dept FROM students ORDER BY dept"))
+        return None, (f"No student on the rolls is in {label}, so there is no figure to give. "
+                      f"{'Sections in ' + d if have else 'Departments'}: {near}.")
+    return (sql, tuple(args), label), None
+
+
+def t_class_strength(con, S, U, dept=None, sem=None, section=None, **kw):
+    """How many students a section, a semester or a department has (#94),
+    each figure labelled as what it is, so a department total is never
+    passed off as a section's."""
+    c, err = _cohort(con, dept, sem, section)
+    if err:
+        return {"data": {"error": err}, "blocks": [B_text(err)], "trace": []}
+    sql, args, label = c
+    per = rows(con, f"""SELECT dept, sem, section, COUNT(*) n, SUM(hostel) hostel,
+                        ROUND(AVG(attendance),1) att, ROUND(AVG(cgpa),2) cg,
+                        SUM(CASE WHEN attendance<75 THEN 1 ELSE 0 END) short
+                        FROM students{sql} GROUP BY dept, sem, section ORDER BY dept, sem, section""", args)
+    n = sum(r["n"] for r in per)
+    one_class = len(per) == 1 and dept and sem and section
+    context = []
+    if one_class:
+        r = per[0]
+        sem_n = one(con, "SELECT COUNT(*) c FROM students WHERE dept=? AND sem=?", (r["dept"], r["sem"]))["c"]
+        dept_n = one(con, "SELECT COUNT(*) c FROM students WHERE dept=?", (r["dept"],))["c"]
+        context = [{"label": f"{r['dept']} sem {r['sem']} (all sections)", "value": sem_n},
+                   {"label": f"{r['dept']} (all semesters)", "value": dept_n}]
+    cards = [{"label": f"Students in {label}", "value": n, "tone": "good"}]
+    if one_class:
+        r = per[0]
+        cards += [{"label": "Hostelites", "value": r["hostel"], "sub": f"{n - r['hostel']} day scholars"},
+                  {"label": "Avg attendance", "value": f"{r['att']}%",
+                   "tone": "good" if r["att"] >= 75 else "warn", "sub": f"{r['short']} below 75%"},
+                  {"label": "Avg CGPA", "value": r["cg"]}]
+    blocks = [B_cards(cards + context, title=f"Strength — {label}")]
+    if not one_class:
+        blocks.append(B_table(["Class", "Students", "Hostelites", "Avg att.", "Avg CGPA", "<75%"],
+                              [[f"{r['dept']}-{r['sem']}{r['section']}", r["n"], r["hostel"], f"{r['att']}%",
+                                r["cg"], r["short"]] for r in per], title=f"{len(per)} section(s) in {label}",
+                              dense=True))
+    blocks.append(B_text("Strength is the number of students on the rolls in these records."))
+    return {"data": {"scope": label, "students": n,
+                     "sections": [{"class": f"{r['dept']}-{r['sem']}{r['section']}", "students": r["n"]}
+                                  for r in per],
+                     **({"semester_total": context[0]["value"], "department_total": context[1]["value"]}
+                        if one_class else {})},
+            "blocks": blocks,
+            "chips": [f"Top 10 students by CGPA in {label}" if dept else "Top 10 students by CGPA",
+                      "Attendance defaulters" + (f" in {per[0]['dept']}" if dept else "")],
+            "trace": [("StudentAgent", "cohort_count", f"{label}: {n} on the rolls · {len(per)} section(s)")]}
+
+
+RANK_CAP = 100
+
+
+def t_top_students(con, S, U, dept=None, sem=None, section=None, cgpa_above=None, cgpa_at_least=None,
+                   cgpa_below=None, cgpa_at_most=None, limit=10, order="top", **kw):
+    """Students ranked by CGPA within a cohort and CGPA band (#95). Counted in
+    full, shown up to `limit`, and a tie at the cut-off is shown rather than
+    broken silently by an order nobody chose."""
+    c, err = _cohort(con, dept, sem, section)
+    if err:
+        return {"data": {"error": err}, "blocks": [B_text(err)], "trace": []}
+    sql, args, label = c
+    try:
+        lim = int(limit if limit not in (None, "") else 10)
+        bounds = {k: float(v) for k, v in (("cgpa_above", cgpa_above), ("cgpa_at_least", cgpa_at_least),
+                                           ("cgpa_below", cgpa_below), ("cgpa_at_most", cgpa_at_most))
+                  if v not in (None, "")}
+    except (TypeError, ValueError):
+        return {"data": {"error": "limit must be a whole number and CGPA bounds numbers."}, "blocks": [],
+                "trace": []}
+    if not 1 <= lim <= RANK_CAP:
+        return {"data": {"error": f"Ask for between 1 and {RANK_CAP} students, not {lim}."}, "blocks": [],
+                "trace": []}
+    ops = {"cgpa_above": (">", "above"), "cgpa_at_least": (">=", "or above"),
+           "cgpa_below": ("<", "below"), "cgpa_at_most": ("<=", "or below")}
+    where, a = [sql[len(" WHERE "):]] if sql else [], list(args)
+    for k, v in bounds.items():
+        where.append(f"cgpa {ops[k][0]} ?")
+        a.append(v)
+    band = " and ".join(f"{v:.2f} {ops[k][1]}" if k in ("cgpa_at_least", "cgpa_at_most")
+                        else f"{ops[k][1]} {v:.2f}" for k, v in bounds.items())
+    bottom = str(order or "top").lower() in ("bottom", "lowest", "asc", "ascending")
+    q = ("SELECT usn, name, dept, sem, section, cgpa, attendance, backlogs FROM students"
+         + (" WHERE " + " AND ".join(where) if where else "")
+         + f" ORDER BY cgpa {'ASC' if bottom else 'DESC'}, usn")
+    allm = rows(con, q, tuple(a))
+    shown = allm[:lim]
+    while shown and len(shown) < len(allm) and allm[len(shown)]["cgpa"] == shown[-1]["cgpa"]:
+        shown.append(allm[len(shown)])                 # keep everyone tied at the cut-off
+    ties = len(shown) - min(lim, len(allm))
+    rank, ranked = 0, []
+    for i, r in enumerate(shown):                      # 1, 1, 3: a shared CGPA shares a rank
+        rank = rank if i and r["cgpa"] == shown[i - 1]["cgpa"] else i + 1
+        ranked.append({**r, "rank": rank})
+    scope = label + (f", CGPA {band}" if band else "")
+    word = "lowest" if bottom else "highest"
+    if not allm:
+        msg = f"No student in {label} has a CGPA {band}." if band else f"No student in {label}."
+        return {"data": {"scope": scope, "matching": 0, "students": []}, "blocks": [B_text(msg)],
+                "trace": [("StudentAgent", "cgpa_rank", f"{scope}: 0 match")]}
+    head = (f"**{len(allm)}** student(s) in {label}" + (f" have a CGPA {band}" if band else "")
+            + (", all of them by CGPA" if len(shown) == len(allm) else f"; the {len(shown)} {word} by CGPA")
+            + (f" (the last {ties + 1} share a CGPA of {shown[-1]['cgpa']:.2f}, so all of them are shown)"
+               if ties else "") + ":")
+    return {"data": {"scope": scope, "matching": len(allm), "shown": len(shown), "order": word,
+                     "students": [{"rank": r["rank"], "usn": r["usn"], "name": r["name"],
+                                   "class": f"{r['dept']}-{r['sem']}{r['section']}", "cgpa": r["cgpa"]}
+                                  for r in ranked]},
+            "blocks": [B_text(head),
+                       B_table(["Rank", "USN", "Name", "Class", "CGPA", "Attendance", "Backlogs"],
+                               [[r["rank"], r["usn"], r["name"], f"{r['dept']}-{r['sem']}{r['section']}",
+                                 f"{r['cgpa']:.2f}", f"{r['attendance']}%", r["backlogs"]] for r in ranked],
+                               title=f"{word.capitalize()} CGPA — {scope}", dense=True),
+                       B_text("Ranked by CGPA, then USN. A shared CGPA shares a rank.")],
+            "chips": [f"Strength of {label}" if label != "the institution" else "Department strength",
+                      "Early-warning list"],
+            "trace": [("StudentAgent", "cgpa_rank", f"{scope}: {len(allm)} match · {len(shown)} shown")]}
+
+
 def t_attendance_defaulters(con, S, U, dept=None, sem=None, cutoff=75, **kw):
     data = StudentAgent().defaulters(con, dept.upper() if dept else None,
                                      int(sem) if sem else None, float(cutoff or 75))
@@ -681,6 +824,7 @@ def _p(props, required=()):
 _S = {"type": "string"}
 _I = {"type": "integer"}
 _B = {"type": "boolean"}
+_N = {"type": "number"}
 
 REGISTRY = [
     (t_institution_overview, "institution_overview",
@@ -703,6 +847,17 @@ REGISTRY = [
      "Workload/utilisation table, optionally filtered by department or minimum utilisation %.",
      _p({"dept": _S, "min_util": _I})),
     (t_student_lookup, "student_lookup", "One student by USN or name.", _p({"query": _S}, ["query"])),
+    (t_class_strength, "class_strength",
+     "How many students are on the rolls in one section (dept+sem+section), one semester (dept+sem) or a "
+     "department, with the section's semester and department totals labelled separately. Refuses a "
+     "section that does not exist instead of answering with a wider figure.",
+     _p({"dept": _S, "sem": _I, "section": _S})),
+    (t_top_students, "top_students",
+     "Students ranked by CGPA (order='top' or 'bottom'), optionally within a dept/sem/section and a CGPA band: "
+     "cgpa_above / cgpa_below are strict, cgpa_at_least / cgpa_at_most include the bound. Returns rank, USN, "
+     "name and CGPA; counts every match and shows up to `limit` (default 10, max 100), keeping ties.",
+     _p({"dept": _S, "sem": _I, "section": _S, "cgpa_above": _N, "cgpa_at_least": _N, "cgpa_below": _N,
+         "cgpa_at_most": _N, "limit": _I, "order": _S})),
     (t_attendance_defaulters, "attendance_defaulters",
      "Students below an attendance cutoff (default VTU 75%).", _p({"dept": _S, "sem": _I, "cutoff": _I})),
     (t_academic_risk, "academic_risk",
@@ -769,6 +924,7 @@ TOOL_AGENT = {
     "faculty_timetable": "TimetableAgent", "find_free_faculty": "TimetableAgent",
     "find_free_rooms": "TimetableAgent", "faculty_profile": "FacultyAgent",
     "faculty_workload": "FacultyAgent", "student_lookup": "StudentAgent",
+    "class_strength": "StudentAgent", "top_students": "StudentAgent",
     "attendance_defaulters": "StudentAgent", "academic_risk": "RiskAgent", "fee_summary": "FinanceAgent",
     "exam_schedule": "ExamAgent", "exam_eligibility": "ExamAgent", "list_requests": "RequestAgent",
     "list_leaves": "HRAgent", "plan_absence_coverage": "SubstitutionAgent",
@@ -849,7 +1005,8 @@ TOOL_GROUPS = {
     "timetable.generate": ["plan_timetable_generation", "apply_timetable_generation",
                            "get_timetable", "faculty_workload"],
     "faculty.query":   ["faculty_profile", "faculty_workload", "faculty_timetable"],
-    "student.query":   ["student_lookup", "attendance_defaulters", "academic_risk"],
+    "student.query":   ["student_lookup", "class_strength", "top_students", "attendance_defaulters",
+                        "academic_risk"],
     "finance.query":   ["fee_summary", "list_requests"],
     "exam.query":      ["exam_schedule", "exam_eligibility", "attendance_defaulters"],
     "request.manage":  ["list_requests", "decide_request", "create_request"],
