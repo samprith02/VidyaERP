@@ -45,7 +45,6 @@ tools) → `tools.py` (69 tool schemas, PolicyGuard-wrapped, role policy enforce
 | Campus services | `campus.py` | library, hostel, transport, gate pass, placement, documents, leave review, Student 360, Ops radar — tools + `rule_route` |
 | Campus data | `campus_data.py` | their tables + seed, own `Random`; `ensure()` is additive to an old DB |
 | Academics | `academics.py` | standing faculty availability (#19) and CIE marks (#32): seeds, read tools, gated writes, `rule_route` |
-| Academics | `academics.py` | standing faculty availability (#19): seed, read tool, gated write, `rule_route` |
 | Accreditation | `accreditation.py` | NAAC / NBA evidence (#29): one read tool, every figure sourced, every gap named |
 | Academic calendar | `academic_calendar.py` | holidays, events, exams (#104): `reaches()` is the one visibility rule; one read, two gated writes; SEE and CIE dates shown read-only |
 | Calendar page | `static/calendar.js` | the month grid both pages share; draws what the server returns, decides nothing |
@@ -313,11 +312,12 @@ ships a timetable back.
   to reading `.git/HEAD` directly (no subprocess, resolved once at import);
   `deploy_test.py:3q-3t` exercise the env read itself, not just the reporting — asserting on the
   module constant alone passes even when the variable is never read.
-  **Still unresolved as of 2026-09-25:** the likely cause is the Render GitHub App's access to
+  **Still unresolved as of 2026-10-07 (#15):** the likely cause is the Render GitHub App's access to
   `samprith02/VidyaERP`, which is fixed in the GitHub/Render dashboards, not in code. Until it is,
   **every push needs a manual deploy** (Render dashboard → Manual Deploy, or the API trigger), and
-  then the `/health` check above. Verified working live on 2026-09-25: `short: fe6d846`,
-  `source: platform`.
+  then the `/health` check above. Every deploy since has been manual; last verified live on
+  2026-10-07: `short: 9161a2f`, `source: platform`. A docs-only commit need not be deployed, so
+  `/health` may then trail `HEAD` by design.
 - **Storage is ephemeral on a free host, and `/health` says so.** `db.seed()` rebuilds the whole
   institution on a cold start (~0.25 s with the campus services), so a restart silently discards
   every applied override.
@@ -381,11 +381,14 @@ python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)
 ```
 
-**The README's numbers come from `docs/charts/make_charts.py`** (stdlib only, works on a temp
-copy of the DB) and land in `docs/charts/results.json`. After changing anything it measures
-(ranking, solver, router, tool list, seed, a suite's assertion count) re-run it with `--tests`
+**The README's numbers come from `docs/charts/make_charts.py`** (stdlib only, seeds a fresh
+institution into a temp DB, #110) and land in `docs/charts/results.json`. After changing anything it measures
+(ranking, solver, router, tool list, the agents, seed, a suite's assertion count) re-run it with `--tests`
 and commit the SVGs with the change; the charts must never disagree with the code. Screenshots in
 `docs/img/` were taken headlessly (see the README's "How the screenshots and charts were made").
+The README's agent figure is measured too (#107): a *specialist* is an agent that owns a tool
+(`tools.TOOL_AGENT`, 20), and the mesh total is read from `static/mesh.js`'s `CATALOG` (33).
+A new agent name moves both; never type the number into the README by hand.
 
 `ranking_test.py` is the one to run after touching `SubstitutionAgent`. Four of its assertions
 encode real defects and say so in their comments — leave them labelled: a swap must not change the
