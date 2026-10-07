@@ -52,6 +52,7 @@ const CATALOG = {
   'PlanRanker':        {g: 'acad', role: 'Ranks plans by 0.8·confidence + 0.2·continuity; coverage is a floor.'},
   'FacultyAgent':      {g: 'acad', role: 'Faculty directory, workload and subject allocation.', ask: 'Faculty workload above 90%'},
   'ExamAgent':         {g: 'acad', role: 'SEE calendar, eligibility and invigilation.', ask: 'SEE eligibility check'},
+  'CalendarAgent':     {g: 'acad', role: 'The academic calendar: holidays, events and exams, each shown only to the classes it names.', ask: 'Show the academic calendar'},
   'HRAgent':           {g: 'acad', role: 'Leave ledger; prices each pending leave by running the substitution planner.', ask: 'Review pending leave applications'},
   'StudentAgent':      {g: 'stud', role: 'Student records, attendance defaulters and academic risk.', ask: 'Attendance defaulters in CSE sem 5'},
   'AttendanceAgent':   {g: 'stud', role: 'Subject-wise attendance, reconciled to each student\'s headline figure.', ask: 'Everything about 4VP24CS017'},

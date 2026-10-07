@@ -47,6 +47,10 @@
         <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M8.5 10h7M8.5 14h4M14.5 16.5l1.5 1.5 3-3.5"/></svg></span>
         <span class="nav-label">Internal marks</span>
       </button>
+      <button data-v="cal" title="Academic calendar">
+        <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><circle cx="8" cy="14.5" r="1"/><circle cx="12" cy="14.5" r="1"/><circle cx="16" cy="14.5" r="1"/><path d="M7 18h4"/></svg></span>
+        <span class="nav-label">Calendar</span>
+      </button>
 
       <button data-v="leave" title="Faculty leave">
         <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M9 15l2 2 4-4"/></svg></span>
@@ -212,6 +216,7 @@
     <section class="view hidden" id="v-dash"></section>
     <section class="view hidden" id="v-leave"></section>
     <section class="view hidden" id="v-cie"></section>
+    <section class="view hidden" id="v-cal"></section>
     <section class="view hidden" id="v-lib"></section>
     <section class="view hidden" id="v-hostel"></section>
     <section class="view hidden" id="v-bus"></section>
@@ -235,6 +240,7 @@
     <div class="foot"><span><span class="kbd">↑</span> <span class="kbd">↓</span> to move</span><span><span class="kbd">Enter</span> to open or send</span><span><span class="kbd">Esc</span> to close</span></div></div>
 </div>
 <script src="/static/blocks.js"></script>
+<script src="/static/calendar.js"></script>
 <script src="/static/mesh.js"></script>
 <script>
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
@@ -242,7 +248,8 @@ const SID='sess-'+Math.random().toString(36).slice(2,8);
 const api=(u,o)=>fetch(u,o).then(r=>{if(r.status===401){location.href='/login';throw new Error('signed out')}return r.json()});
 const VT={chat:['Assistant','Hand work to the agents; approve what they prepare'],dash:['Overview','The institution today'],
   tt:['Master timetable','Class schedules, teaching blocks, and approved changes'],fac:['Faculty','Directory, workload, availability, and leave'],
-  stu:['Students','Academic records, attendance, and risk'],cie:['Internal marks','CIE entry, standing, and the SEE minimum'],req:['Approval inbox','Administrative requests ordered by service level'],
+  stu:['Students','Academic records, attendance, and risk'],cie:['Internal marks','CIE entry, standing, and the SEE minimum'],
+  cal:['Academic calendar','Holidays, events and exams, each shown only to the classes it names'],req:['Approval inbox','Administrative requests ordered by service level'],
   ovr:['Schedule changes','Approved substitutions and timetable amendments'],log:['Audit ledger','Immutable record of agent-assisted activity'],
   radar:['Autopilot','Every agent, asked what needs a human decision today'],mesh:['Agent mesh','Every request, traced through the agents that handled it'],
   leave:['Faculty leave','Pending leave, priced against the real timetable'],lib:['Library','Catalogue, circulation and overdue fines'],
@@ -326,6 +333,7 @@ async function render(v){
   if(v==='radar')return renderRadar(el);
   if(v==='leave')return renderLeave(el);
   if(v==='cie')return renderCie(el);
+  if(v==='cal')return renderCal(el);
   if(v==='lib')return renderLib(el);
   if(v==='hostel')return renderHostel(el);
   if(v==='bus')return renderBus(el);
@@ -813,6 +821,140 @@ async function renderCie(el){
   ['#cd','#cs','#cx'].forEach(s=>$(s).onchange=()=>{$('#cu').value='';draw();});
   $('#cu').onkeydown=e=>{if(e.key==='Enter')draw();};
   draw();
+}
+/* ---------------- academic calendar (#104) ----------------
+   The month reads through /api/panel/calendar_events, a read. The form only
+   PROPOSES: /api/calendar/propose passes no approval, so the CalendarAgent
+   validates the entry, says who it would reach, and stages it in this
+   console's own chat session. It is committed when the Registrar says yes in
+   their own words, through /api/chat: the same gate, re-validation and
+   verify step as an entry asked for in the chat. Both turns are mirrored into
+   the chat, so the chat always shows what a "yes" there would commit. */
+const ACAL={month:null,events:[],today:null,sel:null};
+const CAL_D=['CSE','ISE','ECE','MECH','CIVIL'];
+async function renderCal(el){
+  const C=MawosCalendar;
+  el.innerHTML=`<div class="cal-bar"><button class="cal-nav" id="acPrev" type="button" aria-label="Previous month">‹</button>
+      <h3 id="acTitle">Calendar</h3><button class="cal-nav" id="acNext" type="button" aria-label="Next month">›</button>
+      <button class="btn sm ghost" id="acToday" type="button">This month</button><span class="spacer"></span>
+      <select id="acD" aria-label="Department"><option value="">All departments</option>${CAL_D.map(d=>`<option>${d}</option>`).join('')}</select>
+      <select id="acS" aria-label="Semester"><option value="">All semesters</option><option>3</option><option>5</option><option>7</option></select>
+      <select id="acX" aria-label="Section"><option value="">All sections</option><option>A</option><option>B</option></select>
+      <select id="acK" aria-label="Show"><option value="">Everything</option><option value="exams">Exams</option>${C.KINDS.map(([k,l])=>`<option value="${k}">${esc(l)}</option>`).join('')}</select>
+      <input type="text" id="acU" aria-label="See it as one student" placeholder="As a student: USN" style="width:170px"/>
+      <button class="btn sm" id="acNew" type="button">New entry</button></div>
+    <div class="cal-wrap"><div><div id="acGrid"><div class="loading-state">Loading the calendar</div></div>
+      ${C.legend()}<p class="cal-note" id="acFor"></p></div><div class="cal-side" id="acSide"></div></div>`;
+  $('#acPrev').onclick=()=>acLoad(C.shift(ACAL.month,-1));
+  $('#acNext').onclick=()=>acLoad(C.shift(ACAL.month,1));
+  $('#acToday').onclick=()=>acLoad('');
+  ['#acD','#acS','#acX'].forEach(s=>$(s).onchange=()=>{$('#acU').value='';acLoad(ACAL.month);});
+  $('#acK').onchange=acDraw;
+  $('#acU').onkeydown=e=>{if(e.key==='Enter')acLoad(ACAL.month);};
+  $('#acNew').onclick=()=>acForm();
+  el.onclick=e=>{
+    const ev=e.target.closest('[data-cal-ev]'),dy=e.target.closest('[data-cal-day]'),
+          ed=e.target.closest('[data-cal-edit]'),cn=e.target.closest('[data-cal-cancel]');
+    const find=id=>ACAL.events.find(z=>String(z.id)===String(id));
+    if(ed){acForm(find(ed.dataset.calEdit));return;}
+    if(cn){acPropose('cancel',{event_id:cn.dataset.calCancel});return;}
+    if(ev){const x=find(ev.dataset.calEv);if(x)$('#acSide').innerHTML=MawosCalendar.detail(x,{admin:true});return;}
+    if(dy&&!e.target.closest('.cal-form')){ACAL.sel=ACAL.sel===dy.dataset.calDay?null:dy.dataset.calDay;acDraw();acSide();}
+  };
+  acLoad(ACAL.month||'');
+}
+async function acLoad(month){
+  const p={month,dept:$('#acD').value,sem:$('#acS').value,section:$('#acX').value,usn:$('#acU').value.trim()};
+  const r=await panel('calendar_events',p);
+  const d=r.data||{};
+  if(d.error){$('#acGrid').innerHTML=`<div class="cal-empty">${esc(d.error)}</div>`;return;}
+  ACAL.month=String(d.from||'').slice(0,7);ACAL.events=d.events||[];ACAL.today=d.today;ACAL.sel=null;
+  $('#acFor').textContent=`Showing ${p.usn?'what '+d.for+' sees':'the calendar of '+d.for}. SEE papers come from the exam timetable and CIE dates from the CIE scheme; both are read-only here.`;
+  acDraw();acSide();
+}
+function acDraw(){
+  const C=MawosCalendar;
+  $('#acTitle').textContent=C.title(ACAL.month);
+  C.render($('#acGrid'),{month:ACAL.month,events:ACAL.events,today:ACAL.today,filter:$('#acK').value,selected:ACAL.sel});
+}
+function acSide(){
+  const C=MawosCalendar,f=$('#acK').value;
+  if(ACAL.sel){
+    $('#acSide').innerHTML=`<div class="cal-det"><h3>${esc(C.longDate(ACAL.sel))}</h3>${C.agenda(ACAL.events.filter(e=>C.covers(e,ACAL.sel)),f,'Nothing on this day.')}</div>`;
+    return;
+  }
+  const own=ACAL.events.filter(e=>e.source==='calendar');
+  $('#acSide').innerHTML=`<div class="cal-det"><h3>Added to the calendar this month</h3>
+    ${C.agenda(own,f,'Nothing added this month. Use New entry, or ask the assistant.')}
+    <p class="cal-src">Pick a day to see everything on it, including SEE papers and CIE dates.</p></div>`;
+}
+function acForm(e){
+  e=e||{};
+  const C=MawosCalendar,college=!!e.id&&e.scope==='college';
+  const opt=(vals,cur,all)=>`<option value="">${all}</option>`+vals.map(v=>`<option${String(cur)===String(v)?' selected':''}>${v}</option>`).join('');
+  $('#acSide').innerHTML=`<form class="cal-form" id="acF" autocomplete="off">
+    <h3>${e.id?'Change entry #'+esc(e.id):'New calendar entry'}</h3>
+    <label for="fT">Title</label><input type="text" id="fT" maxlength="120" value="${attr(e.title||'')}"/>
+    <label for="fK">Type</label><select id="fK">${C.KINDS.map(([k,l])=>`<option value="${k}"${e.kind===k?' selected':''}>${esc(l)}</option>`).join('')}</select>
+    <div class="two"><div><label for="fD">Date</label><input type="date" id="fD" value="${attr(e.date||'')}"/></div>
+      <div class="fEnd"><label for="fE">Ends on</label><input type="date" id="fE" value="${attr(e.end_date||'')}"/></div></div>
+    <div class="two"><div><label for="fS">Starts</label><input type="time" id="fS" value="${attr(e.start_time||'')}"/></div>
+      <div><label for="fN">Ends</label><input type="time" id="fN" value="${attr(e.end_time||'')}"/></div></div>
+    <label for="fV">Venue</label><input type="text" id="fV" maxlength="80" value="${attr(e.venue||'')}"/>
+    <label>Who is it for?</label>
+    <div class="who"><label><input type="radio" name="fW" value="class"${college?'':' checked'}/> Named classes</label>
+      <label><input type="radio" name="fW" value="college"${college?' checked':''}/> College-wide</label></div>
+    <div class="three fCls" style="margin-top:6px"><select id="fDp" aria-label="Department">${opt(CAL_D,e.dept||'','Every dept')}</select>
+      <select id="fSm" aria-label="Semester">${opt([3,5,7],e.sem||'','Every sem')}</select>
+      <select id="fSc" aria-label="Section">${opt(['A','B'],e.section||'','Every section')}</select></div>
+    <div class="hint fCls">Name a department, a semester, or both, and a section for one class. Nothing is college-wide unless you choose it.</div>
+    <div class="fSub"><label for="fC">Subject code</label><input type="text" id="fC" placeholder="e.g. BCS702" value="${attr(e.subject||'')}"/></div>
+    <label for="fX">Details</label><textarea id="fX" maxlength="600">${esc(e.description||'')}</textarea>
+    <div class="go"><button class="btn" type="submit">Check it</button><button class="btn ghost" type="button" id="fQ">Close</button></div>
+    <div class="hint">Checking writes nothing. You will see who it reaches, and it is saved only when you say yes.</div>
+  </form><div class="cal-res" id="acRes"></div>`;
+  const sync=()=>{const ex=MawosCalendar.EXAMS.includes($('#fK').value),
+    col=document.querySelector('input[name=fW]:checked').value==='college';
+    $$('#acF .fSub').forEach(x=>x.classList.toggle('hidden',!ex));$$('#acF .fEnd').forEach(x=>x.classList.toggle('hidden',ex));
+    $$('#acF .fCls').forEach(x=>x.classList.toggle('hidden',col));};
+  $('#fK').onchange=sync;$$('input[name=fW]').forEach(r=>r.onchange=sync);sync();
+  $('#fQ').onclick=acSide;
+  $('#acF').onsubmit=ev=>{ev.preventDefault();
+    const ex=MawosCalendar.EXAMS.includes($('#fK').value),
+      col=document.querySelector('input[name=fW]:checked').value==='college';
+    const f={title:$('#fT').value.trim(),kind:$('#fK').value,date:$('#fD').value,end_date:ex?'':$('#fE').value,
+      start_time:$('#fS').value,end_time:$('#fN').value,venue:$('#fV').value.trim(),description:$('#fX').value.trim(),
+      scope:col?'college':'',dept:col?'':$('#fDp').value,sem:col?'':$('#fSm').value,section:col?'':$('#fSc').value,
+      subject:ex?$('#fC').value.trim():''};
+    if(e.id)f.event_id=String(e.id);
+    acPropose('save',f);};
+}
+async function acPropose(action,fields){
+  let res=$('#acRes');
+  if(!res){$('#acSide').innerHTML='<div class="cal-res" id="acRes"></div>';res=$('#acRes');}
+  res.innerHTML='<div class="loading-state">The calendar agent is checking it</div>';
+  const r=await api('/api/calendar/propose',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action,fields,session:SID})});
+  if(r.trace&&r.trace.length)MESH.play(r.trace,`calendar · ${action}`,r);
+  const d=r.data||{};
+  if(!d.BLOCKED){res.innerHTML=`<div class="pnl">${blocksHTML(r.blocks)||esc(d.error||r.error||'It could not be checked.')}</div>`;return;}
+  res.innerHTML=`<div class="pnl">${blocksHTML(r.blocks)}<div class="cal-acts">
+      <button class="btn ok" type="button" id="acYes">Yes, ${action==='cancel'?'cancel it':'save it'}</button>
+      <button class="btn ghost" type="button" id="acNo">No, discard it</button></div></div>`;
+  push('bot',`<p><b>From the calendar form.</b> Staged for your approval: ${esc(d.proposal||'')}.</p>`+blocksHTML(r.blocks));
+  setChips(r.chips);
+  const reply=async text=>{
+    push('user',`<p>${esc(text)}</p>`);
+    const c=await api('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text,session:SID,engine:'rule'})});
+    MESH.play(c.trace||[],text,c);
+    const html=approvalMark(c.trace)+blocksHTML(c.blocks);
+    push('bot',html);setChips(c.chips);
+    res.innerHTML=`<div class="pnl">${html}</div>`;
+    if(c.refresh||/discard/i.test(text)){const keep=res.innerHTML;await acLoad(ACAL.month);$('#acSide').innerHTML=`<div class="cal-res">${keep}</div>`;}
+  };
+  $('#acYes').onclick=()=>reply('Yes, go ahead');
+  $('#acNo').onclick=()=>reply('No, discard it');
 }
 async function renderLib(el){
   const [o,d]=await Promise.all([panel('library_overview'),panel('library_overdue')]);

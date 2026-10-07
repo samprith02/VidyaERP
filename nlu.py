@@ -121,6 +121,11 @@ INTENTS = {
                ("ia2", 7), ("ia 1", 7), ("ia 2", 7), ("ia test", 8), ("assignment marks", 7), ("lab record", 6),
                ("marks entry", 9), ("marks", 4)],
         "desc": "Internal marks: entry, standing, students at risk of the CIE minimum (#32)"},
+    # ---- academic_calendar.py ----
+    "calendar": {
+        "kw": [("academic calendar", 8), ("college event", 6), ("college events", 6), ("ia re-test", 6),
+               ("lab exam", 4), ("practical exam", 4)],
+        "desc": "The academic calendar: holidays, events and exams, each for the classes it names (#104)"},
 }
 
 CONFIRM_YES = ["yes", "yeah", "yep", "ok", "okay", "approve", "apply", "confirm", "go ahead",
@@ -488,6 +493,34 @@ RANK_RX = re.compile(
 # Scored like the PRIORITY rules: "What is the strength of the CSE 7th sem
 # SEC A" matched no keyword at all and fell to smalltalk (#94).
 PRIORITY += [(STRENGTH_RX.pattern, "student.query", 16), (RANK_RX.pattern, "student.query", 18)]
+
+# ----------------------------------------------------- the academic calendar (#104)
+# Whole month words only: a bare "mar[a-z]*" reads "5 marks" as 5 March.
+CAL_MON = (r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|"
+           r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b")
+# A question about dates: what is on, when the next one is, is there one that day.
+CAL_QUESTION_RX = re.compile(
+    r"\bcalendar\b|\bholidays?\b|\bevents?\b|\bfests?\b|\bhappening\b|\bwhat'?s on\b|"
+    r"\b(?:next|upcoming|coming)\b[^?.!]{0,40}\b(?:exams?|tests?|ia|internals?|holidays?|events?|papers?)\b|"
+    r"\b(?:exams?|tests?|papers?)\b[^?.!]{0,30}\b(?:this|next) (?:week|month|term)\b|"
+    r"\b(?:exams?|tests?|papers?)\b[^?.!]{0,30}\bon\s+(?:\d|" + CAL_MON + r"|today|tomorrow|the\s+\d)|"
+    r"\bdo i have (?:an? |any )?(?:exams?|tests?|ia|internals?|holiday|papers?)\b|"
+    r"\bwhen(?:'s| is| are| do| will)\b[^?.!]{0,40}\b(?:exams?|tests?|ia|internals?|holidays?|events?|papers?)\b",
+    re.I)
+# Putting something on it. Never a request ("create a request for the hackathon
+# event" is the inbox's), and the verb must start the sentence.
+CAL_WRITE_RX = re.compile(
+    r"^\s*(?:please\s+)?(?:add|create|schedule|declare|put|post|mark|set up|enter)\b(?![^.?!]*\brequests?\b)"
+    r"[^.?!]{0,80}\b(?:holidays?|events?|exams?|ia (?:test|re-?test)|internals?|practicals?|lab exams?|"
+    r"calendar|celebration|orientation|fest)\b", re.I)
+CAL_CANCEL_RX = re.compile(r"\b(?:cancel|delete|remove|withdraw|call off)\b[^.?!]{0,40}\b(?:calendar )?"
+                           r"(?:event|entry)\s*#?\s*(\d{1,5})\b", re.I)
+CAL_EDIT_RX = re.compile(r"\b(?:move|reschedule|change|edit|update|postpone|prepone|shift)\b[^.?!]{0,30}"
+                         r"\b(?:calendar )?(?:event|entry)\s*#?\s*(\d{1,5})\b", re.I)
+PRIORITY += [(CAL_WRITE_RX.pattern, "calendar", 16), (CAL_CANCEL_RX.pattern, "calendar", 16),
+             (CAL_EDIT_RX.pattern, "calendar", 16),
+             # "leave calendar" is the leave ledger's (absence.cover)
+             (r"(?<!leave )\bcalendar\b|\bholidays?\b", "calendar", 15)]
 
 _NUM = r"(\d{1,2}(?:\.\d{1,2})?)"
 

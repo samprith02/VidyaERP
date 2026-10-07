@@ -659,6 +659,46 @@ for i, path in enumerate(PATHS):
     check(f"18d approved CIE entry commits · {path}", verdict(r) == "ok" and got and got["marks"] == 12.5,
           f"{verdict(r)}: {json.dumps(r.get('data'), default=str)[:120]}")
 
+# ======================================== 19 · the calendar writes (#104)
+# The academic calendar's two writes, held to the same standard as 16 and 18:
+# refused identically on all three paths without approval, nothing written;
+# committed on all three with it. A model cannot put an entry on a student's
+# calendar by approving itself.
+print("\n19 · calendar writes: same refusal, same commit, every path")
+print("-" * 78)
+import academic_calendar                                           # noqa: E402
+
+CAL_ARGS = {"save_calendar_event": {"title": "Parity probe", "kind": "event", "date": "2026-09-16",
+                                    "dept": "CSE", "sem": 5},
+            "cancel_calendar_event": {"event_id": "7"}}
+check("19a every calendar write has a parity probe", set(CAL_ARGS) == set(academic_calendar.GATED_WRITES))
+check("19b every calendar write is in tools.GATED_WRITES",
+      set(academic_calendar.GATED_WRITES) <= set(tools.GATED_WRITES))
+
+
+def cal_snapshot():
+    academic_calendar.ensure(con)
+    return [tuple(r) for r in con.execute("SELECT * FROM calendar_events ORDER BY id")]
+
+
+for name, cargs in CAL_ARGS.items():
+    vs = {}
+    for path in PATHS:
+        S = fresh_session()
+        before = cal_snapshot()
+        r = run_path(path, S, name, cargs, approves=False)
+        vs[path] = verdict(r)
+        check(f"19 {name} · {path} · refused, nothing written", vs[path] == "blocked" and cal_snapshot() == before,
+              f"{vs[path]}: {json.dumps(r.get('data'), default=str)[:120]}")
+    check(f"19 {name} · PARITY", len(set(vs.values())) == 1, str(vs))
+for i, path in enumerate(PATHS):
+    S = fresh_session()
+    title = f"Parity probe {i}"              # a different entry per path, so each commit is its own row
+    r = run_path(path, S, "save_calendar_event", {**CAL_ARGS["save_calendar_event"], "title": title}, approves=True)
+    got = one(con, "SELECT id FROM calendar_events WHERE title=? AND status='Active'", (title,))
+    check(f"19c approved calendar entry commits · {path}", verdict(r) == "ok" and got is not None,
+          f"{verdict(r)}: {json.dumps(r.get('data'), default=str)[:120]}")
+
 # ========================================================================= out
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")

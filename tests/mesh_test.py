@@ -136,7 +136,7 @@ check("5c an unreachable model is an error, not a warning",
 html = open(os.path.join(HERE, "static", "index.html"), encoding="utf-8").read()
 scripts = re.findall(r'<script\s+src="([^"]+)"', html)
 check("5d the console loads only local scripts",
-      scripts == ["/static/blocks.js", "/static/mesh.js"], str(scripts))
+      scripts == ["/static/blocks.js", "/static/calendar.js", "/static/mesh.js"], str(scripts))
 check("5e mesh.js itself fetches nothing from outside",
       not re.search(r"https?://", MESH), re.findall(r"https?://\S+", MESH)[:2])
 check("5f the mesh draws red only from the server's own status",
