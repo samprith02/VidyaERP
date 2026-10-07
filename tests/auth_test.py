@@ -188,6 +188,14 @@ check("3h student: their own class by default", r["data"].get("class") == f"{STU
 r = call("student", "exam_schedule", {"dept": None})
 check("3i student: exams narrowed to their department and semester",
       r["data"]["exams"] and all(e["dept"] == STU["dept"] and e["sem"] == STU["sem"] for e in r["data"]["exams"]))
+# Defect (#109): another semester was overwritten with the student's own, so the
+# model presented the student's papers as "the 7th-semester CSE exams".
+other = next(s for s in (3, 5, 7) if s != STU["sem"])
+check("3i2 student: another semester's exams are refused, not answered with their own",
+      denied(call("student", "exam_schedule", {"dept": STU["dept"], "sem": other})))
+r = call("student", "exam_schedule", {"dept": STU["dept"], "sem": STU["sem"]})
+check("3i3 student: naming their own semester is fine",
+      r["data"].get("exams") and all(e["sem"] == STU["sem"] for e in r["data"]["exams"]), str(r["data"])[:100])
 check("3j faculty: a colleague's profile is refused", denied(call("faculty", "faculty_profile", {"name": HOD["id"]})))
 check("3k faculty: their own by default", call("faculty", "faculty_profile", {})["data"].get("id") == FAC["id"])
 check("3l HOD: a department colleague is fine", call("hod", "faculty_profile", {"name": FAC["id"]})["data"].get("id")

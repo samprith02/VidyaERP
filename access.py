@@ -59,6 +59,10 @@ def own_dept_sem(con, P, a):
         return None, "You can only see your own department's exams."
     a["dept"] = P["dept"]
     if P["role"] == "student":
+        # refused, never replaced: overwriting sem 7 with the student's own 5
+        # answered "the 7th-semester exams" with their own papers (#109)
+        if a.get("sem") not in (None, "") and str(a["sem"]).strip() != str(P["sem"]):
+            return None, "You can only see your own semester's exams."
         a["sem"] = P["sem"]
     return a, None
 

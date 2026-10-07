@@ -362,7 +362,7 @@ python tests/solver_test.py    # 53 assertions, no server, no API cost
 python tests/mcp_parity.py     # 283 assertions, no server, no API cost
 python tests/campus_test.py    # 160 assertions, no server, no API cost
 python tests/mesh_test.py      # 25 assertions, no server, no API cost (6a-6c need node)
-python tests/auth_test.py      # 109 assertions, no server, no API cost
+python tests/auth_test.py      # 111 assertions, no server, no API cost
 python tests/makeup_test.py    # 33 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost

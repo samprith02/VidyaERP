@@ -18,8 +18,8 @@
   },
   "folded_duplicates": 90,
   "top_plan_fully_covered": 268,
-  "ms_total": 2755,
-  "ms_per_absence": 10.2,
+  "ms_total": 2593,
+  "ms_per_absence": 9.6,
   "top_rank": {
    "min": 48.5,
    "median": 94.7,
@@ -31,7 +31,7 @@
   "total": 456,
   "backtracks": 0,
   "conflicts": 7103,
-  "ms": 281,
+  "ms": 283,
   "activity_slots": 167,
   "capacity_relaxed": 40,
   "events": {
@@ -54,43 +54,43 @@
   "seeds": [
    {
     "seed": 1,
-    "ms": 279,
+    "ms": 287,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 2,
-    "ms": 280,
+    "ms": 271,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 3,
-    "ms": 281,
+    "ms": 285,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 4,
-    "ms": 282,
+    "ms": 280,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 5,
-    "ms": 280,
+    "ms": 283,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 6,
-    "ms": 280,
+    "ms": 277,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 7,
-    "ms": 277,
+    "ms": 271,
     "placed": 456,
     "total": 456
    },
@@ -102,13 +102,13 @@
    },
    {
     "seed": 9,
-    "ms": 278,
+    "ms": 282,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 10,
-    "ms": 277,
+    "ms": 270,
     "placed": 456,
     "total": 456
    }
@@ -118,42 +118,42 @@
     "lab_rooms": 6,
     "placed": 456,
     "total": 456,
-    "ms": 270,
+    "ms": 274,
     "backtracks": 0
    },
    {
     "lab_rooms": 5,
     "placed": 456,
     "total": 456,
-    "ms": 276,
+    "ms": 277,
     "backtracks": 0
    },
    {
     "lab_rooms": 4,
     "placed": 452,
     "total": 456,
-    "ms": 297,
+    "ms": 290,
     "backtracks": 20
    },
    {
     "lab_rooms": 3,
     "placed": 446,
     "total": 456,
-    "ms": 303,
+    "ms": 299,
     "backtracks": 30
    },
    {
     "lab_rooms": 2,
     "placed": 436,
     "total": 456,
-    "ms": 328,
+    "ms": 329,
     "backtracks": 60
    },
    {
     "lab_rooms": 1,
     "placed": 425,
     "total": 456,
-    "ms": 355,
+    "ms": 346,
     "backtracks": 88
    }
   ],
@@ -280,7 +280,7 @@
    "passed": 283,
    "failed": 0,
    "exit": 0,
-   "seconds": 1.9
+   "seconds": 1.8
   },
   {
    "suite": "campus_test",
@@ -291,7 +291,7 @@
   },
   {
    "suite": "auth_test",
-   "passed": 109,
+   "passed": 111,
    "failed": 0,
    "exit": 0,
    "seconds": 1.9
@@ -301,14 +301,14 @@
    "passed": 85,
    "failed": 0,
    "exit": 0,
-   "seconds": 2.4
+   "seconds": 2.2
   },
   {
    "suite": "ranking_test",
    "passed": 57,
    "failed": 0,
    "exit": 0,
-   "seconds": 0.8
+   "seconds": 0.7
   },
   {
    "suite": "solver_test",
@@ -322,21 +322,21 @@
    "passed": 33,
    "failed": 0,
    "exit": 0,
-   "seconds": 1.9
+   "seconds": 2.1
   },
   {
    "suite": "mesh_test",
    "passed": 25,
    "failed": 0,
    "exit": 0,
-   "seconds": 1.0
+   "seconds": 1.1
   },
   {
    "suite": "academics_test",
    "passed": 24,
    "failed": 0,
    "exit": 0,
-   "seconds": 0.8
+   "seconds": 0.9
   },
   {
    "suite": "nlu_test",
@@ -350,14 +350,14 @@
    "passed": 59,
    "failed": 0,
    "exit": 0,
-   "seconds": 2.4
+   "seconds": 2.5
   },
   {
    "suite": "accreditation_test",
    "passed": 28,
    "failed": 0,
    "exit": 0,
-   "seconds": 1.1
+   "seconds": 1.2
   },
   {
    "suite": "language_test",
@@ -371,7 +371,7 @@
    "passed": 17,
    "failed": 0,
    "exit": 0,
-   "seconds": 0.8
+   "seconds": 0.9
   },
   {
    "suite": "notify_test",
@@ -392,14 +392,14 @@
    "passed": 33,
    "failed": 0,
    "exit": 0,
-   "seconds": 2.3
+   "seconds": 2.1
   },
   {
    "suite": "calendar_test",
    "passed": 127,
    "failed": 0,
    "exit": 0,
-   "seconds": 1.5
+   "seconds": 1.4
   }
  ]
 }
