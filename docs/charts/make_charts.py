@@ -33,10 +33,15 @@ sys.path.insert(0, ROOT)
 
 import db                                                          # noqa: E402
 
+# A freshly seeded institution, never a copy of the working college.db: that
+# one carries whatever the console or tests/smoke.py last wrote (applied plans,
+# make-up bookings), and those moved plans_scatter.svg between two runs of the
+# same code (#110). The seed is deterministic, so every run measures the same.
 _TMP = os.path.join(tempfile.gettempdir(), "vidyaerp_charts.db")
-db.seed()
-shutil.copy(db.DB_PATH, _TMP)
+if os.path.exists(_TMP):
+    os.remove(_TMP)
 db.DB_PATH = _TMP
+db.seed(force=True)
 
 import agents                                                      # noqa: E402
 import solver                                                      # noqa: E402
