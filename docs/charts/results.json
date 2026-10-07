@@ -189,6 +189,107 @@
    }
   }
  },
+ "agents": {
+  "tool_owners": 20,
+  "mesh_catalog": 33,
+  "no_tool": [
+   "AttendanceAgent",
+   "Auditor",
+   "EntityResolver",
+   "LLM Planner",
+   "MCP",
+   "PlanRanker",
+   "PolicyGuard",
+   "Router",
+   "SLAMonitor",
+   "Supervisor",
+   "ToolBus",
+   "ToolRouter",
+   "WorkloadBalancer"
+  ],
+  "by_agent": {
+   "AnalyticsAgent": {
+    "reads": 2,
+    "gated_writes": 0
+   },
+   "CalendarAgent": {
+    "reads": 1,
+    "gated_writes": 2
+   },
+   "DocumentAgent": {
+    "reads": 2,
+    "gated_writes": 2
+   },
+   "ExamAgent": {
+    "reads": 3,
+    "gated_writes": 1
+   },
+   "FacultyAgent": {
+    "reads": 2,
+    "gated_writes": 0
+   },
+   "FinanceAgent": {
+    "reads": 1,
+    "gated_writes": 0
+   },
+   "GatePassAgent": {
+    "reads": 1,
+    "gated_writes": 2
+   },
+   "HRAgent": {
+    "reads": 3,
+    "gated_writes": 2
+   },
+   "HostelAgent": {
+    "reads": 2,
+    "gated_writes": 2
+   },
+   "IQACAgent": {
+    "reads": 1,
+    "gated_writes": 0
+   },
+   "LibraryAgent": {
+    "reads": 4,
+    "gated_writes": 3
+   },
+   "NotifyAgent": {
+    "reads": 0,
+    "gated_writes": 1
+   },
+   "OpsRadar": {
+    "reads": 1,
+    "gated_writes": 0
+   },
+   "PlacementAgent": {
+    "reads": 3,
+    "gated_writes": 1
+   },
+   "RequestAgent": {
+    "reads": 2,
+    "gated_writes": 2
+   },
+   "RiskAgent": {
+    "reads": 1,
+    "gated_writes": 0
+   },
+   "StudentAgent": {
+    "reads": 7,
+    "gated_writes": 0
+   },
+   "SubstitutionAgent": {
+    "reads": 3,
+    "gated_writes": 1
+   },
+   "TimetableAgent": {
+    "reads": 6,
+    "gated_writes": 2
+   },
+   "TransportAgent": {
+    "reads": 1,
+    "gated_writes": 2
+   }
+  }
+ },
  "router": {
   "utterances": 40,
   "offered": [

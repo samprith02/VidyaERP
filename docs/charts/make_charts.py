@@ -1,7 +1,7 @@
 """Measure the system and draw the README's charts. Standard library only.
 
     python docs/charts/make_charts.py            # measure + draw (about a minute)
-    python docs/charts/make_charts.py --tests    # also run the fourteen no-server suites
+    python docs/charts/make_charts.py --tests    # also run the no-server suites (SUITES below)
 
 Every number in docs/charts/*.svg comes from running the code in this repo
 against the seeded institution; nothing is typed in by hand. The measurements
@@ -368,6 +368,47 @@ for i, (m, (r, w)) in enumerate(order):
 s.line(x0, top_ - 6, x0, top_ + rowh * len(order) - 6, "base")
 s.legend(x0, 80, [("read", "s1"), ("gated write", "s2")])
 s.save("tools_by_module.svg", "Measured by docs/charts/make_charts.py · tools.FUNCS and tools.GATED_WRITES")
+
+# the agents (#107): a "specialist" is an agent that owns at least one tool, the
+# owner a failed call is pinned on (tools.TOOL_AGENT). The mesh also draws the
+# agents that own none (Supervisor, Router, PolicyGuard, Auditor, ...), read
+# from static/mesh.js's CATALOG rather than typed in here.
+by_agent = collections.defaultdict(lambda: [0, 0])
+for n in tools.FUNCS:
+    by_agent[tools.TOOL_AGENT[n]][1 if n in tools.GATED_WRITES else 0] += 1
+with open(os.path.join(ROOT, "static", "mesh.js"), encoding="utf-8") as f:
+    _mesh = f.read()
+_cat = _mesh[_mesh.index("const CATALOG = {"):]
+catalog = re.findall(r"^\s+'([^']+)':\s+\{g:", _cat[:_cat.index("\n};")], re.M)
+R["agents"] = {"tool_owners": len(by_agent), "mesh_catalog": len(catalog),
+               "no_tool": sorted(set(catalog) - set(by_agent)),
+               "by_agent": {a: {"reads": r, "gated_writes": w} for a, (r, w) in sorted(by_agent.items())}}
+print(f"  {len(by_agent)} agents own a tool; the mesh draws {len(catalog)}")
+order = sorted(by_agent.items(), key=lambda kv: (-sum(kv[1]), kv[0]))
+rowh, t, top_ = 26, 16, 96
+h = top_ + rowh * len(order) + 44
+s = Svg(f"{len(by_agent)} specialist agents own the {len(tools.FUNCS)} tools",
+        f"A failed call is pinned on its tool's owner. The mesh draws {len(catalog)}: "
+        f"{len(catalog) - len(by_agent)} more route, guard, audit or support.", h)
+x0, x1 = 170, W - 130   # room for the longest label at the tip
+vmax = nice_max(max(sum(v) for _a, v in order))
+for k in range(5):
+    gx = x0 + (x1 - x0) * k / 4
+    s.line(gx, top_ - 6, gx, top_ + rowh * len(order) - 6, "grid")
+    s.text(gx, top_ + rowh * len(order) + 10, tick(vmax * k / 4), "mut num", "middle")
+for i, (a, (r, w)) in enumerate(order):
+    y = top_ + i * rowh
+    s.text(x0 - 10, y + t - 3, a, "t1", "end")
+    wr = (x1 - x0) * r / vmax
+    ww = (x1 - x0) * w / vmax
+    if r:
+        s.raw(f'<rect class="s1" x="{x0}" y="{y}" width="{max(wr - (2 if w else 0), 0):.1f}" height="{t}"/>')
+    if w:
+        s.hbar(x0 + wr, y, ww, t, "s2")
+    s.text(x0 + wr + ww + 6, y + t - 3, f"{r} read · {w} write", "t1 num")
+s.line(x0, top_ - 6, x0, top_ + rowh * len(order) - 6, "base")
+s.legend(x0, 80, [("read", "s1"), ("gated write", "s2")])
+s.save("agents.svg", "Measured by docs/charts/make_charts.py · tools.TOOL_AGENT and static/mesh.js CATALOG")
 
 # the router: how many tools each utterance is offered, and what that saves
 CORPUS = [

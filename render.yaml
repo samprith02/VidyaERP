@@ -14,10 +14,13 @@
 # Two things about this deployment that are true and worth knowing before you
 # send anyone the URL:
 #
-#   * THE CONSOLE HAS NO LOGIN. Anyone who can reach the URL is the Registrar
-#     and can drive every write the copilot offers. The data is entirely
-#     synthetic, so the blast radius is a fake college's timetable — but treat
-#     the deployment as a public demo, never as a system of record.
+#   * DEMO MODE PUBLISHES EVERY PASSWORD. Everyone signs in, but by default the
+#     login page lists each demo account and its password (the account's own
+#     ID; the Registrar's is `registrar`), so anyone who reaches the URL can act
+#     as the Registrar. The data is entirely synthetic, so treat the deployment
+#     as a public demo, never as a system of record. For real use add
+#     VIDYAERP_DEMO_LOGINS=0 and VIDYAERP_ADMIN_PASSWORD in the dashboard;
+#     /health reports auth.passwords_published either way.
 #   * FREE INSTANCES HAVE AN EPHEMERAL FILESYSTEM. college.db is rebuilt from
 #     db.seed() on every restart, and free instances spin down when idle. A
 #     coverage plan applied on Monday will not be there on Tuesday. Uncomment
