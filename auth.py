@@ -178,7 +178,7 @@ def temporary_password(con, username):
 PUBLIC = {"/health", "/login", "/api/auth/login", "/api/auth/demo", "/favicon.ico"}
 PUBLIC_PREFIX = ("/static/",)
 ANY_USER = {"/", "/portal", "/api/chat", "/api/reset", "/api/mode", "/api/auth/me", "/api/auth/logout",
-            "/api/auth/password", "/api/me/home"}
+            "/api/auth/password", "/api/me/home", "/api/me/calendar"}
 OPERATOR = {"/api/seed/reset", "/api/mcp/approval"}
 
 

@@ -648,6 +648,26 @@ CIE_RX = re.compile(r"\bcie\b|internal (?:marks|assessment)|\bia ?[12]\b|\bia (?
                     r"lab record|lab test|assignment")
 
 
+def _calendar(text, t, ent):
+    """The academic calendar (#104) for a portal account: (tool, args), or None.
+    Putting something on it or taking it off is routed to the write itself, so
+    access.py refuses it in plain words rather than this answering a question
+    nobody asked (#77). An order to tell everyone ("inform all students about
+    the fest") is a broadcast, and a request for an event is the inbox's."""
+    import academic_calendar
+    if re.search(r"^\s*(?:please\s+)?(?:notify|inform|announce|broadcast|circulate|send)\b|\brequests?\b", t):
+        return None
+    m = nlu.CAL_CANCEL_RX.search(text)
+    if m:
+        return "cancel_calendar_event", {"event_id": m.group(1)}
+    if nlu.CAL_WRITE_RX.search(text) or nlu.CAL_EDIT_RX.search(text):
+        return "save_calendar_event", {}
+    if academic_calendar.QUESTION_RX.search(t) and not re.search(
+            r"\bmarks?\b|\bfees?\b|\bdues\b|gate ?pass|certificate|\bleave\b", t):
+        return "calendar_events", academic_calendar.question_args(text, ent)
+    return None
+
+
 def route(con, text, P, ent):
     """Rule-engine routing for a non-admin: utterance -> (tool, args), or
     (None, None) for help. Every tool it can name still passes access.py."""
@@ -701,6 +721,11 @@ def route(con, text, P, ent):
         if re.search(r"certificate|bonafide|\bnoc\b|no[- ]?dues? cert|transfer cert", t) and not re.search(r"status|position", t):
             m = re.search(r"\bfor\s+(?:a |an |my |the )?([a-z0-9][a-z0-9 \-&]{2,50})$", t)
             return "request_certificate", {"kind": cert_kind(text) or "Bonafide", "purpose": m.group(1) if m else ""}
+        # the academic calendar (#104): a question with a date in it. "Exam schedule"
+        # stays the SEE table below, and marks and fees keep their own tools.
+        cal = _calendar(text, t, ent)
+        if cal:
+            return cal
         # before the timetable: "Exam schedule" matched its "schedule" (#77)
         # ("exam fees" is a dues question and "internal exam marks" a marks one)
         if re.search(r"\bexams?\b|\bsee\b|hall ticket", t) and not re.search(r"fee|dues|marks|internal", t):
@@ -737,6 +762,9 @@ def route(con, text, P, ent):
         return "apply_leave", {"from_date": (a or TODAY + dt.timedelta(days=1)).isoformat(),
                                "to_date": (b or a or TODAY + dt.timedelta(days=1)).isoformat(),
                                "kind": k, "reason": rs.group(1) if rs else ""}
+    cal = _calendar(text, t, ent)
+    if cal:
+        return cal
     if CIE_RX.search(t):
         import academics                       # lazily: academics imports this module's _staged
         return academics.cie_route(con, text, ent, admin=False)
@@ -799,12 +827,14 @@ def route(con, text, P, ent):
 HELP = {
     "student": [["My day", "“Good morning” · “My attendance”"], ["Gate pass", "“Gate pass for Saturday 2pm to 7pm, parents know”"],
                 ["Certificates", "“Request a bonafide certificate for passport”"], ["Fees & dues", "“My no-dues status”"],
-                ["Placements", "“Am I eligible for any drive?”"], ["Internal marks", "“My internal marks”"], ["My class", "“How many students are in my class?”"], ["Timetable & exams", "“My timetable” · “Exam schedule”"],
+                ["Placements", "“Am I eligible for any drive?”"], ["Internal marks", "“My internal marks”"],
+                ["Calendar", "“What exams do I have this month?” · “When is my next internal exam?”"], ["My class", "“How many students are in my class?”"], ["Timetable & exams", "“My timetable” · “Exam schedule”"],
                 ["Library", "“Library books on machine learning”"], ["Tracking", "“My requests”"]],
     "faculty": [["My day", "“Good morning”"], ["Leave", "“Apply for casual leave on 10 sep for a family function”"],
                 ["Mentees", "“My mentees”"],
                 ["Internal marks", "“Internal marks of my courses” · “Enter IA2 marks for BCS501: 4VP24CS001 18, …”"], ["Timetable", "“My timetable” · “CSE sem 5 A timetable”"],
-                ["Rooms", "“Free rooms at period 4”"], ["Tracking", "“My leave” · “My requests”"]],
+                ["Rooms", "“Free rooms at period 4”"], ["Calendar", "“Holidays this term” · “Events this week”"],
+                ["Tracking", "“My leave” · “My requests”"]],
 }
 HELP["hod"] = [["Department", "“Department overview”"], ["Leave", "“Pending leave applications” · “Approve leave 4”"],
                ["Absence cover", "“Dr. X is absent tomorrow”"], ["Workload & attendance", "“Faculty workload” · “Attendance defaulters”"],

@@ -335,7 +335,7 @@ column_chart("solver_scarcity.svg", "Take lab rooms away: it degrades, it does n
 print("\n3 · tools and the router")
 mod_of = {n: tools.FUNCS[n].__module__ for n in tools.FUNCS}
 MOD = {"tools": "core (tools.py)", "campus": "campus.py", "portal": "portal.py", "academics": "academics.py",
-       "accreditation": "accreditation.py"}
+       "accreditation": "accreditation.py", "academic_calendar": "academic_calendar.py"}
 by_mod = collections.defaultdict(lambda: [0, 0])
 for n, m in mod_of.items():
     by_mod[m][1 if n in tools.GATED_WRITES else 0] += 1
@@ -488,7 +488,7 @@ column_chart("faculty_load.svg", "How loaded is each teacher?",
 # =========================================================== 5. the suites
 SUITES = ["mcp_parity", "campus_test", "auth_test", "deploy_test", "ranking_test", "solver_test",
           "makeup_test", "mesh_test", "academics_test", "nlu_test", "cie_test", "accreditation_test",
-          "language_test", "risk_test", "notify_test", "cohort_test", "dashboard_test"]
+          "language_test", "risk_test", "notify_test", "cohort_test", "dashboard_test", "calendar_test"]
 if "--tests" in sys.argv:
     print(f"\n5 · running the {len(SUITES)} no-server suites")
     got = []

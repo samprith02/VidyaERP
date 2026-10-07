@@ -5,8 +5,8 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![Dependencies: 2](https://img.shields.io/badge/dependencies-2-brightgreen.svg)](requirements.txt)
-[![Tests: 1109 assertions](https://img.shields.io/badge/tests-1109_assertions_passing-brightgreen.svg)](#tests)
-[![Tools: 66, 21 gated](https://img.shields.io/badge/tools-66_·_21_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
+[![Tests: 1251 assertions](https://img.shields.io/badge/tests-1251_assertions_passing-brightgreen.svg)](#tests)
+[![Tools: 69, 23 gated](https://img.shields.io/badge/tools-69_·_23_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
 [![Data: synthetic](https://img.shields.io/badge/data-100%25_synthetic-lightgrey.svg)](NOTICE)
 
 A working prototype of a **SMART, agentic ERP for an Indian engineering college** (autonomous /
@@ -40,7 +40,7 @@ LLM client included, and the console is plain HTML with three local files (`stat
 
 | | | | |
 |:--|:--|:--|:--|
-| **16** specialist agents | **66** tools · **21** writes, every one gated | **1109** test assertions, 0 failing | **2** dependencies |
+| **16** specialist agents | **69** tools · **23** writes, every one gated | **1251** test assertions, 0 failing | **2** dependencies |
 | **271** absences swept: the top plan fully covers **268** | **456 / 456** periods placed by the solver, 0 clashes | **92%** less tool payload per LLM turn | **0** external assets in the console |
 
 Every number above is measured by [`docs/charts/make_charts.py`](docs/charts/make_charts.py) and
@@ -114,10 +114,10 @@ listed in `.env.example`. No SDK is installed: `llm.py` talks raw HTTP over `url
 is nothing to `pip install`. Restart the server and the badge flips to green.
 
 <p align="center">
-  <img src="docs/charts/tools_by_module.svg" alt="Bar chart: 66 tools by module. core tools.py 21 reads and 5 writes; campus.py 15 reads and 11 writes; portal.py 6 reads and 3 writes; academics.py 2 reads and 2 writes; accreditation.py 1 read" width="760">
+  <img src="docs/charts/tools_by_module.svg" alt="Bar chart: 69 tools by module. core tools.py 21 reads and 5 writes; campus.py 15 reads and 11 writes; portal.py 6 reads and 3 writes; academics.py 2 reads and 2 writes; academic_calendar.py 1 read and 2 writes; accreditation.py 1 read" width="760">
 </p>
 
-**The 66 tools the model can call** (a student, teacher or HOD is offered only their role's). 26 academic/admin:
+**The 69 tools the model can call** (a student, teacher or HOD is offered only their role's). 26 academic/admin:
 `institution_overview · get_timetable · faculty_timetable · find_free_faculty · find_free_rooms ·
 faculty_profile · faculty_workload · student_lookup · class_strength · top_students · attendance_defaulters · academic_risk · fee_summary ·
 exam_schedule · exam_eligibility · list_requests · list_leaves · plan_absence_coverage ·
@@ -131,9 +131,10 @@ publish_drive_shortlist · no_dues_status · issue_certificate · certificate_re
 review_pending_leaves · decide_leave`. 9 self-service (§5c): `my_home · my_requests · my_placement ·
 request_gate_pass · request_certificate · my_mentees · my_leaves · apply_leave · dept_overview`. 4
 academic records: `faculty_availability · set_faculty_availability` (standing availability) and
-`cie_marks · record_cie_marks` (internal marks, §5d). And 1 for accreditation evidence (§5e):
-`accreditation_evidence`.
-**21 of the 66 are writes, and every one is gated.**
+`cie_marks · record_cie_marks` (internal marks, §5d). 1 for accreditation evidence (§5e):
+`accreditation_evidence`. And 3 for the academic calendar (§5f): `calendar_events ·
+save_calendar_event · cancel_calendar_event`.
+**23 of the 69 are writes, and every one is gated.**
 
 **Write-guard, proven by test:** `tests/mock_llm.py` includes a *rogue agent* endpoint that tries
 to call `apply_coverage_plan` with no admin approval. PolicyGuard returns `{"BLOCKED": ...}`,
@@ -150,13 +151,13 @@ multi-hop turn was spending 7,196 of them. Four things fixed that:
 
 | Technique | Effect |
 |---|---|
-| **Tool router**: the rule-engine NLU pre-selects 3–9 of the 66 tools per utterance | tool-schema payload **−92%** on the 40 example requests below, and the model picks better from a short menu |
+| **Tool router**: the rule-engine NLU pre-selects 3–9 of the 69 tools per utterance | tool-schema payload **−92%** on the 40 example requests below, and the model picks better from a short menu |
 | **Prompt diet**: live-context preamble trimmed, history 8→4 turns, tool results capped at 2.8 KB | system prompt ~1,500 → ~600 tokens |
 | **Model failover chain**: `LLM_FALLBACK_MODELS`, tried in order on 429/5xx/`tool_use_failed` | quotas are *per model*, so the chain multiplies usable throughput |
 | **Nullable optional params**: every non-required arg accepts `null` | models emit `{"dept": null}` constantly; strict validators 400 on it. 41 params were latent landmines |
 
 <p align="center">
-  <img src="docs/charts/router.svg" alt="Histogram: tools offered per request for 40 example requests, between 3 and 9, never all 66. Mean schema payload 1.7 KB instead of 20.9 KB" width="760">
+  <img src="docs/charts/router.svg" alt="Histogram: tools offered per request for 40 example requests, between 3 and 9, never all 69. Mean schema payload 1.8 KB instead of 25.4 KB" width="760">
 </p>
 
 Result: a typical turn now costs **~2,000 tokens and answers in ~1.2 s**, and the
@@ -165,7 +166,7 @@ if the whole chain is exhausted by falling back to the rule engine with an hones
 The trace shows exactly which of these happened:
 
 ```
-· ToolRouter    narrow_toolset    7 of 66 tools offered: plan_absence_coverage, …
+· ToolRouter    narrow_toolset    7 of 69 tools offered: plan_absence_coverage, …
 · LLM Planner   reason (hop 1)    openai/gpt-oss-120b · 1032→107 tok · 513ms
 · LLM Planner   model_failover    primary rate-limited → answered on qwen/qwen3.8-27b
 ```
@@ -173,19 +174,19 @@ The trace shows exactly which of these happened:
 ### Tests
 
 <p align="center">
-  <img src="docs/charts/tests.svg" alt="Bar chart: 1109 assertions across 17 suites, all passing. mcp_parity 270, campus_test 160, auth_test 108, deploy_test 84, cie_test 59, ranking_test 57, solver_test 53, notify_test 50, nlu_test 49, cohort_test 40, makeup_test 33, dashboard_test 33, accreditation_test 28, mesh_test 25, academics_test 24, language_test 19, risk_test 17" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 1251 assertions across 18 suites, all passing. mcp_parity 283, campus_test 160, calendar_test 127, auth_test 109, deploy_test 85, cie_test 59, ranking_test 57, solver_test 53, notify_test 50, nlu_test 49, cohort_test 40, makeup_test 33, dashboard_test 33, accreditation_test 28, mesh_test 25, academics_test 24, language_test 19, risk_test 17" width="760">
 </p>
 
 ```bash
 python3 tests/solver_test.py  # timetable solver: 53 assertions, no server, no API cost
-python3 tests/mcp_parity.py   # MCP guard parity: 270 assertions, no server, no API cost
+python3 tests/mcp_parity.py   # MCP guard parity: 283 assertions, no server, no API cost
 python3 tests/campus_test.py  # campus services: 160 assertions, no server, no API cost
 python3 tests/mesh_test.py    # the agent mesh's fault channel and approval stamp: 25 assertions, no server, no API cost
-python3 tests/auth_test.py    # logins, route gating, per-role policy: 108 assertions, no server, no API cost
+python3 tests/auth_test.py    # logins, route gating, per-role policy: 109 assertions, no server, no API cost
 python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits verified by re-read: 33 assertions, no server, no API cost
 python3 tests/academics_test.py # standing faculty availability, honoured by every planner: 24 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
-python3 tests/deploy_test.py  # deployment readiness: 84 assertions, no server, no API cost
+python3 tests/deploy_test.py  # deployment readiness: 85 assertions, no server, no API cost
 python3 tests/nlu_test.py     # date resolution, ISO dates included: 49 assertions, no server, no API cost
 python3 tests/language_test.py # Kannada and Hindi input, never widening the write gate: 19 assertions, no server, no API cost
 python3 tests/cie_test.py     # CIE marks: seed, standing, validated gated entry, role scope: 59 assertions, no server, no API cost
@@ -194,6 +195,7 @@ python3 tests/risk_test.py    # the early-warning list, counted in full and reco
 python3 tests/notify_test.py  # notice delivery through a stub gateway: 50 assertions, no server, no API cost
 python3 tests/cohort_test.py  # section strength and CGPA ranking, recounted; missing classes refused: 40 assertions, no server, no API cost
 python3 tests/dashboard_test.py # the student dashboard: attendance and marks recomputed apart, gaps shown as gaps: 33 assertions, no server, no API cost
+python3 tests/calendar_test.py # the academic calendar: every entry reaches exactly the classes it names: 127 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 python3 docs/charts/make_charts.py --tests   # re-measure everything and redraw this README's charts
@@ -215,14 +217,14 @@ flowchart TB
   AG --> EN{Engine}
   EN -->|default, free| RE[orchestrator.py: rule engine + nlu.py]
   EN -->|LLM key set| LA[llm_agent.py: plan, call tools, answer]
-  LA --> TR[tools.select_tools: 3 to 9 of 66]
+  LA --> TR[tools.select_tools: 3 to 9 of 69]
   MC --> CA[mcp_server.call_as]
   TR --> EX[[tools.execute: the only dispatch point]]
   CA --> EX
   RE -->|campus tools| EX
   EX --> AC[access.py: role policy, default deny]
-  AC --> GD[guard.approved_this_turn: 21 gated writes]
-  GD --> SP[Specialist agents: agents.py, campus.py, portal.py, academics.py]
+  AC --> GD[guard.approved_this_turn: 23 gated writes]
+  GD --> SP[Specialist agents: agents.py, campus.py, portal.py, academics.py, academic_calendar.py]
   RE -->|core flows, own HITL state machine| SP
   SP --> DB[(SQLite: college.db)]
   SP --> VR[Verify by independent re-read]
@@ -501,10 +503,10 @@ that is decided per tool call in `tools.execute` (`access.py`), not in the UI or
 ```mermaid
 flowchart LR
   U[Signed-in person] --> R{Role}
-  R -->|Registrar| ALL[All 66 tools, institution-wide]
+  R -->|Registrar| ALL[All 69 tools, institution-wide]
   R -->|HOD| H[Self-service + department overview, workload, defaulters, leave decisions, absence cover: own department only]
-  R -->|Faculty| F[Own day, mentees, leave with timetable impact]
-  R -->|Student| S[Own day, gate pass, certificates, placement eligibility, requests]
+  R -->|Faculty| F[Own day, mentees, leave with timetable impact, the department's calendar]
+  R -->|Student| S[Own day, own class's calendar, gate pass, certificates, placement eligibility, requests]
   H & F & S --> N[access.py can only NARROW an argument or refuse. Anything unlisted: DENIED]
 ```
 
@@ -610,6 +612,41 @@ follow each student's CGPA and their attendance in that subject (Pearson r > 0.3
 asserted), so a CIE risk says something about the student. `tests/cie_test.py` pins it: 59 assertions,
 every rule mutation-checked.
 
+### 5f. The academic calendar: every entry for the classes it names (`academic_calendar.py`)
+
+A **Calendar** sits beside *Your day* in the portal (a third tab on a phone) and in the console's
+sidebar. Students and teachers read it; only the Registrar puts anything on it.
+
+- **Three sources, one calendar.** What the Registrar adds (holidays, college events, an IA re-test,
+  a lab exam) sits next to the SEE timetable and the CIE scheme's dates, both read as they stand, so
+  the calendar can never disagree with the exam timetable or the dashboard's "Coming up".
+- **Who sees what is one rule, on the server.** Every entry names its audience as department,
+  semester and section, each "all" when left out, and a student sees it only when every part named
+  is theirs: a CSE-7A internal exam reaches CSE-7A, never CSE-7B, CSE-5A or ISE-7A. The class is
+  read from the student's own record, never from the request, and `access.py` refuses a student
+  who asks for another class's calendar rather than quietly answering with theirs. The page only
+  draws what comes back.
+- **Nothing is assumed college-wide.** An entry with no audience is refused unless the Registrar
+  says college-wide; an exam must name its class and its subject must belong to it; and an entry for
+  "semester 7" must fall in this term, because next year's semester 7 is today's semester 5.
+- **The usual write path.** The console's form, or a sentence such as *Add a CSE-7A internal exam
+  for BCS702 on 29 Sep 9:30am to 10:30am*, only proposes: it shows exactly who it would reach and
+  refuses a Sunday, a holiday, an exam that clashes with another (SEE papers included) and a holiday
+  on a day with exams. The Registrar's "yes" commits it, and the CalendarAgent re-reads it before
+  reporting. Changes show what changes; a cancellation keeps the record, marked cancelled.
+
+| Ask (as a student) | What happens |
+|---|---|
+| “What exams do I have this month?” · “When is my next internal exam?” | their own class's exams only |
+| “Do I have an exam on September 29?” · “What events are happening in college this week?” | answered from their calendar, yes or no |
+| “When is the 7th semester CSE exam?” (as a 5th-semester student) | refused: another class's calendar |
+
+Seeding it found a defect in the exam timetable: SEE papers on Gandhi Jayanti, Fri 2 Oct (#106).
+The SEE seed now skips the fixed holidays in `db.HOLIDAYS`, the calendar's holidays come from the
+same list, and `db.verify()` reports a paper on one. `tests/calendar_test.py` checks the rule for
+every class on the rolls against an independent restatement of it: 127 assertions, every rule
+mutation-checked.
+
 ---
 
 ## 6. Guardrails (the part that makes it deployable)
@@ -630,7 +667,7 @@ every rule mutation-checked.
 
 ### 6a. Driving the ERP from Claude Desktop (MCP)
 
-`mcp_server.py` puts the same 66 tools in front of any MCP client. Registration needs no install
+`mcp_server.py` puts the same 69 tools in front of any MCP client. Registration needs no install
 step, because there is no SDK to install:
 
 ```json
@@ -910,12 +947,13 @@ VidyaERP/
 ├── guard.py            approved_this_turn(): the one write gate, importable by every tool module
 ├── orchestrator.py     rule-engine supervisor: routing, HITL state machine
 ├── llm.py              provider-agnostic OpenAI-compatible client (urllib, no SDK)
-├── tools.py            the 66 tool schemas + the single dispatch point (gate + role policy)
+├── tools.py            the 69 tool schemas + the single dispatch point (gate + role policy)
 ├── auth.py             sign-in: principals, PBKDF2, hashed sessions, auth.gate() for every route
 ├── access.py           per-role tool policy: default deny, rules that only ever narrow
 ├── portal.py           self-service tools for students, faculty and HODs
 ├── academics.py        standing faculty availability (#19) and CIE marks (#32): seeds, reads, gated writes
 ├── accreditation.py    NAAC / NBA evidence from the records, gaps named (#29); reads only
+├── academic_calendar.py holidays, events and exams; one visibility rule, gated writes (#104)
 ├── academics.py        standing faculty availability: seed, read and gated write (#19)
 ├── notify_gateway.py   notice delivery: webhook or outbox file, honest status, never the URL (#26)
 ├── llm_agent.py        the LLM reasoning loop (plan → call tools → answer), with failover
@@ -930,6 +968,7 @@ VidyaERP/
 ├── static/portal.html  the student / faculty / HOD portal, mobile-first
 ├── static/login.html   sign-in, with the demo accounts listed in demo mode
 ├── static/blocks.js    block renderers shared by the console and the portal
+├── static/calendar.js the month calendar shared by the console and the portal (#104)
 ├── static/mawos.css    the one stylesheet: console, portal, sign-in, mesh overlays (§9a)
 ├── static/mesh.js      the live 3D agent mesh: canvas projection, playback, fault display
 └── tests/
@@ -949,12 +988,13 @@ VidyaERP/
     ├── notify_test.py  notice delivery: one batch per dispatch, failures shown, blocked writes send nothing
     ├── cohort_test.py  strength and CGPA ranking: recounted, ties kept, missing classes refused, scoped by role
     ├── dashboard_test.py the student dashboard: two measures from two sources, attention only when due
+    ├── calendar_test.py the academic calendar: visibility for every class, who may write, refusals
     └── mock_llm.py     fake OpenAI endpoint + rogue-agent guard test
 ```
 
 Console pages: **Assistant** (with the live agent mesh and the execution log), Autopilot,
 Agent mesh, Overview, Master timetable (override-aware grid, make-ups and live solver), Faculty,
-Students, Internal marks, Faculty leave, Library, Hostels, Transport, Gate passes, Placements, Documents,
+Students, Internal marks, Calendar, Faculty leave, Library, Hostels, Transport, Gate passes, Placements, Documents,
 Approval inbox, Schedule changes, Audit ledger.
 Students, Faculty leave, Library, Hostels, Transport, Gate passes, Placements, Documents,
 Approval inbox, Schedule changes, Audit ledger, Accreditation.

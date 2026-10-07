@@ -319,6 +319,48 @@ def my_home(request: Request):
     return {"blocks": r.get("blocks", []), "chips": r.get("chips", []), "data": r.get("data")}
 
 
+@app.get("/api/me/calendar")
+def my_calendar(request: Request, month: str = "", event: str = ""):
+    """The signed-in person's calendar (#104), through tools.execute like a chat
+    turn, so access.py decides what it holds: a student's own class's entries,
+    whatever this request asks for; a teacher's department's. The page only
+    draws what comes back."""
+    user = request.state.user
+    S = {"pending": None, "history": [], "ctx": {}, "user": None if user["role"] == "admin" else user}
+    args = {"month": month} if month else {}
+    if event:
+        args["event_id"] = event
+    r = tools.execute(con, S, "", "calendar_events", args)
+    return {"blocks": r.get("blocks", []), "data": r.get("data")}
+
+
+CALENDAR_FIELDS = {"title", "kind", "date", "end_date", "start_time", "end_time", "venue", "description",
+                   "scope", "dept", "sem", "section", "subject", "event_id", "reason"}
+
+
+@app.post("/api/calendar/propose")
+def calendar_propose(request: Request, payload: dict = Body(default={})):
+    """The console's calendar form (#104). It only ever PROPOSES: U is empty, so
+    the write gate refuses to commit and stages the change in the Registrar's
+    own chat session. They approve it there in their own words ("yes", through
+    /api/chat), which re-validates and commits through the same tool, gate and
+    verify step as a change asked for in the chat. Registrar-only: the path is
+    not in auth.ANY_USER."""
+    action = _text(payload, "action") or "save"
+    if action not in ("save", "cancel"):
+        raise BadInput("'action' must be save or cancel.")
+    fields = payload.get("fields") or {}
+    if not isinstance(fields, dict):
+        raise BadInput("'fields' must be an object.")
+    S = orch.sess(_sid(request.state.user, _text(payload, "session")))
+    S["user"] = None                                   # the Registrar: unrestricted, as in /api/chat
+    name = "save_calendar_event" if action == "save" else "cancel_calendar_event"
+    r = tools.execute(con, S, "", name, {k: v for k, v in fields.items() if k in CALENDAR_FIELDS})
+    return {"blocks": r.get("blocks", []), "data": r.get("data"), "chips": r.get("chips", []),
+            "trace": [{"agent": t[0], "action": t[1], "detail": t[2] if len(t) > 2 else "",
+                       "status": t[3] if len(t) > 3 else "ok", "ms": 0} for t in r.get("trace", [])]}
+
+
 def _sid(user, sid):
     """The chat session belongs to the signed-in person. Keying it by the
     client's id alone would let anyone answer "yes" to someone else's pending
@@ -408,6 +450,8 @@ PANELS = {"ops_radar", "library_overview", "library_overdue", "library_search", 
           "review_pending_leaves", "faculty_availability", "cie_marks"}
 # the accreditation evidence pack (#29) reads only, like every panel
 PANELS.add("accreditation_evidence")
+# the academic calendar (#104): the console's month view reads through here
+PANELS.add("calendar_events")
 
 
 @app.get("/api/panel/{name}")

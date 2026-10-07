@@ -33,7 +33,7 @@ key into `.env` (gitignored) and the LLM agent takes over — same guardrails ei
 ## Architecture in one pass
 
 `app.py` routes → `orchestrator.py` (rule engine) **or** `llm_agent.py` (model plans and calls
-tools) → `tools.py` (66 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
+tools) → `tools.py` (69 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
 + `portal.py` (the specialists). Everyone signs in first (`auth.py`).
 
 | Piece | Where | Note |
@@ -47,6 +47,8 @@ tools) → `tools.py` (66 tool schemas, PolicyGuard-wrapped, role policy enforce
 | Academics | `academics.py` | standing faculty availability (#19) and CIE marks (#32): seeds, read tools, gated writes, `rule_route` |
 | Academics | `academics.py` | standing faculty availability (#19): seed, read tool, gated write, `rule_route` |
 | Accreditation | `accreditation.py` | NAAC / NBA evidence (#29): one read tool, every figure sourced, every gap named |
+| Academic calendar | `academic_calendar.py` | holidays, events, exams (#104): `reaches()` is the one visibility rule; one read, two gated writes; SEE and CIE dates shown read-only |
+| Calendar page | `static/calendar.js` | the month grid both pages share; draws what the server returns, decides nothing |
 | Notice delivery | `notify_gateway.py` | `NotifyAgent.dispatch` records, commits, then hands off: webhook / outbox / none (#26) |
 | Sign-in | `auth.py` | principals from the data, PBKDF2, hashed session tokens, `gate()` for every route |
 | Role policy | `access.py` | default-deny per role; rules that NARROW arguments or refuse |
@@ -63,7 +65,7 @@ the exception on the rule side: `orchestrator.h_campus` picks a tool with `campu
 runs it through `tools.execute`, so for them all three callers share one path. The parity that is
 actually enforced is between the **LLM agent and MCP** — both reach `tools.execute` and cannot
 differ, which is what `tests/mcp_parity.py` asserts.
-`tools.select_tools()` narrows 66 tools to 3–9 per utterance (a non-admin is offered exactly their role's menu) —
+`tools.select_tools()` narrows 69 tools to 3–9 per utterance (a non-admin is offered exactly their role's menu) —
 −92% tool-schema bytes on the README's 40 example requests (`docs/charts/results.json`; this replaces an
 older, unsourced −64%). Free tiers are stingy and this is what keeps multi-hop turns
 inside the budget.
@@ -72,11 +74,11 @@ inside the budget.
 
 ## Rules that matter here
 
-- **Writes are guarded, and the guard is in code, not in the prompt.** *Twenty-one* write tools —
+- **Writes are guarded, and the guard is in code, not in the prompt.** *Twenty-three* write tools —
   `tools.GATED_WRITES`: the five core ones (`apply_coverage_plan`, `apply_timetable_generation`,
   `decide_request`, `create_request`, `broadcast_notice`), the eleven in `campus.GATED_WRITES`, the
-  three in `portal.GATED_WRITES` and the two in `academics.GATED_WRITES` (parity-probed in
-  `mcp_parity.py` section 18)
+  three in `portal.GATED_WRITES`, the two in `academics.GATED_WRITES` (parity-probed in
+  `mcp_parity.py` section 18) and the two in `academic_calendar.GATED_WRITES` (section 19)
   — refuse to commit without explicit admin approval *in the current turn*
   (`guard.approved_this_turn`, re-exported as `tools.approved_this_turn`). `tests/mock_llm.py` has a
   rogue-agent endpoint that tries to skip the gate and is blocked. **Never** add a write path that
@@ -281,6 +283,20 @@ ships a timetable back.
 - **Always pass `encoding="utf-8"` to `open()`.** Windows defaults to cp1252 and the console
   contains typographic quotes and `·` separators. `app.py` served a 500 on the whole page for
   exactly this reason.
+- **A calendar entry reaches exactly the classes it names, decided once (#104).**
+  `academic_calendar.reaches()` is the whole visibility rule: every part of (dept, sem, section) the
+  entry names must be the student's, and an entry naming a semester must be this term's academic
+  year ("semester 7" is whoever is in it now). The student's class comes from their record;
+  `access.own_calendar` refuses another class or USN rather than answering with their own. The page
+  draws what the server sends. Nothing is assumed college-wide: no audience is refused unless
+  `scope` says college, and an exam must name its class. The console form calls
+  `/api/calendar/propose` with an empty `U`, so it can only stage; the Registrar's "yes" goes
+  through `/api/chat` (`engine: rule`). A portal user's "declare a holiday" is routed to the write,
+  so the policy refuses it in words (#77). `calendar_test.py` 2i checks every class on the rolls
+  against an independent restatement of the rule.
+- **Fixed holidays live in `db.HOLIDAYS` (#106).** The SEE seed once put 13 papers on Gandhi
+  Jayanti; it now skips a holiday as it skips a Sunday, `db.verify()` reports one, and the calendar
+  seeds its holidays from the same list. Festivals on the lunar calendar are left out, not guessed.
 - **"Seeded" means the institution is there, not that the file is (#102).** `db.seeded()` checks
   that `students` and `placements` have rows. A 0-byte file from a stray `db.connect()`, or a
   seed killed part-way, used to count as seeded, and the app then failed at import. The seed
@@ -343,14 +359,14 @@ ships a timetable back.
 
 ```bash
 python tests/solver_test.py    # 53 assertions, no server, no API cost
-python tests/mcp_parity.py     # 270 assertions, no server, no API cost
+python tests/mcp_parity.py     # 283 assertions, no server, no API cost
 python tests/campus_test.py    # 160 assertions, no server, no API cost
 python tests/mesh_test.py      # 25 assertions, no server, no API cost (6a-6c need node)
-python tests/auth_test.py      # 108 assertions, no server, no API cost
+python tests/auth_test.py      # 109 assertions, no server, no API cost
 python tests/makeup_test.py    # 33 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
-python tests/deploy_test.py    # 84 assertions, no server, no API cost
+python tests/deploy_test.py    # 85 assertions, no server, no API cost
 python tests/nlu_test.py       # 49 assertions, no server, no API cost
 python tests/language_test.py  # 19 assertions, no server, no API cost
 python tests/cie_test.py       # 59 assertions, no server, no API cost
@@ -359,6 +375,7 @@ python tests/risk_test.py      # 17 assertions, no server, no API cost
 python tests/notify_test.py    # 50 assertions, no server, no API cost (a stub gateway on loopback)
 python tests/cohort_test.py    # 40 assertions, no server, no API cost
 python tests/dashboard_test.py # 33 assertions, no server, no API cost (7a-7d need node)
+python tests/calendar_test.py  # 127 assertions, no server, no API cost (7f-7k need node)
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)

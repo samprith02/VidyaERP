@@ -181,6 +181,18 @@ SEMS = [3, 5, 7]
 DESIGNATIONS = [("Professor", 16), ("Associate Professor", 18), ("Assistant Professor", 22)]
 FAC_COUNT = {"CSE": 15, "ISE": 9, "ECE": 13, "MECH": 8, "CIVIL": 8}
 
+# Fixed-date national and state holidays: (month, day) -> name. Only those whose
+# date never moves; festivals that follow the lunar calendar are left out rather
+# than guessed. The SEE seed skips them (#106) and the academic calendar seeds
+# its holidays from this list (#104), so the two cannot disagree.
+HOLIDAYS = {(1, 26): "Republic Day", (5, 1): "May Day", (8, 15): "Independence Day",
+            (10, 2): "Gandhi Jayanti", (11, 1): "Kannada Rajyotsava", (12, 25): "Christmas"}
+
+
+def holiday(d):
+    """The fixed holiday on date `d`, or None."""
+    return HOLIDAYS.get((d.month, d.day))
+
 
 def connect():
     d = os.path.dirname(os.path.abspath(DB_PATH))
@@ -205,6 +217,7 @@ DROP TABLE IF EXISTS gate_passes; DROP TABLE IF EXISTS placement_drives;
 DROP TABLE IF EXISTS student_offers; DROP TABLE IF EXISTS drive_registrations;
 DROP TABLE IF EXISTS certificates;
 DROP TABLE IF EXISTS makeup_sessions; DROP TABLE IF EXISTS faculty_availability;
+DROP TABLE IF EXISTS calendar_events;
 
 CREATE TABLE departments(code TEXT PRIMARY KEY, name TEXT, hod TEXT, intake INT);
 CREATE TABLE faculty(
@@ -540,8 +553,9 @@ def seed(force=False):
             for c, nm, cr, kind in SUBJECTS[d][sem]:
                 if kind != "T":
                     continue
-                # every other day, never a Sunday: "+2 days" once put 15 papers on Sun 27 Sep (#101)
-                if day.weekday() == 6:
+                # every other day, never a Sunday: "+2 days" once put 15 papers on Sun 27 Sep (#101),
+                # and never a holiday: it also put 13 on Gandhi Jayanti, Fri 2 Oct (#106)
+                while day.weekday() == 6 or holiday(day):
                     day += dt.timedelta(days=1)
                 cur.execute("INSERT INTO exams(dept,sem,subject,date,session,room,kind) VALUES(?,?,?,?,?,?,?)",
                             (d, sem, c, day.isoformat(),
@@ -568,6 +582,8 @@ def _campus():
     campus_data.ensure()
     import academics
     academics.ensure()
+    import academic_calendar               # holidays, events and exams on one calendar (#104)
+    academic_calendar.ensure()
     import notify_gateway                 # delivery columns on an older notifications table (#26)
     con = connect()
     notify_gateway.ensure(con)
@@ -600,6 +616,9 @@ def verify():
         problems.append(f"OVERLOAD {r['name']} {r['load']}/{r['max_load']}")
     for r in c.execute("""SELECT date, COUNT(*) n FROM exams WHERE strftime('%w', date)='0' GROUP BY date"""):
         problems.append(f"SUNDAY EXAM {r['date']} x{r['n']}")              # #101
+    for r in c.execute("SELECT date, COUNT(*) n FROM exams GROUP BY date"):
+        if holiday(dt.date.fromisoformat(r["date"])):
+            problems.append(f"HOLIDAY EXAM {r['date']} {holiday(dt.date.fromisoformat(r['date']))} x{r['n']}")  # #106
     con.close()
     return problems
 

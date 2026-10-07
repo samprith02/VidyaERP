@@ -479,6 +479,7 @@ check("5h ...and one whose first table has rows but whose last does not", isinst
 db.DB_PATH = cold
 c = sqlite3.connect(cold)
 c.execute("INSERT INTO exams(dept, sem, subject, date) VALUES('CSE', 5, 'X', '2026-09-27')")
+c.execute("INSERT INTO exams(dept, sem, subject, date) VALUES('CSE', 5, 'X', '2026-10-02')")   # Gandhi Jayanti
 c.commit()
 c.close()
 sunday = db.verify()
@@ -488,6 +489,10 @@ c.commit()
 c.close()
 check("5i db.verify() names an exam on a Sunday (#101), so 5c is not vacuous",
       any(p.startswith("SUNDAY EXAM 2026-09-27") for p in sunday), str(sunday[:3]))
+# The seed once put 15 SEE papers on Fri 2 Oct, Gandhi Jayanti (#106): a weekday,
+# so the Sunday rule above could never see it.
+check("5j db.verify() names an exam on a fixed holiday (#106), so 5c covers holidays too",
+      any(p.startswith("HOLIDAY EXAM 2026-10-02 Gandhi Jayanti") for p in sunday), str(sunday[:3]))
 c = sqlite3.connect(cold)
 c.execute("INSERT INTO audit(ts, actor, agent, action, payload, outcome) VALUES('t','marker','x','y','{}','z')")
 c.commit()

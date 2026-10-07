@@ -170,6 +170,30 @@ def own_loans(con, P, a):
     return None, "You can only see your own library loans."
 
 
+def own_calendar(con, P, a):
+    """A student's calendar is their own (#104). Another student or another
+    class is refused, not quietly answered with theirs; the class itself is
+    read from their record by the tool, so it is never taken from an argument."""
+    if a.get("usn") and str(a["usn"]).strip().upper() != P["usn"]:
+        return None, "You can only see your own calendar."
+    for k in ("dept", "sem", "section"):
+        if a.get(k) not in (None, "") and str(a[k]).strip().upper() != str(P[k]).upper():
+            return None, "You can only see your own class's calendar."
+        a.pop(k, None)
+    a["usn"] = P["usn"]
+    return a, None
+
+
+def dept_calendar(con, P, a):
+    """A teacher's calendar is their department's: every entry that can reach
+    one of its classes (#104). A HOD may also open one of its students'."""
+    if a.get("usn"):
+        if P["role"] != "hod":
+            return None, "Ask for a class in your department, not one student's calendar."
+        return dept_student(con, P, a, "usn")
+    return own_dept(con, P, a)
+
+
 # ------------------------------------------------------------- the policy
 STUDENT = {
     "my_home": ALLOW, "my_requests": ALLOW, "my_placement": ALLOW,
@@ -180,6 +204,8 @@ STUDENT = {
     "cie_marks": self_usn,
     # how many are in my class; never a ranking of other students' CGPAs (#94, #95)
     "class_strength": lambda con, P, a: own_class(con, P, a, "class's strength"),
+    # their own class's calendar only, read from their record; never a write (#104)
+    "calendar_events": own_calendar,
 }
 FACULTY = {
     "my_home": ALLOW, "my_requests": ALLOW, "my_mentees": ALLOW, "my_leaves": ALLOW, "apply_leave": ALLOW,
@@ -191,6 +217,7 @@ FACULTY = {
     "faculty_availability": lambda con, P, a: self_fac(con, P, a, "faculty"),
     "cie_marks": own_courses, "record_cie_marks": own_courses,
     "class_strength": lambda con, P, a: own_dept(con, P, a),
+    "calendar_events": dept_calendar,
 }
 HOD = {
     **FACULTY,

@@ -564,6 +564,79 @@ textarea::placeholder, input::placeholder { color: var(--muted) }
 .send { height: 36px; padding: 0 18px; border: 0; border-radius: var(--r-s); background: var(--blue); color: #fff; font-weight: 600; cursor: pointer }
 .send:hover { background: var(--blue-2) }
 
+/* ===================================================== academic calendar (#104)
+   One colour per kind of entry, drawn as a rule down the pill's left edge on a
+   pale ground. None of them is violet: violet means approval and nothing else.
+   Every class here starts cal- so nothing collides with the timetable's .cell. */
+:root { --k-cie: var(--teal); --k-see: var(--blue); --k-practical: #7C4A1E; --k-lab: var(--warn); --k-exam: var(--ink-2);
+  --k-event: #A0337F; --k-holiday: var(--bad); --k-other: var(--graphite) }
+.k-cie { --k: var(--k-cie) } .k-see { --k: var(--k-see) } .k-practical { --k: var(--k-practical) } .k-lab { --k: var(--k-lab) }
+.k-exam { --k: var(--k-exam) } .k-event { --k: var(--k-event) } .k-holiday { --k: var(--k-holiday) } .k-other { --k: var(--k-other) }
+.cal-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px }
+.cal-bar h3 { margin: 0 6px; min-width: 9.5em; font: 600 19px var(--display); color: var(--ink) }
+.cal-bar .spacer { flex: 1 }
+.cal-nav { width: 32px; height: 32px; border: 1px solid var(--rule-2); border-radius: var(--r-s); background: var(--surface); color: var(--ink-2); font-size: 16px; line-height: 1; cursor: pointer }
+.cal-nav:hover { border-color: var(--graphite) }
+.cal-grid { border: 1px solid var(--rule); border-radius: var(--r-m); background: var(--surface); overflow: hidden }
+.cal-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)) }
+.cal-row + .cal-row { border-top: 1px solid var(--rule) }
+.cal-dow { padding: 7px 8px; background: var(--paper); color: var(--graphite); font-size: 11.5px; font-weight: 600 }
+.cal-day { position: relative; min-height: 94px; padding: 4px 5px 6px; display: flex; flex-direction: column; gap: 3px; min-width: 0 }
+.cal-day + .cal-day { border-left: 1px solid var(--rule) }
+.cal-out { background: repeating-linear-gradient(135deg, var(--paper), var(--paper) 6px, #F0F2F6 6px, #F0F2F6 7px) }
+.cal-sun { background: #FAFAFC } .cal-sun .cal-n { color: var(--muted) }
+.cal-hol { background: var(--bad-soft) }
+.cal-n { align-self: flex-start; min-width: 24px; height: 24px; padding: 0 5px; border: 0; border-radius: 12px; background: none; color: var(--ink-2); font: 600 12.5px var(--display); cursor: pointer }
+.cal-n:hover { background: var(--sunken) }
+.cal-today .cal-n { background: var(--blue); color: #fff }
+.cal-sel { box-shadow: inset 0 0 0 2px var(--blue-soft) }
+.cal-pill { display: flex; align-items: baseline; gap: 5px; width: 100%; min-width: 0; padding: 2px 6px; border: 0; border-left: 3px solid var(--k); border-radius: 0 4px 4px 0; background: color-mix(in srgb, var(--k) 9%, var(--surface)); color: var(--ink); font-size: 11.5px; line-height: 1.35; text-align: left; cursor: pointer }
+.cal-pill:hover { background: color-mix(in srgb, var(--k) 16%, var(--surface)) }
+.cal-pill .cal-t { flex: none; color: var(--graphite); font-size: 10.5px; font-variant-numeric: tabular-nums }
+.cal-pill .cal-x { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis }
+.cal-more { align-self: flex-start; padding: 0 4px; border: 0; background: none; color: var(--blue); font-size: 11px; font-weight: 600; cursor: pointer }
+.cal-dots { display: none }
+.cal-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 2px 0; color: var(--graphite); font-size: 11.5px }
+.cal-legend i, .cal-dots i { display: inline-block; width: 9px; height: 9px; margin-right: 5px; border-radius: 2px; background: var(--k); vertical-align: -1px }
+.cal-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start }
+.cal-side { position: sticky; top: 0; display: flex; flex-direction: column; gap: 12px; min-width: 0 }
+.cal-det { padding: 14px 16px; border: 1px solid var(--rule); border-radius: var(--r-m); background: var(--surface) }
+.cal-det h3 { margin: 6px 0 10px; font: 600 17px/1.25 var(--display); color: var(--ink) }
+.cal-det dl { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 5px 10px; margin: 0; font-size: 13px }
+.cal-det dt { color: var(--graphite) } .cal-det dd { margin: 0; color: var(--ink); overflow-wrap: anywhere }
+.cal-kind { display: inline-block; padding: 1px 8px 1px 7px; border-left: 3px solid var(--k); border-radius: 0 9px 9px 0; background: color-mix(in srgb, var(--k) 10%, var(--surface)); color: var(--ink-2); font-size: 11.5px; font-weight: 600 }
+.cal-src { margin: 10px 0 0; color: var(--graphite); font-size: 12px }
+.cal-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px }
+.cal-agenda { list-style: none; margin: 0; padding: 0 }
+.cal-agenda .cal-ad { margin: 12px 0 4px; color: var(--graphite); font-size: 12px; font-weight: 600 }
+.cal-agenda .cal-ad:first-child { margin-top: 0 }
+.cal-ai { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 10px; width: 100%; padding: 7px 10px; border: 0; border-left: 3px solid var(--k); border-radius: 0 6px 6px 0; background: var(--surface); text-align: left; cursor: pointer }
+.cal-ai:hover { background: color-mix(in srgb, var(--k) 7%, var(--surface)) }
+.cal-agenda li + li .cal-ai { margin-top: 3px }
+.cal-ai .cal-t { color: var(--graphite); font-size: 12px; font-variant-numeric: tabular-nums }
+.cal-ai b { display: block; color: var(--ink); font-size: 13px; font-weight: 600 }
+.cal-ai small { display: block; color: var(--graphite); font-size: 11.5px }
+.cal-empty { padding: 14px 2px; color: var(--graphite); font-size: 13px }
+.cal-note { margin: 10px 2px 0; color: var(--muted); font-size: 11.5px }
+.cal-form { padding: 14px 16px; border: 1px solid var(--rule); border-radius: var(--r-m); background: var(--surface) }
+.cal-form h3 { margin: 0 0 10px; font: 600 17px var(--display) }
+.cal-form label { display: block; margin: 9px 0 4px; color: var(--ink-2); font-size: 12px; font-weight: 600 }
+.cal-form input, .cal-form select, .cal-form textarea { width: 100%; min-width: 0 }
+.cal-form textarea { min-height: 60px; padding: 7px 10px; border: 1px solid var(--rule-2); border-radius: var(--r-s); font-size: 13px; resize: vertical }
+.cal-form input[type=date], .cal-form input[type=time] { height: 34px; padding: 0 8px; border: 1px solid var(--rule-2); border-radius: var(--r-s); background: var(--surface); font-size: 13px }
+.cal-form .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px } .cal-form .three { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 8px }
+.cal-form .who { display: flex; gap: 14px; margin-top: 2px; font-size: 13px } .cal-form .who label { display: inline-flex; gap: 6px; margin: 0; font-weight: 400 }
+.cal-form .who input { width: auto }
+.cal-form .hint { margin-top: 6px; color: var(--graphite); font-size: 11.5px }
+.cal-form .go { display: flex; gap: 8px; margin-top: 14px }
+.cal-res .cal-acts { margin-top: 10px }
+.portal .seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--sunken) }
+.portal .seg button { height: 32px; padding: 0 14px; border: 0; border-radius: 7px; background: none; color: var(--graphite); font: 600 15px var(--display); cursor: pointer }
+.portal .seg button.on { background: var(--surface); color: var(--ink); box-shadow: var(--lift) }
+.portal .day .cal-day { min-height: 78px }
+.portal .cal-pill .cal-t { display: none }            /* a narrow column: the title, not the time */
+@media (max-width: 1280px) { .cal-wrap { grid-template-columns: minmax(0, 1fr) } .cal-side { position: static } }
+
 /* =============================================================== sign-in */
 .signin { min-height: 100%; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(420px, .85fr) }
 .signin .story { padding: 44px 64px 40px; display: flex; flex-direction: column; min-width: 0 }
@@ -632,6 +705,12 @@ textarea::placeholder, input::placeholder { color: var(--muted) }
   .portal .tabs button.on { color: var(--blue); border-bottom-color: var(--blue) }
   .portal main { grid-template-columns: 1fr } .portal main > .col { display: none } .portal main > .col.on { display: flex } .portal main > .day.on { display: block }
   .portal .day { padding: 18px 16px; border-right: 0 } .me .n, .me .r, .portal .wordmark span { display: none }
+  .portal .seg { display: none }
+  /* a phone: the grid shrinks to coloured dots, and the list under it is the calendar */
+  .cal-day { min-height: 48px !important; padding: 3px 2px; align-items: center }
+  .cal-pill, .cal-more { display: none } .cal-dots { display: flex; gap: 2px; justify-content: center }
+  .cal-dots i { width: 6px; height: 6px; margin: 0; border-radius: 50% } .cal-dow { padding: 6px 2px; text-align: center }
+  .cal-n { align-self: center } .cal-bar h3 { min-width: 0; font-size: 17px }
   .brow { grid-template-columns: minmax(90px, 40%) minmax(0, 1fr) 76px }
   .who-for { grid-template-columns: 1fr }
 }

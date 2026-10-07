@@ -18,11 +18,26 @@
       <div class="menu"><button type="button" data-m="pw">Change my password</button><button type="button" data-m="out">Sign out</button></div>
     </div>
   </header>
-  <nav class="tabs"><button class="on" data-t="day">Your day</button><button data-t="chat">Assistant</button></nav>
+  <nav class="tabs"><button class="on" data-t="day">Your day</button><button data-t="cal">Calendar</button><button data-t="chat">Assistant</button></nav>
   <main>
     <section class="col day on" id="day">
-      <div class="hd"><h2>Your day</h2><button class="btn sm ghost" id="refresh" type="button">Refresh</button></div>
+      <div class="hd"><div class="seg" role="tablist" aria-label="Views"><button class="on" data-t="day" role="tab">Your day</button><button data-t="cal" role="tab">Calendar</button></div><button class="btn sm ghost" id="refresh" type="button">Refresh</button></div>
       <div id="home"><div class="loading">Loading your day…</div></div>
+      <div id="calbox" class="hidden">
+        <div class="cal-bar"><button class="cal-nav" id="calPrev" type="button" aria-label="Previous month">‹</button>
+          <h3 id="calTitle">Calendar</h3><button class="cal-nav" id="calNext" type="button" aria-label="Next month">›</button>
+          <button class="btn sm ghost" id="calToday" type="button">This month</button><span class="spacer"></span>
+          <select id="calKind" aria-label="Show"><option value="">Everything</option><option value="exams">Exams</option>
+            <option value="cie">Internal exams (CIE)</option><option value="see">Semester exams (SEE)</option>
+            <option value="practical">Practical exams</option><option value="lab">Lab exams</option>
+            <option value="event">College events</option><option value="holiday">Holidays</option><option value="other">Other</option></select></div>
+        <div id="calGrid"><div class="loading">Loading your calendar…</div></div>
+        <div id="calLegend"></div>
+        <div id="calDet" style="margin-top:14px"></div>
+        <div class="hd" style="margin-top:16px"><h4 id="calListHd" style="margin:0">This month</h4></div>
+        <div id="calList"></div>
+        <p class="cal-note" id="calNote"></p>
+      </div>
     </section>
     <section class="col chat" id="chat">
       <div class="stream" id="stream" aria-live="polite"></div>
@@ -35,6 +50,7 @@
   </main>
 </div>
 <script src="/static/blocks.js"></script>
+<script src="/static/calendar.js"></script>
 <script>
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const SID='p-'+Math.random().toString(36).slice(2,8);
@@ -73,9 +89,46 @@ async function loadHome(){
   $('#home').innerHTML=(r.blocks||[]).map(rBlock).join('')||'<div class="loading">Nothing to show yet.</div>';
   if(!$('#chips').children.length)chips(r.chips);
 }
-function tab(t){$$('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
-  $('#day').classList.toggle('on',t==='day');$('#chat').classList.toggle('on',t==='chat');}
-$$('.tabs button').forEach(b=>b.onclick=()=>tab(b.dataset.t));
+// three views: the day and the calendar share the left column, the assistant
+// has the right; on a phone each is a tab of its own
+function tab(t){$$('[data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+  $('#day').classList.toggle('on',t!=='chat');$('#chat').classList.toggle('on',t==='chat');
+  if(t==='chat')return;
+  $('#home').classList.toggle('hidden',t!=='day');$('#refresh').classList.toggle('hidden',t!=='day');
+  $('#calbox').classList.toggle('hidden',t!=='cal');
+  if(t==='cal'&&!CAL.month)loadCal();}
+$$('[data-t]').forEach(b=>b.onclick=()=>tab(b.dataset.t));
+/* ---------------- calendar (#104) ----------------
+   Read-only. /api/me/calendar runs the CalendarAgent's read tool as the
+   signed-in person, so what arrives is already only theirs; the type filter
+   below narrows that list and decides nothing about who sees what. */
+const CAL={month:null,events:[],today:null,sel:null};
+async function loadCal(month){
+  const r=await api('/api/me/calendar'+(month?'?month='+encodeURIComponent(month):''));
+  const d=r.data||{};
+  if(d.error||d.DENIED){$('#calGrid').innerHTML=`<div class="cal-empty">${esc(d.error||d.DENIED)}</div>`;return;}
+  CAL.month=String(d.from||'').slice(0,7);CAL.events=d.events||[];CAL.today=d.today;CAL.sel=null;
+  $('#calDet').innerHTML='';drawCal();
+}
+function drawCal(){
+  const C=MawosCalendar,f=$('#calKind').value,day=CAL.sel;
+  $('#calTitle').textContent=C.title(CAL.month);
+  C.render($('#calGrid'),{month:CAL.month,events:CAL.events,today:CAL.today,filter:f,selected:day});
+  $('#calListHd').textContent=day?C.longDate(day):'This month';
+  $('#calList').innerHTML=C.agenda(day?CAL.events.filter(e=>C.covers(e,day)):CAL.events,f,
+    day?'Nothing on your calendar that day.':'Nothing on your calendar this month.');
+}
+$('#calLegend').innerHTML=MawosCalendar.legend();
+$('#calPrev').onclick=()=>loadCal(MawosCalendar.shift(CAL.month,-1));
+$('#calNext').onclick=()=>loadCal(MawosCalendar.shift(CAL.month,1));
+$('#calToday').onclick=()=>loadCal();
+$('#calKind').onchange=drawCal;
+$('#calbox').addEventListener('click',e=>{
+  const ev=e.target.closest('[data-cal-ev]'),dy=e.target.closest('[data-cal-day]');
+  if(ev){const x=CAL.events.find(z=>String(z.id)===ev.dataset.calEv);
+    if(x){$('#calDet').innerHTML=MawosCalendar.detail(x);$('#calDet').scrollIntoView({block:'nearest'});}return;}
+  if(dy){CAL.sel=CAL.sel===dy.dataset.calDay?null:dy.dataset.calDay;$('#calDet').innerHTML='';drawCal();}
+});
 $('#send').onclick=()=>say($('#ta').value);
 $('#ta').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();say($('#ta').value)}});
 $('#ta').addEventListener('input',e=>{e.target.style.height='auto';e.target.style.height=e.target.scrollHeight+'px'});
@@ -95,6 +148,8 @@ document.addEventListener('click',e=>{const p=e.target.closest('[data-print]');i
   $('#meRole').innerHTML=`${esc(ROLE[ME.role])}${ME.dept?' · '+esc(ME.dept):''}${m.demo?'<span class="demo" title="Demo mode: passwords are published">demo</span>':''}`;
   $('#av').textContent=ME.name.split(' ').filter(w=>!/^(Dr|Prof)\.?$/.test(w)).map(w=>w[0]).join('').slice(0,2);
   $('#roleLabel').textContent=ROLE[ME.role]+' view';
+  $('#calNote').textContent=ME.role==='student'?'Only what is meant for your class is shown. The Registrar\'s office keeps this calendar.'
+    :'Everything that reaches a class in your department is shown. The Registrar\'s office keeps this calendar.';
   push('bot',`<p><strong>Hello, ${esc(first)}.</strong> I work with the agents that keep your ${ME.role==='student'?'classes, attendance, dues, gate passes and certificates':'classes, mentees and leave'}${ME.role==='hod'?', and your department,':''} and I only see what is yours.</p><p>Ask for something in your own words. If it files or changes anything, you will see it first, and nothing is sent until you say yes.</p>`);
   loadHome();
 })();

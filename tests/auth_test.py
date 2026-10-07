@@ -477,6 +477,9 @@ def bare_fields(page):
 check("8a the console interpolates no user-writable field without esc()", not bare_fields("index.html"),
       str(bare_fields("index.html")[:6]))
 check("8b ...and neither does the portal", not bare_fields("portal.html"), str(bare_fields("portal.html")[:6]))
+# the calendar's shared renderer (#104) draws titles, venues and descriptions the Registrar typed
+check("8e ...nor the calendar renderer the two pages share", not bare_fields("calendar.js"),
+      str(bare_fields("calendar.js")[:6]))
 inbox = open(os.path.join(HERE, "static", "index.html"), encoding="utf-8").read()
 check("8c the inbox escapes the request title and details, the fields #85 used",
       "<b>${esc(x.title)}</b>" in inbox and "${esc(x.details)}" in inbox)
