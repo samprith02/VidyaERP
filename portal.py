@@ -101,6 +101,10 @@ def _makeups_block(con, where, args, teacher=True):
 # (dashboard_test checks each against guard.APPROVAL_RX and the route it takes).
 STUDENT_QUICK = ["My attendance", "My internal marks", "Exam schedule", "My library books", "My no-dues status",
                  "My requests"]
+# A teacher's dashboard (#116, #117): three buttons open the portal's own desks,
+# the rest ask the assistant - and, like the student's, carry no approval word.
+STAFF_VIEWS = [("Timetable", "tt"), ("Take attendance", "att"), ("Enter marks", "marks")]
+STAFF_QUICK = ["My mentees", "Attendance history"]
 ATT_BAR = 75
 
 
@@ -293,14 +297,23 @@ def t_my_home(con, S, U, **kw):
     dy = day_of(TODAY)
     if P["role"] == "student":
         return _student_home(con, _stu(con, P["usn"]))
+    import teaching, academics                 # lazily: both import this module
     f = one(con, "SELECT * FROM faculty WHERE id=?", (P["fid"],))
-    today = rows(con, """SELECT t.*, sb.name sname FROM timetable t LEFT JOIN subjects sb ON sb.code=t.subject
-                         WHERE t.faculty=? AND t.day=? ORDER BY t.period""", (f["id"], dy))
+    # today from the timetable AND today's substitutions and make-ups (#117)
+    items = teaching.day_classes(con, f["id"], TODAY)
+    today = [r for r in items if r["status"] not in ("Cancelled", "Covered", "Holiday", "On leave")]
+    att_due = teaching.pending_attendance(con, f["id"])
+    owed = academics.marks_pending(con, f["id"])
+    n = {s: sum(1 for r in today if r["status"] == s) for s in ("Done", "Now", "Next", "Later")}
     load = one(con, "SELECT COUNT(*) n FROM timetable WHERE faculty=?", (f["id"],))["n"]
     mentees = rows(con, "SELECT * FROM students WHERE mentor=?", (f["id"],))
     risk = [m for m in mentees if m["attendance"] < 75 or m["backlogs"]]
     my_lv = rows(con, "SELECT * FROM leaves WHERE faculty=? AND to_date>=? ORDER BY from_date", (f["id"], TODAY.isoformat()))
-    cards = [{"label": "Classes today", "value": len(today)},
+    cards = [{"label": "Classes today", "value": len(today),
+              "sub": f"{n['Now']} now · {n['Next'] + n['Later']} upcoming · {n['Done']} completed"},
+             {"label": "Attendance to take", "value": len(att_due), "tone": "warn" if att_due else "good",
+              "sub": f"last {teaching.ATT_WINDOW_DAYS + 1} days"},
+             {"label": "Marks to enter or submit", "value": len(owed), "tone": "warn" if owed else "good"},
              {"label": "Weekly load", "value": f"{load}/{f['max_load']}"},
              {"label": "Mentees at risk", "value": len(risk), "tone": "bad" if risk else "good", "sub": f"of {len(mentees)}"},
              {"label": "Upcoming leave", "value": len(my_lv), "sub": ", ".join(l["status"] for l in my_lv) or "none"}]
@@ -311,19 +324,37 @@ def t_my_home(con, S, U, **kw):
         cards.append({"label": f"{f['dept']} leave to decide", "value": pend, "tone": "warn" if pend else "good"})
     blocks.append(B_cards(cards, title=f"Good morning, {f['name']} · {f['dept']}"
                                         + (" · Head of Department" if P["role"] == "hod" else "")))
-    blocks.append(B_table(["Period", "Time", "Class", "Subject", "Room"],
-                          [[f"P{r['period']}", db.PERIODS[r["period"]], f"{r['dept']}-{r['sem']}{r['section']}",
-                            f"{r['subject']} · {r['sname'] or ''}", r["room"]] for r in today],
-                          title=f"Today · {TODAY.strftime('%A %d %b')}", dense=True) if today
-                  else B_text(f"No classes on {TODAY.strftime('%A')}."))
+    # views open the page's own desks; the one question asks the assistant (no approval words)
+    blocks.append({"type": "quick", "title": "Quick actions",
+                   "items": [{"label": q, "view": v} for q, v in STAFF_VIEWS]
+                            + [{"label": q, "ask": q} for q in STAFF_QUICK]})
+    blocks.append(B_table(["Period", "Time", "Class", "Subject", "Room", "Status", "Attendance"],
+                          [[f"P{r['period']}", r["time"], f"Sem {r['sem']} · {r['dept']} · Section {r['section']}",
+                            f"{r['subject']} · {r['sname'] or ''}", r["room"] or "—",
+                            r["status"] + (f" ({r.get('cancelled') or r.get('covered') or r.get('uncovered')})"
+                                           if r["status"] in ("Cancelled", "Covered", "On leave") else ""),
+                            r["attendance"]["label"]] for r in items],
+                          title=f"Today · {TODAY.strftime('%A %d %b')} · as of {NOW.strftime('%H:%M')}", dense=True)
+                  if items else B_text(f"No classes on {TODAY.strftime('%A')}."))
+    todo = [{"ok": False, "agent": "AttendanceAgent",
+             "label": f"Attendance · {r['subject']} {r['sname']} · {r['cls']} · P{r['period']}",
+             "detail": f"{_day(r['date'])} · not recorded"} for r in att_due]
+    todo += [{"ok": False, "agent": "ExamAgent", "label": f"Marks · {x['component']} {x['subject']} · {x['cls']}",
+              "detail": ("enter the marks · " + x["state"].lower()) if x["action"] == "enter"
+              else "complete · submit to lock it"} for x in owed]
+    if todo:
+        blocks.append(B_checklist(todo, title="Academic actions"))
     blocks += _makeups_block(con, "faculty=?", (f["id"],), teacher=False)
     if risk:
         blocks.append(B_table(["USN", "Name", "Class", "Attendance", "Backlogs"],
                               [[m["usn"], m["name"], _cls(m), f"{m['attendance']}%", m["backlogs"]] for m in risk[:8]],
                               title="Mentees who need a conversation", dense=True))
-    return {"data": {"classes_today": len(today), "load": load, "mentees_at_risk": len(risk)},
+    return {"data": {"classes_today": len(today), "load": load, "mentees_at_risk": len(risk),
+                     "attendance_to_take": len(att_due), "marks_owed": len(owed)},
             "blocks": blocks,
             "trace": [("FacultyAgent", "home", f["id"]), ("TimetableAgent", "today", f"{len(today)} periods"),
+                      ("AttendanceAgent", "pending", f"{len(att_due)} hour(s) to record"),
+                      ("ExamAgent", "marks_pending", f"{len(owed)} component(s)"),
                       ("StudentAgent", "mentees", f"{len(risk)}/{len(mentees)} at risk")],
             "chips": (["Department overview", "Pending leave applications"] if P["role"] == "hod" else [])
                      + ["Apply for casual leave on 10 sep for a family function", "My mentees", "My timetable"]}
@@ -765,6 +796,11 @@ def route(con, text, P, ent):
     cal = _calendar(text, t, ent)
     if cal:
         return cal
+    # the teaching desk (#116, #117): today's classes, attendance, the marks sheet
+    import teaching                            # lazily: teaching imports this module
+    desk = teaching.route(con, text, P, ent)
+    if desk:
+        return desk
     if CIE_RX.search(t):
         import academics                       # lazily: academics imports this module's _staged
         return academics.cie_route(con, text, ent, admin=False)
@@ -830,7 +866,11 @@ HELP = {
                 ["Placements", "“Am I eligible for any drive?”"], ["Internal marks", "“My internal marks”"],
                 ["Calendar", "“What exams do I have this month?” · “When is my next internal exam?”"], ["My class", "“How many students are in my class?”"], ["Timetable & exams", "“My timetable” · “Exam schedule”"],
                 ["Library", "“Library books on machine learning”"], ["Tracking", "“My requests”"]],
-    "faculty": [["My day", "“Good morning”"], ["Leave", "“Apply for casual leave on 10 sep for a family function”"],
+    "faculty": [["My day", "“Good morning” · “My classes today”"],
+                ["Attendance", "“Take attendance for my class” · “4VP25CS002 was absent in P3 yesterday” · "
+                               "“My pending attendance”"],
+                ["Marks entry", "“Which marks submissions are pending?” · “Submit RECORD marks for BCSL307 section A”"],
+                ["Leave", "“Apply for casual leave on 10 sep for a family function”"],
                 ["Mentees", "“My mentees”"],
                 ["Internal marks", "“Internal marks of my courses” · “Enter IA2 marks for BCS501: 4VP24CS001 18, …”"], ["Timetable", "“My timetable” · “CSE sem 5 A timetable”"],
                 ["Rooms", "“Free rooms at period 4”"], ["Calendar", "“Holidays this term” · “Events this week”"],

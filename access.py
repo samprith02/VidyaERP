@@ -89,12 +89,20 @@ def self_fac(con, P, a, key="name"):
     return a, None
 
 
-def own_teaching(con, P, a):
-    """A teacher's own make-up classes, whatever class they are for."""
+def own_teaching(con, P, a, what="the make-up classes you teach"):
+    """A teacher's own classes - make-ups, their day, their attendance
+    registers (#116, #117) - whatever class they are for. The tool then decides
+    whether a named class hour is one this teacher is delivering."""
     if a.get("faculty") and str(a["faculty"]).upper() != P["fid"]:
-        return None, "You can only see the make-up classes you teach."
+        f = _fac(con, a["faculty"])
+        if not f or f["id"] != P["fid"]:
+            return None, f"You can only see {what}."
     a["faculty"] = P["fid"]
     return a, None
+
+
+def own_desk(con, P, a):
+    return own_teaching(con, P, a, "your own classes and the attendance you take")
 
 
 def own_courses(con, P, a):
@@ -222,6 +230,9 @@ FACULTY = {
     "cie_marks": own_courses, "record_cie_marks": own_courses,
     "class_strength": lambda con, P, a: own_dept(con, P, a),
     "calendar_events": dept_calendar,
+    # the teaching desk (#116, #117): only the classes this teacher delivers
+    "teaching_day": own_desk, "attendance_sheet": own_desk, "take_attendance": own_desk,
+    "attendance_history": own_desk, "cie_sheet": own_courses, "submit_cie_marks": own_courses,
 }
 HOD = {
     **FACULTY,
@@ -241,6 +252,12 @@ HOD = {
     "apply_coverage_plan": ALLOW,          # only ever commits the HOD's own staged plan
     # the whole department's marks, and corrections to them
     "cie_marks": lambda con, P, a: own_dept(con, P, a), "record_cie_marks": lambda con, P, a: own_dept(con, P, a),
+    # Teaching is not administration (#116): an HOD's desk - their day, attendance,
+    # the marks sheet and its submission - is exactly a teacher's, for the classes
+    # they teach. These are FACULTY's rules, restated so a later HOD-wide rule
+    # above cannot widen them by accident.
+    **{k: FACULTY[k] for k in ("teaching_day", "attendance_sheet", "take_attendance", "attendance_history",
+                               "cie_sheet", "submit_cie_marks")},
 }
 POLICY = {"student": STUDENT, "faculty": FACULTY, "hod": HOD}
 

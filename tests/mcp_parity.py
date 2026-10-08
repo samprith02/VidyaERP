@@ -620,15 +620,20 @@ ACADEMIC_ARGS = {"set_faculty_availability": {"faculty": "F001", "day": "Sat", "
                                               "reason": "parity probe"},
                  # half marks: the seed only ever writes whole ones, so this is always a change (#32)
                  "record_cie_marks": {"subject": "BCS501", "component": "IA2", "section": "A",
-                                      "marks": "4VP24CS001 11.5"}}
+                                      "marks": "4VP24CS001 11.5"},
+                 # a lab record that is complete and not yet submitted, so only the gate can refuse (#116)
+                 "submit_cie_marks": {"subject": "BCSL307", "component": "RECORD", "section": "A"}}
 check("18a every academic write has a parity probe", set(ACADEMIC_ARGS) == set(academics.GATED_WRITES))
 check("18b every academic write is in tools.GATED_WRITES", set(academics.GATED_WRITES) <= set(tools.GATED_WRITES))
 
 
 def avail_snapshot():
     academics.ensure_cie(con)
+    academics.ensure_submissions(con)
     return ([tuple(r) for r in con.execute("SELECT * FROM faculty_availability ORDER BY id")],
-            [tuple(r) for r in con.execute("SELECT * FROM cie_marks ORDER BY usn, subject, component")])
+            [tuple(r) for r in con.execute("SELECT * FROM cie_marks ORDER BY usn, subject, component")],
+            [tuple(r) for r in con.execute("SELECT * FROM cie_submissions ORDER BY subject, dept, sem, section, "
+                                           "component")])
 
 
 for name, aargs in ACADEMIC_ARGS.items():
@@ -657,6 +662,12 @@ for i, path in enumerate(PATHS):
                                                "marks": f"{usn} 12.5"}, approves=True)
     got = one(con, "SELECT marks FROM cie_marks WHERE usn=? AND subject='BCS501' AND component='IA2'", (usn,))
     check(f"18d approved CIE entry commits · {path}", verdict(r) == "ok" and got and got["marks"] == 12.5,
+          f"{verdict(r)}: {json.dumps(r.get('data'), default=str)[:120]}")
+for path, (subj, sec) in zip(PATHS, (("BCSL306", "A"), ("BCSL306", "B"), ("BCSL307", "B"))):
+    S = fresh_session()                     # a different register per path, so each commit is its own lock
+    r = run_path(path, S, "submit_cie_marks", {"subject": subj, "component": "RECORD", "section": sec}, approves=True)
+    got = one(con, "SELECT 1 FROM cie_submissions WHERE subject=? AND section=? AND component='RECORD'", (subj, sec))
+    check(f"18e approved submission locks the register · {path}", verdict(r) == "ok" and got is not None,
           f"{verdict(r)}: {json.dumps(r.get('data'), default=str)[:120]}")
 
 # ======================================== 19 · the calendar writes (#104)
@@ -697,6 +708,47 @@ for i, path in enumerate(PATHS):
     r = run_path(path, S, "save_calendar_event", {**CAL_ARGS["save_calendar_event"], "title": title}, approves=True)
     got = one(con, "SELECT id FROM calendar_events WHERE title=? AND status='Active'", (title,))
     check(f"19c approved calendar entry commits · {path}", verdict(r) == "ok" and got is not None,
+          f"{verdict(r)}: {json.dumps(r.get('data'), default=str)[:120]}")
+
+# ======================================== 20 · the attendance register (#116)
+# take_attendance writes a class hour and every student's totals. Same standard:
+# refused identically on all three paths without approval, nothing written;
+# committed on all three with it. Over MCP there is no signed-in teacher, so the
+# caller is an operator and the hour's own teacher is recorded against it.
+print("\n20 · attendance: same refusal, same commit, every path")
+print("-" * 78)
+import teaching                                                    # noqa: E402
+
+ATT_ARGS = {"take_attendance": {"date": "2026-09-03", "period": 1, "dept": "CIVIL", "sem": 5, "section": "A",
+                                "absent": "none"}}
+check("20a every attendance write has a parity probe", set(ATT_ARGS) == set(teaching.GATED_WRITES))
+check("20b every attendance write is in tools.GATED_WRITES", set(teaching.GATED_WRITES) <= set(tools.GATED_WRITES))
+
+
+def att_snapshot():
+    teaching.ensure(con)
+    return ([tuple(r) for r in con.execute("SELECT * FROM attendance_sessions ORDER BY id")],
+            [tuple(r) for r in con.execute("SELECT * FROM attendance_marks ORDER BY session_id, usn")],
+            [tuple(r) for r in con.execute("SELECT usn, subject, held, attended FROM attendance ORDER BY id")],
+            [tuple(r) for r in con.execute("SELECT usn, attendance FROM students ORDER BY usn")])
+
+
+for name, targs in ATT_ARGS.items():
+    vs = {}
+    for path in PATHS:
+        S = fresh_session()
+        before = att_snapshot()
+        r = run_path(path, S, name, targs, approves=False)
+        vs[path] = verdict(r)
+        check(f"20 {name} · {path} · refused, nothing written", vs[path] == "blocked" and att_snapshot() == before,
+              f"{vs[path]}: {json.dumps(r.get('data'), default=str)[:120]}")
+    check(f"20 {name} · PARITY", len(set(vs.values())) == 1, str(vs))
+for path, period in zip(PATHS, (1, 2, 4)):
+    S = fresh_session()                     # a different class hour per path, so each commit is its own session
+    r = run_path(path, S, "take_attendance", {**ATT_ARGS["take_attendance"], "period": period}, approves=True)
+    got = one(con, "SELECT present, absent FROM attendance_sessions WHERE date='2026-09-03' AND dept='CIVIL' "
+                   "AND sem=5 AND section='A' AND period=?", (period,))
+    check(f"20c approved attendance commits · {path}", verdict(r) == "ok" and got is not None and got["absent"] == 0,
           f"{verdict(r)}: {json.dumps(r.get('data'), default=str)[:120]}")
 
 # ========================================================================= out

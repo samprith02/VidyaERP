@@ -334,6 +334,48 @@ def my_calendar(request: Request, month: str = "", event: str = ""):
     return {"blocks": r.get("blocks", []), "data": r.get("data")}
 
 
+# The portal's working views (#116, #117): a teacher's day, an attendance sheet,
+# a marks sheet. Each is one READ tool run through tools.execute as the signed-in
+# person, so access.py decides whose classes and courses come back; the page
+# draws them and decides nothing. Writes are not here - see /api/me/propose.
+ME_READS = {"teaching_day", "attendance_sheet", "attendance_history", "cie_sheet"}
+# What a portal form may stage. U is empty, so each can only PROPOSE into the
+# person's own chat session; their confirmation is a later turn on /api/chat,
+# which runs the same tool through the same gate (portal._staged).
+ME_PROPOSALS = {"take_attendance", "record_cie_marks", "submit_cie_marks"}
+
+
+def _as(user):
+    return None if user["role"] == "admin" else user
+
+
+@app.get("/api/me/read")
+def my_read(request: Request, tool: str = ""):
+    if tool not in ME_READS:
+        return JSONResponse({"error": f"'{tool}' is not a readable view"}, status_code=404)
+    args = {k: v for k, v in request.query_params.items() if k != "tool" and v}
+    S = {"pending": None, "history": [], "ctx": {}, "user": _as(request.state.user)}
+    r = tools.execute(con, S, "", tool, args)
+    return {"blocks": r.get("blocks", []), "data": r.get("data"), "chips": r.get("chips", [])}
+
+
+@app.post("/api/me/propose")
+def my_propose(request: Request, payload: dict = Body(default={})):
+    tool = _text(payload, "tool")
+    if tool not in ME_PROPOSALS:
+        raise BadInput(f"'{tool}' cannot be proposed from a form.")
+    args = payload.get("args") or {}
+    if not isinstance(args, dict):
+        raise BadInput("'args' must be an object.")
+    S = orch.sess(_sid(request.state.user, _text(payload, "session")))
+    S["user"] = _as(request.state.user)
+    r = tools.execute(con, S, "", tool, args)
+    return {"blocks": r.get("blocks", []), "data": r.get("data"), "chips": r.get("chips", []),
+            "staged": bool((S.get("pending") or {}).get("tool") == tool and "BLOCKED" in (r.get("data") or {})),
+            "trace": [{"agent": t[0], "action": t[1], "detail": t[2] if len(t) > 2 else "",
+                       "status": t[3] if len(t) > 3 else "ok", "ms": 0} for t in r.get("trace", [])]}
+
+
 CALENDAR_FIELDS = {"title", "kind", "date", "end_date", "start_time", "end_time", "venue", "description",
                    "scope", "dept", "sem", "section", "subject", "event_id", "reason"}
 

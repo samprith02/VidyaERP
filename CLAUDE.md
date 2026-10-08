@@ -33,8 +33,8 @@ key into `.env` (gitignored) and the LLM agent takes over — same guardrails ei
 ## Architecture in one pass
 
 `app.py` routes → `orchestrator.py` (rule engine) **or** `llm_agent.py` (model plans and calls
-tools) → `tools.py` (69 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
-+ `portal.py` (the specialists). Everyone signs in first (`auth.py`).
+tools) → `tools.py` (75 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
++ `portal.py` + `teaching.py` (the specialists). Everyone signs in first (`auth.py`).
 
 | Piece | Where | Note |
 |---|---|---|
@@ -44,7 +44,8 @@ tools) → `tools.py` (69 tool schemas, PolicyGuard-wrapped, role policy enforce
 | Auditor | `agents.py` (`class Auditor`) | immutable ledger of who asked, which agent acted, what changed |
 | Campus services | `campus.py` | library, hostel, transport, gate pass, placement, documents, leave review, Student 360, Ops radar — tools + `rule_route` |
 | Campus data | `campus_data.py` | their tables + seed, own `Random`; `ensure()` is additive to an old DB |
-| Academics | `academics.py` | standing faculty availability (#19) and CIE marks (#32): seeds, read tools, gated writes, `rule_route` |
+| Academics | `academics.py` | standing faculty availability (#19) and CIE marks (#32): seeds, read tools, gated writes, `rule_route`; the marks desk and the submission that locks a register (#116) |
+| Teaching desk | `teaching.py` | a teacher's day and the attendance register, by the hour (#116, #117): `resolve()` is the one answer to "what runs in this class hour on this date, and whose is it" |
 | Accreditation | `accreditation.py` | NAAC / NBA evidence (#29): one read tool, every figure sourced, every gap named |
 | Academic calendar | `academic_calendar.py` | holidays, events, exams (#104): `reaches()` is the one visibility rule; one read, two gated writes; SEE and CIE dates shown read-only |
 | Calendar page | `static/calendar.js` | the month grid both pages share; draws what the server returns, decides nothing |
@@ -64,8 +65,8 @@ the exception on the rule side: `orchestrator.h_campus` picks a tool with `campu
 runs it through `tools.execute`, so for them all three callers share one path. The parity that is
 actually enforced is between the **LLM agent and MCP** — both reach `tools.execute` and cannot
 differ, which is what `tests/mcp_parity.py` asserts.
-`tools.select_tools()` narrows 69 tools to 3–9 per utterance (a non-admin is offered exactly their role's menu) —
-−92% tool-schema bytes on the README's 40 example requests (`docs/charts/results.json`; this replaces an
+`tools.select_tools()` narrows 75 tools to 3–9 per utterance (a non-admin is offered exactly their role's menu) —
+−94% tool-schema bytes on the README's 40 example requests (`docs/charts/results.json`; this replaces an
 older, unsourced −64%). Free tiers are stingy and this is what keeps multi-hop turns
 inside the budget.
 
@@ -73,11 +74,12 @@ inside the budget.
 
 ## Rules that matter here
 
-- **Writes are guarded, and the guard is in code, not in the prompt.** *Twenty-three* write tools —
+- **Writes are guarded, and the guard is in code, not in the prompt.** *Twenty-five* write tools —
   `tools.GATED_WRITES`: the five core ones (`apply_coverage_plan`, `apply_timetable_generation`,
   `decide_request`, `create_request`, `broadcast_notice`), the eleven in `campus.GATED_WRITES`, the
-  three in `portal.GATED_WRITES`, the two in `academics.GATED_WRITES` (parity-probed in
-  `mcp_parity.py` section 18) and the two in `academic_calendar.GATED_WRITES` (section 19)
+  three in `portal.GATED_WRITES`, the three in `academics.GATED_WRITES` (parity-probed in
+  `mcp_parity.py` section 18), the two in `academic_calendar.GATED_WRITES` (section 19) and
+  `take_attendance` in `teaching.GATED_WRITES` (section 20)
   — refuse to commit without explicit admin approval *in the current turn*
   (`guard.approved_this_turn`, re-exported as `tools.approved_this_turn`). `tests/mock_llm.py` has a
   rogue-agent endpoint that tries to skip the gate and is blocked. **Never** add a write path that
@@ -180,6 +182,21 @@ inside the budget.
   generic class name across components:** timetable activity cells were once `.act`, the same
   class as the Autopilot rows, and the rows' grid crushed every activity cell into three
   columns. They are `.actv` now.
+- **A teacher's class hour is resolved on the server, every time (#116, #117).** The portal's
+  Timetable, attendance and marks views pass a date, a period and a class; `teaching.resolve()` reads
+  the weekly timetable, that date's applied overrides (substitute, swap, vacated/released) and booked
+  make-ups, and `_hour()` refuses a class hour the caller is not delivering (DENIED). Never let a page
+  or the model supply the subject, semester or section of an attendance write. An HOD's desk is a
+  teacher's: `access.py` restates FACULTY's rules for the six desk tools so an HOD-wide rule cannot
+  widen them. Attendance rolls into `attendance` (held/attended) and the headline is recomputed from
+  it; a correction moves only `attended`. Timestamps on these records use `campus.NOW`, the demo's
+  clock (a wall-clock date showed a register "submitted" a month after the demo's today).
+- **The portal's forms only stage (#116).** `/api/me/propose` runs a listed write with an empty `U`
+  into the person's own chat session; the page's Confirm is their next turn on `/api/chat` with
+  `engine: rule`, so `portal._staged` and the gate decide exactly as for a typed "yes". `/api/me/read`
+  serves only listed reads. Both are in `auth.ANY_USER`; the tool policy is what decides.
+  `teaching_test.py` 7c/7d pin what the page sends. A submitted CIE register is locked against its
+  teacher (`academics.locked`); the HOD and the Registrar can still correct it.
 - **Every record field a page puts into `innerHTML` goes through `esc()` (#85).** A student's
   certificate purpose once reached the Registrar's inbox raw: through the LLM engine, a student
   could run script in the Registrar's session and "approve" gated writes as them. `blocks.js`,
@@ -359,7 +376,7 @@ ships a timetable back.
 
 ```bash
 python tests/solver_test.py    # 53 assertions, no server, no API cost
-python tests/mcp_parity.py     # 283 assertions, no server, no API cost
+python tests/mcp_parity.py     # 299 assertions, no server, no API cost
 python tests/campus_test.py    # 160 assertions, no server, no API cost
 python tests/mesh_test.py      # 25 assertions, no server, no API cost (6a-6c need node)
 python tests/auth_test.py      # 111 assertions, no server, no API cost
@@ -376,6 +393,7 @@ python tests/notify_test.py    # 50 assertions, no server, no API cost (a stub g
 python tests/cohort_test.py    # 40 assertions, no server, no API cost
 python tests/dashboard_test.py # 33 assertions, no server, no API cost (7a-7d need node)
 python tests/calendar_test.py  # 127 assertions, no server, no API cost (7f-7k need node)
+python tests/teaching_test.py  # 77 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)
@@ -387,7 +405,7 @@ institution into a temp DB, #110) and land in `docs/charts/results.json`. After 
 and commit the SVGs with the change; the charts must never disagree with the code. Screenshots in
 `docs/img/` were taken headlessly (see the README's "How the screenshots and charts were made").
 The README's agent figure is measured too (#107): a *specialist* is an agent that owns a tool
-(`tools.TOOL_AGENT`, 20), and the mesh total is read from `static/mesh.js`'s `CATALOG` (33).
+(`tools.TOOL_AGENT`, 21), and the mesh total is read from `static/mesh.js`'s `CATALOG` (33).
 A new agent name moves both; never type the number into the README by hand.
 
 `ranking_test.py` is the one to run after touching `SubstitutionAgent`. Four of its assertions

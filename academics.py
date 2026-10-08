@@ -24,7 +24,7 @@ import db, nlu
 from nlu import DAY_FULL
 from guard import approved_this_turn
 from agents import (rows, one, fac_name, B_text, B_table, B_cards, Auditor, NotifyAgent, ensure_availability)
-from campus import _propose, _done, _err
+from campus import _propose, _done, _err, NOW
 
 ACTOR = "registrar"
 DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -49,6 +49,9 @@ def ensure(con=None):
     ensure_cie(con)
     if not con.execute("SELECT 1 FROM cie_marks LIMIT 1").fetchone():
         _seed_cie(con, random.Random(3232))
+    ensure_submissions(con)
+    if not con.execute("SELECT 1 FROM cie_submissions LIMIT 1").fetchone():
+        _seed_submissions(con)
     con.commit()
     if own:
         con.close()
@@ -254,6 +257,45 @@ CLASS_RX = re.compile(r"\b(cse|ise|ece|mech|civil)[\s-]*(?:sem(?:ester)?\s*)?([1
 
 def ensure_cie(con):
     con.execute(CIE_DDL)
+
+
+# A component of one course is SUBMITTED by its teacher once every student has a
+# mark or an AB (#116). Submission locks it: after that a teacher's correction is
+# refused, and only the HOD (their department) or the Registrar may correct it,
+# each correction landing in the audit ledger with the old mark. Entry is not
+# closed at the due date: the register is then shown as overdue, because locking
+# a register that still has gaps would only make the gaps permanent.
+SUB_DDL = """CREATE TABLE IF NOT EXISTS cie_submissions(
+  subject TEXT, dept TEXT, sem INT, section TEXT, component TEXT, submitted_by TEXT, submitted_at TEXT,
+  PRIMARY KEY(subject, dept, sem, section, component))"""
+
+
+def ensure_submissions(con):
+    con.execute(SUB_DDL)
+
+
+def _seed_submissions(con):
+    """A component that is complete and past its due date was submitted on its
+    due date by its teacher of record: IA1 everywhere, IA2 where it is in. The
+    lab record is complete but due today, so it waits for its teacher's submit."""
+    courses = _courses(con)
+    book = _book(con, courses)
+    out = []
+    for c in courses:
+        students = _class_students(con, c)
+        for code, _mx, _w, held in CIE_SCHEME[c["kind"]]:
+            due = dt.date.fromisoformat(held) + dt.timedelta(days=ENTRY_DAYS)
+            if due < nlu.TODAY and students and all(code in book.get((c["subject"], s["usn"]), {}) for s in students):
+                out.append((c["subject"], c["dept"], c["sem"], c["section"], code, c["teacher"],
+                            f"{due.isoformat()}T17:00:00"))
+    con.executemany("INSERT OR IGNORE INTO cie_submissions VALUES(?,?,?,?,?,?,?)", out)
+
+
+def locked(con, c, comp):
+    """The submission row that locks one component of one course, or None."""
+    ensure_submissions(con)
+    return one(con, "SELECT * FROM cie_submissions WHERE subject=? AND dept=? AND sem=? AND section=? "
+                    "AND component=?", (c["subject"], c["dept"], c["sem"], c["section"], comp))
 
 
 def _denied(msg):
@@ -764,6 +806,11 @@ def t_record_cie_marks(con, S, U, subject="", component="", marks="", section=No
                       v if v == "AB" else f"{v:g}", "new" if was is None else "correction"])
     if not changes:
         return _err(f"Those {comp} marks are already recorded exactly so — nothing to change.")
+    lock = locked(con, c, comp)
+    P = (S or {}).get("user")
+    if lock and P and P.get("role") == "faculty":
+        return _denied(f"{COMP_LABEL[comp]} marks for {c['subject']} {c['cls']} were submitted on "
+                       f"{lock['submitted_at'][:10]} and are locked. Ask your HOD or the Registrar to correct them.")
     before_n = sum(1 for s in students if comp in book.get((c["subject"], s["usn"]), {}))
     after_n = before_n + sum(1 for _u, was, _v in changes if was is None)
     after = {}
@@ -784,8 +831,10 @@ def t_record_cie_marks(con, S, U, subject="", component="", marks="", section=No
     if newly:
         blocks.append(B_text(f"**{len(newly)} student(s)** would fall below the CIE minimum on current form: "
                              + ", ".join(newly[:10]) + "."))
+    if lock:
+        blocks.append(B_text(f"This register was submitted on {lock['submitted_at'][:10]} and is locked; this is "
+                             f"a correction to it, and the old marks go to the audit ledger."))
     tr = [("ExamAgent", "cie_plan", f"{c['subject']} {c['cls']} {comp}: {len(changes)} mark(s), {fixes} correction(s)")]
-    P = (S or {}).get("user")
     self_service = bool(P and P.get("role") != "admin")
     if not approved_this_turn(U) or (self_service and not _staged(S, "record_cie_marks", args)):
         return _propose(S, "record_cie_marks", args, blocks,
@@ -821,6 +870,209 @@ def t_record_cie_marks(con, S, U, subject="", component="", marks="", section=No
                             "ok" if ok == len(changes) else "error")]}
 
 
+# ------------------------------------------------- the teacher's marks desk (#116)
+def component_rows(con, c, book, students):
+    """Every component of one course as its teacher sees it: when it was held,
+    how much is entered, whether it is submitted, and what is left to do -
+    "enter" (held, marks missing), "submit" (complete, not yet locked) or None."""
+    out = []
+    for comp in CIE_SCHEME[c["kind"]]:
+        code, mx, _w, held = comp
+        ms = [book.get((c["subject"], s["usn"]), {}).get(code) for s in students]
+        got = [m for m in ms if m is not None]
+        vals = [float(m["marks"]) for m in got if not m["absent"]]
+        e = _entry(c, comp, len(got))
+        lock = locked(con, c, code)
+        if _held(comp) > nlu.TODAY:
+            state, action = e["state"], None
+        elif lock:
+            state, action = f"Submitted {lock['submitted_at'][:10]}", None
+        elif len(got) >= c["size"]:
+            state, action = "Entered, not submitted", "submit"
+        else:
+            state, action = e["state"], "enter"
+        out.append({"component": code, "label": COMP_LABEL[code], "max": mx, "held": held, "due": e["due"],
+                    "entered": len(got), "size": c["size"], "absent": sum(1 for m in got if m["absent"]),
+                    "mean": round(sum(vals) / len(vals), 1) if vals else None, "state": state, "action": action,
+                    "open": _held(comp) <= nlu.TODAY, "locked": bool(lock),
+                    "submitted_at": lock["submitted_at"] if lock else None, "overdue_days": e["overdue_days"]})
+    return out
+
+
+def marks_pending(con, fid):
+    """What a teacher still owes the marks register: components to enter and
+    complete ones to submit, most overdue first."""
+    courses = _courses(con, teacher=fid)
+    book = _book(con, courses)
+    out = []
+    for c in courses:
+        for x in component_rows(con, c, book, _class_students(con, c)):
+            if x["action"]:
+                out.append({"subject": c["subject"], "sname": c["sname"], "cls": c["cls"], "section": c["section"],
+                            **x})
+    return sorted(out, key=lambda x: (-x["overdue_days"], x["action"] != "enter", x["cls"], x["subject"]))
+
+
+def _one_course(con, subject, section, dept, tf):
+    """(course, None) for one course a teacher may open, or (None, refusal)."""
+    sub = _subject(con, subject, dept)
+    if "data" in sub:
+        return None, sub
+    sec = str(section).upper() if section else None
+    cs = _courses(con, sub["dept"], sub["sem"], sec, sub["code"], teacher=tf["id"] if tf else None)
+    if not cs:
+        if tf and _courses(con, sub["dept"], sub["sem"], sec, sub["code"]):
+            return None, _denied(f"{sub['code']} {sub['name']}" + (f" for section {sec}" if sec else "")
+                                 + f" is not one of {tf['name']}'s courses.")
+        return None, _err(f"{sub['code']} is not on the timetable" + (f" of section {sec}." if sec else "."))
+    if len(cs) > 1:
+        return None, _err(f"{sub['code']} runs in sections {', '.join(c['section'] for c in cs)} — which one?",
+                          sections=[c["section"] for c in cs])
+    return cs[0], None
+
+
+def t_cie_sheet(con, S, U, subject=None, section=None, component=None, teacher=None, dept=None, **kw):
+    ensure_cie(con)
+    ensure_submissions(con)
+    tf = _fac(con, teacher) if teacher else None
+    if teacher and not tf:
+        return _err(f"No faculty member matches '{teacher}'.")
+    dept = str(dept).upper() if dept else None
+    if not subject:
+        if not tf:
+            return _err("Whose courses? Name a teacher, or open one course by its code.")
+        courses = _courses(con, teacher=tf["id"])
+        if not courses:
+            return _err(f"{tf['name']} is not the teacher of record for any examined course.")
+        book = _book(con, courses)
+        out = [{**{k: c[k] for k in ("subject", "sname", "cls", "dept", "sem", "section", "kind", "size")},
+                "components": component_rows(con, c, book, _class_students(con, c))} for c in courses]
+        todo = [(c, x) for c in out for x in c["components"] if x["action"]]
+        return {"data": {"teacher": tf["id"], "courses": out,
+                         "pending": [{"subject": c["subject"], "class": c["cls"], "component": x["component"],
+                                      "action": x["action"], "state": x["state"]} for c, x in todo],
+                         "scheme": SCHEME_MD},
+                "blocks": [B_table(["Course", "Class", "Components"],
+                                   [[f"{c['subject']} {c['sname']}", c["cls"],
+                                     " · ".join(f"{x['component']} {x['state']}" for x in c["components"])]
+                                    for c in out], title=f"Marks entry · {tf['name']}", dense=True),
+                           B_text(f"**{len(todo)} to do:** " + "; ".join(
+                               f"{'submit' if x['action'] == 'submit' else 'enter'} {x['component']} for "
+                               f"{c['subject']} {c['cls']}" for c, x in todo[:8]) + "." if todo else
+                               "Nothing is waiting: every assessment held so far is entered and submitted."),
+                           B_text(SCHEME_MD)],
+                "trace": [("ExamAgent", "marks_desk", f"{tf['id']}: {len(out)} course(s) · {len(todo)} to do")]}
+    c, why = _one_course(con, subject, section, dept, tf)
+    if why:
+        return why
+    students = _class_students(con, c)
+    book = _book(con, [c])
+    comps = component_rows(con, c, book, students)
+    pick = (_component(component, c["kind"]) or (str(component).upper() if any(
+        x["component"] == str(component).upper() for x in comps) else None)) if component else None
+    if component and not pick:
+        return _err(f"{c['subject']} has " + ", ".join(f"{x['component']} ({x['label']}, /{x['max']})"
+                                                       for x in comps) + f" — not '{component}'.")
+    if not pick:
+        pick = next((x["component"] for x in comps if x["action"]), None) or \
+            next((x["component"] for x in reversed(comps) if x["open"]), comps[0]["component"])
+    cur = next(x for x in comps if x["component"] == pick)
+    marks = [{"usn": s["usn"], "name": s["name"],
+              "marks": {x["component"]: (None if x["component"] not in book.get((c["subject"], s["usn"]), {})
+                                         else "AB" if book[(c["subject"], s["usn"])][x["component"]]["absent"]
+                                         else float(book[(c["subject"], s["usn"])][x["component"]]["marks"]))
+                        for x in comps}} for s in students]
+    head = f"{c['subject']} {c['sname']} · {c['cls']} · {c['tname']}"
+    return {"data": {"course": {k: c[k] for k in ("subject", "sname", "cls", "dept", "sem", "section", "kind", "size",
+                                                  "teacher", "tname")},
+                     "components": comps, "component": pick, "max": cur["max"], "locked": cur["locked"],
+                     "students": marks, "scheme": SCHEME_MD},
+            "blocks": [B_cards([{"label": x["label"], "value": f"{x['entered']}/{x['size']}", "sub": x["state"],
+                                 "tone": "good" if x["locked"] else "bad" if x["overdue_days"] else None}
+                                for x in comps], title=head),
+                       B_table(["USN", "Name"] + [x["component"] for x in comps],
+                               [[m["usn"], m["name"]] + ["—" if m["marks"][x["component"]] is None
+                                                         else m["marks"][x["component"]] if m["marks"][x["component"]] == "AB"
+                                                         else f"{m['marks'][x['component']]:g}/{x['max']}" for x in comps]
+                                for m in marks], dense=True),
+                       B_text(SCHEME_MD)],
+            "trace": [("ExamAgent", "marks_sheet", f"{head}: {pick} {cur['state']}")]}
+
+
+def t_submit_cie_marks(con, S, U, subject="", component="", section=None, dept=None, teacher=None, **kw):
+    """Submit one component of one course: refused while any student has no
+    mark (AB counts as a mark); PROPOSES without approval; on commit locks it,
+    re-reads the lock and tells the HOD."""
+    from portal import _staged                 # portal imports this module's callers, not this module
+    ensure_cie(con)
+    ensure_submissions(con)
+    tf = _fac(con, teacher) if teacher else None
+    if teacher and not tf:
+        return _err(f"No faculty member matches '{teacher}'.")
+    c, why = _one_course(con, subject, section, str(dept).upper() if dept else None, tf)
+    if why:
+        return why
+    comp = _component(component, c["kind"]) or (str(component).upper() if any(
+        x[0] == str(component).upper() for x in CIE_SCHEME[c["kind"]]) else None)
+    if not comp:
+        return _err(f"Which component? {c['subject']} has " + ", ".join(
+            f"{k} ({COMP_LABEL[k]})" for k, *_r in CIE_SCHEME[c["kind"]]) + ".")
+    spec = next(x for x in CIE_SCHEME[c["kind"]] if x[0] == comp)
+    if _held(spec) > nlu.TODAY:
+        return _err(f"{COMP_LABEL[comp]} for {c['subject']} is on {_held(spec).strftime('%a %d %b')} — it can be "
+                    f"submitted once it has been held and entered.")
+    lock = locked(con, c, comp)
+    if lock:
+        return _err(f"{COMP_LABEL[comp]} marks for {c['subject']} {c['cls']} were already submitted on "
+                    f"{lock['submitted_at'][:10]}.")
+    students = _class_students(con, c)
+    book = _book(con, [c])
+    missing = [s["usn"] for s in students if comp not in book.get((c["subject"], s["usn"]), {})]
+    if missing:
+        return _err(f"{len(missing)} of {len(students)} students in {c['cls']} have no {comp} mark yet ("
+                    + ", ".join(missing[:6]) + (" …" if len(missing) > 6 else "")
+                    + "). Enter every mark, AB for an absentee, before submitting.", missing=missing)
+    row = next(x for x in component_rows(con, c, book, students) if x["component"] == comp)
+    tbl = B_table(["Course", "Assessment", "Students", "Entered", "Absent", "Average"],
+                  [[f"{c['subject']} {c['sname']} · {c['cls']}", f"{COMP_LABEL[comp]} (/{spec[1]})", len(students),
+                    row["entered"], row["absent"], "—" if row["mean"] is None else f"{row['mean']:g}/{spec[1]}"]],
+                  title="Submit marks")
+    tr = [("ExamAgent", "submit_plan", f"{c['subject']} {c['cls']} {comp}: {row['entered']}/{len(students)} entered")]
+    args = {"subject": c["subject"], "component": comp, "section": c["section"],
+            "dept": str(dept).upper() if dept else None, "teacher": teacher}
+    P = (S or {}).get("user")
+    self_service = bool(P and P.get("role") != "admin")
+    if not approved_this_turn(U) or (self_service and not _staged(S, "submit_cie_marks", args)):
+        return _propose(S, "submit_cie_marks", args,
+                        [tbl, B_text("Submitting locks this register: after it, a correction goes through the HOD "
+                                     "or the Registrar, and the audit ledger keeps the old mark.")],
+                        f"submit and lock {comp} marks for {c['subject']} {c['cls']}", tr)
+    who = P["fid"] if self_service and P.get("fid") else ACTOR
+    now = NOW.isoformat(timespec="seconds")         # the demo's one clock, as every dated record shows it
+    con.execute("INSERT OR IGNORE INTO cie_submissions VALUES(?,?,?,?,?,?,?)",
+                (c["subject"], c["dept"], c["sem"], c["section"], comp, who, now))
+    con.commit()
+    back = locked(con, c, comp)
+    ok = bool(back and back["submitted_by"] == who)
+    Auditor().log(con, who, "ExamAgent", "cie.submit",
+                  {"subject": c["subject"], "class": c["cls"], "component": comp, "entered": row["entered"]},
+                  "Applied" if ok else "Failed")
+    NotifyAgent().dispatch(con, [{"audience": f"HOD · {c['dept']}", "channel": "App",
+                                  "title": f"{comp} marks submitted — {c['subject']} {c['cls']}",
+                                  "body": f"{COMP_LABEL[comp]} for {c['subject']} {c['sname']} was submitted by "
+                                          f"{fac_name(con, who) if who != ACTOR else 'the Registrar'} and is locked."}])
+    _done(S, "submit_cie_marks")
+    return {"data": {"submitted": ok, "course": f"{c['subject']} {c['cls']}", "component": comp,
+                     "submitted_at": now if ok else None},
+            "blocks": [tbl, B_text(f"**Submitted.** {COMP_LABEL[comp]} marks for {c['subject']} {c['cls']} are "
+                                   f"locked; a correction now goes through the HOD or the Registrar.")],
+            "refresh": True,
+            "trace": tr + [("PolicyGuard", "write_authorisation",
+                            "the teacher confirmed in this turn" if self_service else "admin approved in this turn"),
+                           ("ExamAgent", "verify", "lock re-read" if ok else "lock missing after write",
+                            "ok" if ok else "error")]}
+
+
 def cie_route(con, text, ent, admin=True):
     """utterance -> (tool, args) for CIE, shared by the Registrar's rule engine
     and the portal. A faculty caller's scope is access.py's business."""
@@ -832,6 +1084,10 @@ def cie_route(con, text, ent, admin=True):
     single = re.search(r"\bto\s+(\d{1,2}(?:\.\d)?|ab(?:sent)?)\b", t)
     usn = ent.get("usn")
     verb = re.search(r"\b(?:enter|record|upload|update|correct|change|fill|post|put|add|save)\b", t)
+    # "submit IA2 marks for BCS501 section A" locks a complete register (#116)
+    if re.search(r"\bsubmit\b", t) and not entries and sm:
+        return "submit_cie_marks", {"subject": sm.group(1).upper(), "component": _component(t) or "",
+                                    "section": sec}
     if entries or (verb and usn and single):
         if not entries:
             entries = [(usn, "AB" if single.group(1).startswith("ab") else float(single.group(1)))]
@@ -873,13 +1129,24 @@ REGISTRY = [
      "one course. marks = 'USN mark' pairs, e.g. '4VP24CS001 18, 4VP24CS002 AB'. Validates range, class and "
      "teacher, shows new vs corrected marks. Without approval this turn it only PROPOSES.",
      _p({"subject": _S, "component": _S, "marks": _S, "section": _S}, ["subject", "component", "marks"])),
+    (t_cie_sheet, "cie_sheet",
+     "A teacher's marks desk. With no subject: every course they teach, each component's state (scheduled, "
+     "due, overdue, entered, submitted) and what is left to enter or submit. With subject (and section): that "
+     "course's register, every student's marks per component, the maximum and whether it is locked.",
+     _p({"subject": _S, "section": _S, "component": _S, "teacher": _S})),
+    (t_submit_cie_marks, "submit_cie_marks",
+     "Submit one CIE component of one course once every student has a mark (AB for an absentee). Submitting "
+     "locks it: a teacher's later correction is refused, the HOD or Registrar may still correct. Without "
+     "approval this turn it only PROPOSES.",
+     _p({"subject": _S, "component": _S, "section": _S}, ["subject", "component"])),
 ]
-GATED_WRITES = ("set_faculty_availability", "record_cie_marks")
+GATED_WRITES = ("set_faculty_availability", "record_cie_marks", "submit_cie_marks")
 AGENT_OF = {"faculty_availability": "TimetableAgent", "set_faculty_availability": "TimetableAgent",
-            "cie_marks": "ExamAgent", "record_cie_marks": "ExamAgent"}
+            "cie_marks": "ExamAgent", "record_cie_marks": "ExamAgent", "cie_sheet": "ExamAgent",
+            "submit_cie_marks": "ExamAgent"}
 TOOL_GROUPS = {"availability": ["faculty_availability", "set_faculty_availability", "faculty_timetable",
                                 "plan_timetable_generation"],
-               "cie": ["cie_marks", "record_cie_marks", "exam_eligibility", "student_360"]}
+               "cie": ["cie_marks", "record_cie_marks", "submit_cie_marks", "exam_eligibility", "student_360"]}
 INTENTS = {"availability", "cie"}
 
 WRITE_RX = re.compile(r"\b(?:not available|unavailable|can(?:no|')t teach|cannot teach|block(?:ed)? out|"

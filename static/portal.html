@@ -18,10 +18,10 @@
       <div class="menu"><button type="button" data-m="pw">Change my password</button><button type="button" data-m="out">Sign out</button></div>
     </div>
   </header>
-  <nav class="tabs"><button class="on" data-t="day">Your day</button><button data-t="cal">Calendar</button><button data-t="chat">Assistant</button></nav>
+  <nav class="tabs"><button class="on" data-t="day">Your day</button><button class="staff-only hidden" data-t="tt">Timetable</button><button data-t="cal">Calendar</button><button data-t="chat">Assistant</button></nav>
   <main>
     <section class="col day on" id="day">
-      <div class="hd"><div class="seg" role="tablist" aria-label="Views"><button class="on" data-t="day" role="tab">Your day</button><button data-t="cal" role="tab">Calendar</button></div><button class="btn sm ghost" id="refresh" type="button">Refresh</button></div>
+      <div class="hd"><div class="seg" role="tablist" aria-label="Views"><button class="on" data-t="day" role="tab">Your day</button><button class="staff-only hidden" data-t="tt" role="tab">Timetable</button><button data-t="cal" role="tab">Calendar</button></div><button class="btn sm ghost" id="refresh" type="button">Refresh</button></div>
       <div id="home"><div class="loading">Loading your day…</div></div>
       <div id="calbox" class="hidden">
         <div class="cal-bar"><button class="cal-nav" id="calPrev" type="button" aria-label="Previous month">‹</button>
@@ -37,6 +37,23 @@
         <div class="hd" style="margin-top:16px"><h4 id="calListHd" style="margin:0">This month</h4></div>
         <div id="calList"></div>
         <p class="cal-note" id="calNote"></p>
+      </div>
+      <div id="ttbox" class="hidden">
+        <div class="cal-bar"><button class="cal-nav" id="ttPrev" type="button" aria-label="Previous day">‹</button>
+          <h3 id="ttTitle">Timetable</h3><button class="cal-nav" id="ttNext" type="button" aria-label="Next day">›</button>
+          <button class="btn sm ghost" id="ttToday" type="button">Today</button></div>
+        <div id="ttSum" class="desk-sum"></div>
+        <div id="ttList"><div class="loading">Loading your classes…</div></div>
+        <div id="ttTodo"></div>
+        <p class="cal-note" id="ttNote"></p>
+      </div>
+      <div id="attbox" class="hidden">
+        <div class="cal-bar"><button class="cal-nav" id="attBack" type="button" aria-label="Back to the timetable">‹</button><h3>Attendance</h3></div>
+        <div id="attBody"></div>
+      </div>
+      <div id="mkbox" class="hidden">
+        <div class="cal-bar"><button class="cal-nav" id="mkBack" type="button" aria-label="Back">‹</button><h3 id="mkTitle">Marks</h3></div>
+        <div id="mkBody"></div>
       </div>
     </section>
     <section class="col chat" id="chat">
@@ -74,6 +91,8 @@ function path(trace){
 async function say(text){
   if(!text.trim())return;
   if(matchMedia('(max-width:900px)').matches)tab('chat');
+  // a form's staged proposal is only confirmed from the form it was made in
+  if(STAGED){$(STAGED.where).innerHTML='<div class="desk-prop"><p>Continued in the assistant. Save again here to stage it from this form.</p></div>';STAGED=null;}
   push('user',`<p>${esc(text)}</p>`);$('#ta').value='';
   const t=push('bot','<div class="typing"><i></i><i></i><i></i></div>');
   try{
@@ -91,12 +110,16 @@ async function loadHome(){
 }
 // three views: the day and the calendar share the left column, the assistant
 // has the right; on a phone each is a tab of its own
-function tab(t){$$('[data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+// a teacher also has the timetable, and under it the attendance and marks desks
+const VIEWS={day:'#home',tt:'#ttbox',cal:'#calbox',att:'#attbox',mk:'#mkbox'};
+function tab(t){const top=t==='att'||t==='mk'?'tt':t;
+  $$('[data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t===top));
   $('#day').classList.toggle('on',t!=='chat');$('#chat').classList.toggle('on',t==='chat');
   if(t==='chat')return;
-  $('#home').classList.toggle('hidden',t!=='day');$('#refresh').classList.toggle('hidden',t!=='day');
-  $('#calbox').classList.toggle('hidden',t!=='cal');
-  if(t==='cal'&&!CAL.month)loadCal();}
+  Object.entries(VIEWS).forEach(([k,s])=>$(s).classList.toggle('hidden',k!==t));
+  $('#refresh').classList.toggle('hidden',t!=='day');
+  if(t==='cal'&&!CAL.month)loadCal();
+  if(t==='tt')loadTT(TT.date);}
 $$('[data-t]').forEach(b=>b.onclick=()=>tab(b.dataset.t));
 /* ---------------- calendar (#104) ----------------
    Read-only. /api/me/calendar runs the CalendarAgent's read tool as the
@@ -129,6 +152,225 @@ $('#calbox').addEventListener('click',e=>{
     if(x){$('#calDet').innerHTML=MawosCalendar.detail(x);$('#calDet').scrollIntoView({block:'nearest'});}return;}
   if(dy){CAL.sel=CAL.sel===dy.dataset.calDay?null:dy.dataset.calDay;$('#calDet').innerHTML='';drawCal();}
 });
+/* ---------------- the teaching desk (#116, #117) ----------------
+   Three views over READ tools: /api/me/read runs each as the signed-in person,
+   so access.py decides whose classes and courses come back. The timetable is
+   the context: a class hour opened from it carries the date, period and class
+   the server gave it, and the server resolves that hour again on every call.
+   Saving only STAGES (/api/me/propose); Confirm is the teacher's own next turn
+   on /api/chat, which commits through the same gate - Cancel discards it. */
+const TT={date:null,items:[],data:null,focus:false};
+const ST_CLASS={Done:'done',Now:'now',Next:'next',Later:'later',Cancelled:'off',Holiday:'off',Covered:'cov','On leave':'off'};
+const read=(tool,args)=>api('/api/me/read?'+new URLSearchParams({tool,...Object.fromEntries(
+  Object.entries(args||{}).filter(([,v])=>v!==null&&v!==undefined&&v!==''))}));
+const empty=msg=>`<div class="cal-empty">${esc(msg)}</div>`;
+async function loadTT(date){
+  const d=(await read('teaching_day',{date})).data||{};
+  if(d.error||d.DENIED){$('#ttList').innerHTML=empty(d.error||d.DENIED);$('#ttSum').innerHTML=$('#ttTodo').innerHTML='';return;}
+  TT.date=d.date;TT.data=d;TT.items=d.classes||[];
+  $('#ttTitle').textContent=MawosCalendar.longDate(d.date)+(d.date===d.today?' · today':'');
+  const s=d.summary||{};
+  $('#ttSum').innerHTML=`<b>${esc(s.classes)} class${s.classes===1?'':'es'}</b> · ${esc(s.now)} now · ${esc((s.next||0)+(s.later||0))} upcoming · ${esc(s.done)} completed`
+    +(d.holiday?` · ${esc(d.holiday)}`:'')+(d.now?` <span class="desk-asof">as of ${esc(d.now)}</span>`:'');
+  $('#ttList').innerHTML=TT.items.length?TT.items.map(ttCard).join(''):empty(`No classes on ${MawosCalendar.longDate(d.date)}.`);
+  const pa=d.pending_attendance||[],mp=d.marks_pending||[];
+  $('#ttTodo').innerHTML=(pa.length?`<h4 class="blk">Attendance to take</h4><div class="desk-todo">${pa.map((p,i)=>
+      `<div><span>${esc(p.subject)} · ${esc(p.sname)} · Sem ${esc(p.sem)} · ${esc(p.dept)} · Section ${esc(p.section)} · ${esc(MawosCalendar.longDate(p.date))} · P${esc(p.period)}</span>
+       <button type="button" class="btn sm" data-pend="${i}">Take attendance</button></div>`).join('')}</div>`:'')
+    +(mp.length?`<h4 class="blk">Marks to enter or submit</h4><div class="desk-todo">${mp.map((m,i)=>
+      `<div><span>${esc(m.label)} · ${esc(m.subject)} ${esc(m.sname)} · ${esc(m.cls)} · ${esc(m.state)}</span>
+       <button type="button" class="btn sm ghost" data-mpend="${i}">${m.action==='submit'?'Review and submit':'Enter marks'}</button></div>`).join('')}</div>`:'');
+  $('#ttNote').textContent=`Your classes come from the timetable and that day's approved changes. Attendance opens when a class begins and can be corrected for ${d.window_days} days after it.`;
+  if(TT.focus){TT.focus=false;($('#ttTodo').children.length?$('#ttTodo'):$('#ttList')).scrollIntoView({block:'nearest'});}
+}
+function ttCard(c,i){
+  const a=c.attendance||{},why=c.cancelled||c.covered||c.uncovered;
+  const src={substitute:'Substitution',swap:'Swap',makeup:'Make-up class'}[c.source];
+  const marks=(c.kind==='T'||c.kind==='L')&&c.source==='timetable'&&!why;
+  const act=a.can_take?`<button type="button" class="btn sm" data-att="${i}">${a.state==='Recorded'?'Correct attendance':'Take attendance'}</button>`
+    :a.state==='Recorded'?`<button type="button" class="btn sm ghost" data-att="${i}">View attendance</button>`:'';
+  return `<div class="desk-cls ${ST_CLASS[c.status]||''}">
+    <div class="desk-time"><b>P${esc(c.period)}</b><span>${esc(c.time)}</span></div>
+    <div class="desk-main"><div class="desk-sub">${esc(c.subject)} · ${esc(c.sname)}</div>
+      <div class="desk-ctx">Sem ${esc(c.sem)} · ${esc(c.dept)} · Section ${esc(c.section)}${c.room?' · Room '+esc(c.room):''}</div>
+      ${src||why?`<div class="desk-note">${esc([src,why].filter(Boolean).join(' · '))}</div>`:''}</div>
+    <div class="desk-side"><span class="desk-st">${esc(c.status)}</span>
+      <span class="desk-att ${a.state==='Recorded'?'ok':a.state==='Pending'?'due':''}">${esc(a.label)}</span>
+      <div class="desk-act">${act}${marks?`<button type="button" class="btn sm ghost" data-marks="${i}">Marks</button>`:''}</div></div></div>`;
+}
+const day=(iso,n)=>{const d=new Date(iso+'T12:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);};
+$('#ttPrev').onclick=()=>loadTT(day(TT.date,-1));
+$('#ttNext').onclick=()=>loadTT(day(TT.date,1));
+$('#ttToday').onclick=()=>loadTT();
+$('#ttbox').addEventListener('click',e=>{
+  const b=e.target.closest('[data-att],[data-marks],[data-pend],[data-mpend]');if(!b)return;
+  if(b.dataset.att)openAtt(TT.items[+b.dataset.att]);
+  else if(b.dataset.marks){const c=TT.items[+b.dataset.marks];openMarks({subject:c.subject,section:c.section});}
+  else if(b.dataset.pend)openAtt(TT.data.pending_attendance[+b.dataset.pend]);
+  else{const m=TT.data.marks_pending[+b.dataset.mpend];openMarks({subject:m.subject,section:m.section,component:m.component});}
+});
+// what the dashboard's view buttons open
+document.addEventListener('click',e=>{const v=e.target.closest('[data-view]');if(!v)return;
+  if(v.dataset.view==='marks'){openMarks();return;}
+  TT.date=null;TT.focus=v.dataset.view==='att';tab('tt');});
+
+/* staging, and the teacher's own confirmation */
+let STAGED=null;
+async function propose(tool,args,where,after){
+  const box=$(where);box.innerHTML='<div class="loading">Preparing…</div>';
+  const r=await fetch('/api/me/propose',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({tool,args,session:SID})}).then(x=>{if(x.status===401){location.href='/login';throw new Error('signed out')}return x.json()});
+  if(r.error){box.innerHTML=`<div class="desk-prop"><p>${esc(r.error)}</p></div>`;return;}
+  const body=(r.blocks||[]).map(rBlock).join('');
+  if(!r.staged){STAGED=null;box.innerHTML=`<div class="desk-prop">${body}</div>`;box.scrollIntoView({block:'nearest'});return;}
+  STAGED={where,after};
+  box.innerHTML=`<div class="desk-prop">${body}<div class="desk-foot"><button class="btn ok" type="button" data-settle="1">Confirm and save</button>
+    <button class="btn ghost" type="button" data-settle="0">Cancel</button></div></div>`;
+  box.scrollIntoView({block:'nearest'});
+}
+async function settle(yes){
+  const s=STAGED;if(!s)return;STAGED=null;
+  $(s.where).innerHTML='<div class="loading">'+(yes?'Saving…':'Discarding…')+'</div>';
+  const r=await api('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({text:yes?'Yes, go ahead':'No, discard it',session:SID,engine:'rule'})});
+  const html=`<div class="desk-prop">${approvalMark(r.trace)}${(r.blocks||[]).map(rBlock).join('')}</div>`;
+  if(yes&&s.after)await s.after();
+  $(s.where).innerHTML=html;$(s.where).scrollIntoView({block:'nearest'});
+  if(r.refresh)loadHome();
+}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-settle]');if(b)settle(b.dataset.settle==='1');});
+
+/* the attendance sheet of one class hour */
+const ATT={ctx:null,data:null,marks:{}};
+async function openAtt(c){
+  ATT.ctx={date:c.date,period:c.period,dept:c.dept,sem:c.sem,section:c.section};
+  tab('att');$('#attBody').innerHTML='<div class="loading">Loading the register…</div>';
+  const d=(await read('attendance_sheet',ATT.ctx)).data||{};
+  if(d.error||d.DENIED){$('#attBody').innerHTML=empty(d.error||d.DENIED);return;}
+  ATT.data=d;ATT.marks={};(d.students||[]).forEach(s=>{if(s.present!==null)ATT.marks[s.usn]=s.present?1:0;});
+  drawAtt();
+}
+function drawAtt(){
+  const d=ATT.data,ro=!d.open;
+  const kv=[['Subject',`${d.subject} · ${d.sname}`],['Semester',d.sem],['Department',d.dept],['Section',d.section],
+    ['Date',MawosCalendar.longDate(d.date)],['Hour',`P${d.period} · ${d.time}`],['Room',d.room||'—']];
+  const said=d.recorded?`Recorded${d.updated_at?' and corrected':''}. `:'';
+  $('#attBody').innerHTML=`<div class="desk-kv">${kv.map(([k,v])=>`<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>
+    <p class="desk-state">${esc(said+(d.open?(d.recorded?`You can correct it for ${d.window_days} days after the class.`:'Mark each student, then save.'):d.why))}</p>
+    ${ro?'':`<div class="desk-tools"><button class="btn sm ghost" type="button" data-all="1">Mark all present</button>
+      <button class="btn sm ghost" type="button" data-all="0">Mark all absent</button>
+      ${d.last_absent?`<button class="btn sm ghost" type="button" data-copy>Copy last class</button>`:''}<span class="spacer"></span><span id="attCount" class="desk-count"></span></div>`}
+    <div class="tblwrap dense"><table class="desk-tbl"><thead><tr><th>USN</th><th>Student</th><th>Attendance</th></tr></thead><tbody>
+    ${(d.students||[]).map(s=>`<tr><td>${esc(s.usn)}</td><td>${esc(s.name)}</td><td>${ro?esc(s.present===null?'—':s.present?'Present':'Absent')
+      :`<span class="desk-pa"><button type="button" data-u="${attr(s.usn)}" data-v="1">Present</button><button type="button" data-u="${attr(s.usn)}" data-v="0">Absent</button></span>`}</td></tr>`).join('')}
+    </tbody></table></div>
+    ${ro?'':`<div class="desk-foot"><span id="attMsg" class="desk-msg"></span><button class="btn" id="attSave" type="button">${d.recorded?'Save correction':'Save attendance'}</button></div>`}
+    <div id="attProp"></div>`;
+  paintAtt();
+}
+function paintAtt(){
+  $$('#attBody .desk-pa button').forEach(b=>{const v=ATT.marks[b.dataset.u];b.className=v===+b.dataset.v?(v?'on p':'on a'):'';});
+  const all=(ATT.data.students||[]).length,p=Object.values(ATT.marks).filter(v=>v===1).length,a=Object.values(ATT.marks).filter(v=>v===0).length;
+  if($('#attCount'))$('#attCount').textContent=`Present ${p} · Absent ${a}`+(all-p-a?` · not marked ${all-p-a}`:'');
+}
+$('#attbox').addEventListener('click',e=>{
+  const t=e.target.closest('[data-u],[data-all],[data-copy],#attSave');if(!t)return;
+  const d=ATT.data;
+  if(t.dataset.u){ATT.marks[t.dataset.u]=+t.dataset.v;}
+  else if(t.dataset.all){d.students.forEach(s=>ATT.marks[s.usn]=+t.dataset.all);}
+  else if(t.hasAttribute('data-copy')){const out=new Set(d.last_absent||[]);d.students.forEach(s=>ATT.marks[s.usn]=out.has(s.usn)?0:1);
+    $('#attMsg').textContent=`Copied from ${MawosCalendar.longDate(d.last_class.date)} P${d.last_class.period}. Check it before saving.`;}
+  else if(t.id==='attSave'){saveAtt();return;}
+  paintAtt();
+});
+async function saveAtt(){
+  const d=ATT.data,miss=d.students.filter(s=>!(s.usn in ATT.marks));
+  if(miss.length){$('#attMsg').textContent=`${miss.length} student${miss.length===1?' is':'s are'} not marked yet.`;return;}
+  $('#attMsg').textContent='';
+  const absent=d.students.filter(s=>ATT.marks[s.usn]===0).map(s=>s.usn);
+  await propose('take_attendance',{...ATT.ctx,absent:absent.join(', ')||'none'},'#attProp',()=>openAtt(ATT.ctx));
+}
+$('#attBack').onclick=()=>tab('tt');
+
+/* the marks desk: a teacher's courses, then one course's register */
+const MK={ctx:null,data:null,vals:{}};
+async function openMarks(ctx){
+  tab('mk');$('#mkBody').innerHTML='<div class="loading">Loading…</div>';MK.mode=ctx?'sheet':'list';
+  if(!ctx){
+    $('#mkTitle').textContent='Enter marks';
+    const d=(await read('cie_sheet',{})).data||{};
+    if(d.error||d.DENIED){$('#mkBody').innerHTML=empty(d.error||d.DENIED);return;}
+    MK.list=d.courses||[];
+    $('#mkBody').innerHTML=`<p class="desk-state">Your courses, and where each assessment stands. Open one to enter or submit its marks.</p>`
+      +MK.list.map((c,i)=>`<div class="desk-course"><div><b>${esc(c.subject)} · ${esc(c.sname)}</b>
+        <span>Sem ${esc(c.sem)} · ${esc(c.dept)} · Section ${esc(c.section)} · ${esc(c.size)} students</span></div>
+        <div class="desk-comps">${c.components.map(x=>`<button type="button" class="btn sm ${x.action?'':'ghost'}" data-mk="${i}" data-c="${attr(x.component)}" ${x.open?'':'disabled'}>${esc(x.label)} · ${esc(x.state)}</button>`).join('')}</div></div>`).join('')
+      +`<p class="cal-note">${esc(d.scheme||'')}</p>`;
+    return;
+  }
+  const d=(await read('cie_sheet',ctx)).data||{};
+  if(d.error||d.DENIED){$('#mkBody').innerHTML=empty(d.error||d.DENIED);return;}
+  MK.data=d;MK.ctx={subject:d.course.subject,section:d.course.section,component:d.component};
+  MK.vals={};d.students.forEach(s=>MK.vals[s.usn]=s.marks[d.component]);
+  drawMk();
+}
+function drawMk(){
+  const d=MK.data,c=d.course,cur=d.components.find(x=>x.component===d.component);
+  const ro=!cur.open||(cur.locked&&ME.role==='faculty');
+  $('#mkTitle').textContent='Enter marks';
+  const kv=[['Subject',`${c.subject} · ${c.sname}`],['Semester',c.sem],['Department',c.dept],['Section',c.section],['Teacher',c.tname]];
+  const lock=cur.locked?(ME.role==='faculty'?`Marks entry is locked: submitted on ${cur.submitted_at.slice(0,10)}. Contact your HOD or the Registrar for a correction.`
+      :`Submitted on ${cur.submitted_at.slice(0,10)}. A change you save is recorded as a correction, with the old mark kept in the audit ledger.`)
+    :!cur.open?`${cur.label} is held on ${MawosCalendar.longDate(cur.held)}; marks can be entered after it.`:'';
+  $('#mkBody').innerHTML=`<div class="desk-kv">${kv.map(([k,v])=>`<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>
+    <div class="desk-tools"><label class="desk-pick">Assessment <select id="mkComp">${d.components.map(x=>
+      `<option value="${attr(x.component)}" ${x.component===d.component?'selected':''} ${x.open?'':'disabled'}>${esc(x.label)} · out of ${esc(x.max)} · ${esc(x.state)}</option>`).join('')}</select></label>
+      <span class="spacer"></span><span id="mkCount" class="desk-count"></span></div>
+    ${lock?`<p class="desk-state ${ro&&cur.locked?'locked':''}">${esc(lock)}</p>`:''}
+    <div class="tblwrap dense"><table class="desk-tbl"><thead><tr><th>USN</th><th>Student</th><th>Marks (out of ${esc(d.max)})</th></tr></thead><tbody>
+    ${d.students.map(s=>{const v=MK.vals[s.usn];return `<tr><td>${esc(s.usn)}</td><td>${esc(s.name)}</td><td>${ro?esc(v===null?'—':v)
+      :`<input class="desk-mk" data-u="${attr(s.usn)}" inputmode="decimal" autocomplete="off" aria-label="Marks for ${attr(s.usn)}" value="${attr(v===null?'':v)}">`}</td></tr>`;}).join('')}
+    </tbody></table></div>
+    ${ro?'':`<div class="desk-foot"><span id="mkMsg" class="desk-msg"></span><button class="btn ghost" id="mkSave" type="button">Save draft</button>
+      ${cur.locked?'':`<button class="btn" id="mkSubmit" type="button">Submit marks</button>`}</div>`}
+    <div id="mkProp"></div><p class="cal-note">${esc(d.scheme)}</p>`;
+  countMk();
+}
+function mkVal(s){s=String(s).trim();if(!s)return null;if(/^ab(sent)?$/i.test(s))return 'AB';return /^\d{1,3}(\.\d+)?$/.test(s)?+s:NaN;}
+function mkChanges(){
+  const d=MK.data,out=[],bad=[];
+  $$('#mkBody .desk-mk').forEach(i=>{const u=i.dataset.u,v=mkVal(i.value),was=d.students.find(s=>s.usn===u).marks[d.component];
+    i.classList.remove('bad');
+    if(v===null){if(was!==null){bad.push(`${u}: a mark cannot be removed; enter AB for an absentee`);i.classList.add('bad');}return;}
+    if(Number.isNaN(v)||(v!=='AB'&&(v<0||v>d.max))){bad.push(`${u}: marks cannot exceed ${d.max}`);i.classList.add('bad');return;}
+    if(v!==was)out.push([u,v]);});
+  return {out,bad};
+}
+function countMk(){
+  const d=MK.data;if(!$('#mkCount'))return;
+  const vals=d.students.map(s=>{const i=$(`#mkBody .desk-mk[data-u="${CSS.escape(s.usn)}"]`);return i?mkVal(i.value):MK.vals[s.usn];});
+  const got=vals.filter(v=>v!==null&&!Number.isNaN(v)),nums=got.filter(v=>v!=='AB');
+  $('#mkCount').textContent=`Students ${vals.length} · Entered ${got.length} · Missing ${vals.length-got.length}`
+    +(nums.length?` · Average ${(nums.reduce((a,b)=>a+b,0)/nums.length).toFixed(1)} / ${d.max}`:'');
+}
+$('#mkbox').addEventListener('input',e=>{if(e.target.classList.contains('desk-mk'))countMk();});
+$('#mkbox').addEventListener('change',e=>{if(e.target.id==='mkComp')openMarks({...MK.ctx,component:e.target.value});});
+$('#mkbox').addEventListener('click',e=>{
+  const b=e.target.closest('[data-mk],#mkSave,#mkSubmit');if(!b)return;
+  if(b.dataset.mk){const c=MK.list[+b.dataset.mk];openMarks({subject:c.subject,section:c.section,component:b.dataset.c});return;}
+  const {out,bad}=mkChanges();
+  if(bad.length){$('#mkMsg').textContent=bad[0]+(bad.length>1?` (and ${bad.length-1} more)`:'');return;}
+  $('#mkMsg').textContent='';
+  if(b.id==='mkSave'){
+    if(!out.length){$('#mkMsg').textContent='Nothing has changed.';return;}
+    propose('record_cie_marks',{...MK.ctx,marks:out.map(([u,v])=>`${u} ${v}`).join(', ')},'#mkProp',()=>openMarks(MK.ctx));
+  }else{
+    if(out.length){$('#mkMsg').textContent='Save your changes as a draft first, then submit.';return;}
+    propose('submit_cie_marks',MK.ctx,'#mkProp',()=>openMarks(MK.ctx));
+  }
+});
+$('#mkBack').onclick=()=>MK.mode==='sheet'?openMarks():tab('tt');
+
 $('#send').onclick=()=>say($('#ta').value);
 $('#ta').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();say($('#ta').value)}});
 $('#ta').addEventListener('input',e=>{e.target.style.height='auto';e.target.style.height=e.target.scrollHeight+'px'});
@@ -148,6 +390,7 @@ document.addEventListener('click',e=>{const p=e.target.closest('[data-print]');i
   $('#meRole').innerHTML=`${esc(ROLE[ME.role])}${ME.dept?' · '+esc(ME.dept):''}${m.demo?'<span class="demo" title="Demo mode: passwords are published">demo</span>':''}`;
   $('#av').textContent=ME.name.split(' ').filter(w=>!/^(Dr|Prof)\.?$/.test(w)).map(w=>w[0]).join('').slice(0,2);
   $('#roleLabel').textContent=ROLE[ME.role]+' view';
+  $$('.staff-only').forEach(e=>e.classList.toggle('hidden',ME.role==='student'));
   $('#calNote').textContent=ME.role==='student'?'Only what is meant for your class is shown. The Registrar\'s office keeps this calendar.'
     :'Everything that reaches a class in your department is shown. The Registrar\'s office keeps this calendar.';
   push('bot',`<p><strong>Hello, ${esc(first)}.</strong> I work with the agents that keep your ${ME.role==='student'?'classes, attendance, dues, gate passes and certificates':'classes, mentees and leave'}${ME.role==='hod'?', and your department,':''} and I only see what is yours.</p><p>Ask for something in your own words. If it files or changes anything, you will see it first, and nothing is sent until you say yes.</p>`);

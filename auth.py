@@ -178,7 +178,10 @@ def temporary_password(con, username):
 PUBLIC = {"/health", "/login", "/api/auth/login", "/api/auth/demo", "/favicon.ico"}
 PUBLIC_PREFIX = ("/static/",)
 ANY_USER = {"/", "/portal", "/api/chat", "/api/reset", "/api/mode", "/api/auth/me", "/api/auth/logout",
-            "/api/auth/password", "/api/me/home", "/api/me/calendar"}
+            "/api/auth/password", "/api/me/home", "/api/me/calendar",
+            # the portal's working views and forms (#116): each runs a listed tool
+            # through tools.execute as the caller, so access.py still decides
+            "/api/me/read", "/api/me/propose"}
 OPERATOR = {"/api/seed/reset", "/api/mcp/approval"}
 
 

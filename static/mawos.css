@@ -564,6 +564,48 @@ textarea::placeholder, input::placeholder { color: var(--muted) }
 .send { height: 36px; padding: 0 18px; border: 0; border-radius: var(--r-s); background: var(--blue); color: #fff; font-weight: 600; cursor: pointer }
 .send:hover { background: var(--blue-2) }
 
+/* ===================================================== the teaching desk (#116, #117)
+   A teacher's day, an attendance sheet, a marks sheet. Every class starts desk-
+   so nothing collides with the timetable's .cell or the Autopilot's rows. Status
+   is a rule down the card's left edge; violet appears only on Confirm. */
+.desk-sum { margin: 0 2px 12px; color: var(--ink-2); font-size: 13px } .desk-sum b { color: var(--ink) }
+.desk-asof { color: var(--muted); font-size: 12px }
+.desk-cls { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 12px; align-items: start; margin-bottom: 8px; padding: 11px 14px; border: 1px solid var(--rule); border-left: 3px solid var(--rule-2); border-radius: var(--r-s); background: var(--surface) }
+.desk-cls.now { border-left-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft) }
+.desk-cls.next { border-left-color: var(--blue) } .desk-cls.done { border-left-color: var(--ok) }
+.desk-cls.off { border-left-color: var(--bad); background: var(--paper) } .desk-cls.cov { border-left-color: var(--warn); background: var(--paper) }
+.desk-time b { display: block; font: 600 16px var(--display); color: var(--ink) } .desk-time span { color: var(--graphite); font-size: 11.5px }
+.desk-sub { font-weight: 600; color: var(--ink) }
+.desk-ctx { margin-top: 2px; color: var(--ink-2); font-size: 13px }
+.desk-note { margin-top: 4px; color: var(--graphite); font-size: 12px }
+.desk-side { display: flex; flex-direction: column; align-items: flex-end; gap: 5px }
+.desk-st { padding: 1px 9px; border-radius: 9px; background: var(--sunken); color: var(--graphite); font-size: 11.5px; font-weight: 600 }
+.desk-cls.now .desk-st { background: var(--blue); color: #fff } .desk-cls.next .desk-st { background: var(--blue-soft); color: var(--blue) }
+.desk-cls.off .desk-st { background: var(--bad-soft); color: var(--bad) } .desk-cls.cov .desk-st { background: var(--warn-soft); color: var(--warn) }
+.desk-att { color: var(--graphite); font-size: 12px } .desk-att.ok { color: var(--ok) } .desk-att.due { color: var(--warn); font-weight: 600 }
+.desk-act { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px }
+.desk-todo > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--rule); font-size: 13px }
+.desk-kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 14px; margin: 0 0 10px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: var(--r-s); background: var(--surface) }
+.desk-kv span { display: block; color: var(--graphite); font-size: 11.5px } .desk-kv b { color: var(--ink); font-size: 13.5px }
+.desk-state { margin: 6px 2px 10px; color: var(--ink-2); font-size: 13px }
+.desk-state.locked { padding: 9px 12px; border-left: 3px solid var(--bad); background: var(--bad-soft); color: var(--ink) }
+.desk-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px } .desk-tools .spacer { flex: 1 }
+.desk-count { color: var(--graphite); font-size: 12.5px }
+.desk-pa { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--sunken) }
+.desk-pa button { min-width: 64px; height: 26px; border: 0; border-radius: 6px; background: none; color: var(--graphite); font-size: 12px; font-weight: 600; cursor: pointer }
+.desk-pa button.on.p { background: var(--ok); color: #fff } .desk-pa button.on.a { background: var(--bad); color: #fff }
+.desk-mk { width: 72px; height: 28px; padding: 0 8px; border: 1px solid var(--rule-2); border-radius: 6px; font: inherit }
+.desk-mk.bad { border-color: var(--bad); background: var(--bad-soft) }
+.desk-pick { display: inline-flex; align-items: center; gap: 8px; color: var(--graphite); font-size: 12.5px }
+.desk-pick select { height: 30px; border: 1px solid var(--rule-2); border-radius: 6px; background: var(--surface); font: inherit; color: var(--ink) }
+.desk-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin: 12px 0 0 }
+.desk-msg { margin-right: auto; color: var(--bad); font-size: 12.5px }
+.desk-prop { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: var(--r-s); background: var(--surface) }
+.desk-course { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--rule) }
+.desk-course span { display: block; color: var(--graphite); font-size: 12px }
+.desk-comps { display: flex; flex-wrap: wrap; gap: 6px }
+@media (max-width: 560px) { .desk-cls { grid-template-columns: 56px minmax(0, 1fr) } .desk-side { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; align-items: center } }
+
 /* ===================================================== academic calendar (#104)
    One colour per kind of entry, drawn as a rule down the pill's left edge on a
    pale ground. None of them is violet: violet means approval and nothing else.
