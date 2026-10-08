@@ -218,6 +218,9 @@ STUDENT = {
     "class_strength": lambda con, P, a: own_class(con, P, a, "class's strength"),
     # their own class's calendar only, read from their record; never a write (#104)
     "calendar_events": own_calendar,
+    # placement drives (#115): only their own eligibility and applications; the
+    # application itself acts for the signed-in student, never for a USN argument
+    "placement_drives": self_usn, "drive_details": self_usn, "apply_to_drive": ALLOW,
 }
 FACULTY = {
     "my_home": ALLOW, "my_requests": ALLOW, "my_mentees": ALLOW, "my_leaves": ALLOW, "apply_leave": ALLOW,

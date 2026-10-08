@@ -33,8 +33,8 @@ key into `.env` (gitignored) and the LLM agent takes over — same guardrails ei
 ## Architecture in one pass
 
 `app.py` routes → `orchestrator.py` (rule engine) **or** `llm_agent.py` (model plans and calls
-tools) → `tools.py` (75 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
-+ `portal.py` + `teaching.py` (the specialists). Everyone signs in first (`auth.py`).
+tools) → `tools.py` (82 tool schemas, PolicyGuard-wrapped, role policy enforced) → `agents.py` + `campus.py`
++ `portal.py` + `teaching.py` + `placement.py` (the specialists). Everyone signs in first (`auth.py`).
 
 | Piece | Where | Note |
 |---|---|---|
@@ -45,6 +45,7 @@ tools) → `tools.py` (75 tool schemas, PolicyGuard-wrapped, role policy enforce
 | Campus services | `campus.py` | library, hostel, transport, gate pass, placement, documents, leave review, Student 360, Ops radar — tools + `rule_route` |
 | Campus data | `campus_data.py` | their tables + seed, own `Random`; `ensure()` is additive to an old DB |
 | Academics | `academics.py` | standing faculty availability (#19) and CIE marks (#32): seeds, read tools, gated writes, `rule_route`; the marks desk and the submission that locks a register (#116) |
+| Placement drives | `placement.py` | each drive's own criteria; `evaluate()` is the one eligibility engine (academic / cohort / one-offer policy, every row named); drafts, publish, applications, decisions (#115) |
 | Teaching desk | `teaching.py` | a teacher's day and the attendance register, by the hour (#116, #117): `resolve()` is the one answer to "what runs in this class hour on this date, and whose is it" |
 | Accreditation | `accreditation.py` | NAAC / NBA evidence (#29): one read tool, every figure sourced, every gap named |
 | Academic calendar | `academic_calendar.py` | holidays, events, exams (#104): `reaches()` is the one visibility rule; one read, two gated writes; SEE and CIE dates shown read-only |
@@ -65,7 +66,7 @@ the exception on the rule side: `orchestrator.h_campus` picks a tool with `campu
 runs it through `tools.execute`, so for them all three callers share one path. The parity that is
 actually enforced is between the **LLM agent and MCP** — both reach `tools.execute` and cannot
 differ, which is what `tests/mcp_parity.py` asserts.
-`tools.select_tools()` narrows 75 tools to 3–9 per utterance (a non-admin is offered exactly their role's menu) —
+`tools.select_tools()` narrows 82 tools to 3–9 per utterance (a non-admin is offered exactly their role's menu) —
 −94% tool-schema bytes on the README's 40 example requests (`docs/charts/results.json`; this replaces an
 older, unsourced −64%). Free tiers are stingy and this is what keeps multi-hop turns
 inside the budget.
@@ -74,12 +75,13 @@ inside the budget.
 
 ## Rules that matter here
 
-- **Writes are guarded, and the guard is in code, not in the prompt.** *Twenty-five* write tools —
+- **Writes are guarded, and the guard is in code, not in the prompt.** *Twenty-nine* write tools —
   `tools.GATED_WRITES`: the five core ones (`apply_coverage_plan`, `apply_timetable_generation`,
   `decide_request`, `create_request`, `broadcast_notice`), the eleven in `campus.GATED_WRITES`, the
   three in `portal.GATED_WRITES`, the three in `academics.GATED_WRITES` (parity-probed in
   `mcp_parity.py` section 18), the two in `academic_calendar.GATED_WRITES` (section 19) and
-  `take_attendance` in `teaching.GATED_WRITES` (section 20)
+  `take_attendance` in `teaching.GATED_WRITES` (section 20) and the four in `placement.GATED_WRITES`
+  (section 21)
   — refuse to commit without explicit admin approval *in the current turn*
   (`guard.approved_this_turn`, re-exported as `tools.approved_this_turn`). `tests/mock_llm.py` has a
   rogue-agent endpoint that tries to skip the gate and is blocked. **Never** add a write path that
@@ -197,6 +199,16 @@ inside the budget.
   serves only listed reads. Both are in `auth.ANY_USER`; the tool policy is what decides.
   `teaching_test.py` 7c/7d pin what the page sends. A submitted CIE register is locked against its
   teacher (`academics.locked`); the HOD and the Registrar can still correct it.
+- **Placement eligibility is computed in one place, from the records (#115).** `placement.evaluate`
+  answers the student's page, the agent, the Registrar's counts, `PlacementAgent.eligibility` (which
+  now delegates to it) and `apply_to_drive` at the moment of the write. Never add a second
+  eligibility check, and never take a figure from the page: a student's CGPA in the arguments is
+  ignored. Each row names the criterion, the requirement and the student's value; a criterion with
+  no record is not met. `apply_to_drive` acts only for the signed-in student and needs its proposal
+  staged ("apply" is an approval word). Publishing writes calendar entries through
+  `academic_calendar.resolve`; the drive keeps their ids and an edit moves them, never duplicates.
+  `drive_registrations` gained columns, so insert into it by column name (a positional insert broke
+  the shortlist; `campus_test` 6c). The status the seed wrote as "Upcoming" is "Published" now.
 - **Every record field a page puts into `innerHTML` goes through `esc()` (#85).** A student's
   certificate purpose once reached the Registrar's inbox raw: through the LLM engine, a student
   could run script in the Registrar's session and "approve" gated writes as them. `blocks.js`,
@@ -376,7 +388,7 @@ ships a timetable back.
 
 ```bash
 python tests/solver_test.py    # 53 assertions, no server, no API cost
-python tests/mcp_parity.py     # 299 assertions, no server, no API cost
+python tests/mcp_parity.py     # 323 assertions, no server, no API cost
 python tests/campus_test.py    # 160 assertions, no server, no API cost
 python tests/mesh_test.py      # 25 assertions, no server, no API cost (6a-6c need node)
 python tests/auth_test.py      # 111 assertions, no server, no API cost
@@ -394,6 +406,7 @@ python tests/cohort_test.py    # 40 assertions, no server, no API cost
 python tests/dashboard_test.py # 33 assertions, no server, no API cost (7a-7d need node)
 python tests/calendar_test.py  # 127 assertions, no server, no API cost (7f-7k need node)
 python tests/teaching_test.py  # 77 assertions, no server, no API cost
+python tests/placement_test.py # 77 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens
 python docs/charts/make_charts.py --tests   # re-measure + redraw the README charts (~1 min)

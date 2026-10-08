@@ -1024,7 +1024,7 @@ class PlacementAgent:
     def best_offer(self, con):
         return {r["usn"]: r["c"] for r in rows(con, "SELECT usn, MAX(ctc) c FROM student_offers GROUP BY usn")}
 
-    def drives(self, con, status="Upcoming"):
+    def drives(self, con, status="Published"):
         return rows(con, "SELECT * FROM placement_drives WHERE status=? ORDER BY drive_date", (status,))
 
     def resolve(self, con, ref):
@@ -1042,26 +1042,11 @@ class PlacementAgent:
         return None
 
     def eligibility(self, con, d):
-        best = self.best_offer(con)
-        depts = d["depts"].split(",")
-        ok, why = [], Counter()
-        for s in rows(con, "SELECT * FROM students WHERE sem=7 ORDER BY cgpa DESC, usn"):
-            if s["dept"] not in depts:
-                continue
-            r = []
-            if s["cgpa"] < d["min_cgpa"]:
-                r.append("cgpa")
-            if s["backlogs"] > d["max_backlogs"]:
-                r.append("backlogs")
-            b = best.get(s["usn"])
-            if b and not (d["dream"] and d["ctc"] >= self.DREAM_MULTIPLE * b):
-                r.append("already placed")
-            if r:
-                for x in r:
-                    why[x] += 1
-            else:
-                ok.append({**s, "best_offer": b})
-        return ok, why
+        """(eligible students, why the rest of the drive's cohort is not). The
+        one engine is placement.evaluate (#115): each drive's own criteria,
+        10th/12th included, and this agent's one-offer rule."""
+        import placement                       # lazily: placement imports this module
+        return placement.cohort_eligibility(con, d)
 
 
 def t_placement_overview(con, S, U, **kw):
@@ -1156,7 +1141,8 @@ def t_publish_drive_shortlist(con, S, U, drive="", **kw):
                         [B_table(["Branch", "Students"], [[k, v] for k, v in sorted(by.items())],
                                  title=f"{d['company']} shortlist — {len(new)} students"), B_notice([msg])],
                         f"shortlist {len(new)} students for {d['company']} and notify them", tr)
-    con.executemany("INSERT OR IGNORE INTO drive_registrations VALUES(?,?,?,?)",
+    # named columns: the table gained an application's own fields (#115)
+    con.executemany("INSERT OR IGNORE INTO drive_registrations(drive_id,usn,status,registered_at) VALUES(?,?,?,?)",
                     [(d["id"], s["usn"], "Shortlisted", NOW.isoformat(timespec="minutes")) for s in new])
     con.commit()
     n = one(con, "SELECT COUNT(*) n FROM drive_registrations WHERE drive_id=?", (d["id"],))["n"]
@@ -1877,6 +1863,10 @@ def rule_route(con, intent, text, ent):
             return "decide_gate_passes", {"ids": ids or None, "decision": dec}
         return "gate_pass_queue", {}
     if intent == "placement":
+        import placement                       # drives as records (#115): applications, status, lists
+        hit = placement.admin_route(con, text)
+        if hit:
+            return hit
         pa = PlacementAgent()
         d = pa.resolve(con, text)
         if d and re.search(r"shortlist|publish|register|notify", t):

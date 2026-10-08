@@ -18,8 +18,8 @@
   },
   "folded_duplicates": 90,
   "top_plan_fully_covered": 268,
-  "ms_total": 2966,
-  "ms_per_absence": 10.9,
+  "ms_total": 3359,
+  "ms_per_absence": 12.4,
   "top_rank": {
    "min": 48.5,
    "median": 94.7,
@@ -31,7 +31,7 @@
   "total": 456,
   "backtracks": 0,
   "conflicts": 7103,
-  "ms": 302,
+  "ms": 526,
   "activity_slots": 167,
   "capacity_relaxed": 40,
   "events": {
@@ -54,61 +54,61 @@
   "seeds": [
    {
     "seed": 1,
-    "ms": 296,
+    "ms": 481,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 2,
-    "ms": 306,
+    "ms": 494,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 3,
-    "ms": 286,
+    "ms": 528,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 4,
-    "ms": 288,
+    "ms": 515,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 5,
-    "ms": 292,
+    "ms": 487,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 6,
-    "ms": 288,
+    "ms": 467,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 7,
-    "ms": 292,
+    "ms": 533,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 8,
-    "ms": 288,
+    "ms": 521,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 9,
-    "ms": 293,
+    "ms": 500,
     "placed": 456,
     "total": 456
    },
    {
     "seed": 10,
-    "ms": 283,
+    "ms": 500,
     "placed": 456,
     "total": 456
    }
@@ -118,50 +118,50 @@
     "lab_rooms": 6,
     "placed": 456,
     "total": 456,
-    "ms": 287,
+    "ms": 488,
     "backtracks": 0
    },
    {
     "lab_rooms": 5,
     "placed": 456,
     "total": 456,
-    "ms": 287,
+    "ms": 483,
     "backtracks": 0
    },
    {
     "lab_rooms": 4,
     "placed": 452,
     "total": 456,
-    "ms": 308,
+    "ms": 529,
     "backtracks": 20
    },
    {
     "lab_rooms": 3,
     "placed": 446,
     "total": 456,
-    "ms": 324,
+    "ms": 513,
     "backtracks": 30
    },
    {
     "lab_rooms": 2,
     "placed": 436,
     "total": 456,
-    "ms": 361,
+    "ms": 539,
     "backtracks": 60
    },
    {
     "lab_rooms": 1,
     "placed": 425,
     "total": 456,
-    "ms": 368,
+    "ms": 660,
     "backtracks": 88
    }
   ],
   "lab_rooms_total": 15
  },
  "tools": {
-  "total": 75,
-  "gated": 25,
+  "total": 82,
+  "gated": 29,
   "by_module": {
    "core (tools.py)": {
     "reads": 21,
@@ -190,6 +190,10 @@
    "teaching.py": {
     "reads": 3,
     "gated_writes": 1
+   },
+   "placement.py": {
+    "reads": 3,
+    "gated_writes": 4
    }
   }
  },
@@ -268,8 +272,8 @@
     "gated_writes": 0
    },
    "PlacementAgent": {
-    "reads": 3,
-    "gated_writes": 1
+    "reads": 6,
+    "gated_writes": 5
    },
    "RequestAgent": {
     "reads": 2,
@@ -329,21 +333,21 @@
    5,
    5,
    4,
-   4,
+   9,
    5,
    5,
    5,
    7,
    9,
    8,
-   7,
+   9,
    5,
    5,
    7
   ],
-  "full_schema_bytes": 28767,
-  "mean_offered_bytes": 1802,
-  "payload_saving_pct": 93.7
+  "full_schema_bytes": 33400,
+  "mean_offered_bytes": 1985,
+  "payload_saving_pct": 94.1
  },
  "data": {
   "students_by_dept": {
@@ -385,31 +389,31 @@
  "tests": [
   {
    "suite": "mcp_parity",
-   "passed": 299,
+   "passed": 323,
    "failed": 0,
    "exit": 0,
-   "seconds": 2.2
+   "seconds": 2.7
   },
   {
    "suite": "campus_test",
    "passed": 160,
    "failed": 0,
    "exit": 0,
-   "seconds": 2.9
+   "seconds": 4.4
   },
   {
    "suite": "auth_test",
    "passed": 111,
    "failed": 0,
    "exit": 0,
-   "seconds": 2.0
+   "seconds": 2.2
   },
   {
    "suite": "deploy_test",
    "passed": 85,
    "failed": 0,
    "exit": 0,
-   "seconds": 2.7
+   "seconds": 3.1
   },
   {
    "suite": "ranking_test",
@@ -423,98 +427,105 @@
    "passed": 53,
    "failed": 0,
    "exit": 0,
-   "seconds": 3.9
+   "seconds": 4.5
   },
   {
    "suite": "makeup_test",
    "passed": 33,
    "failed": 0,
    "exit": 0,
-   "seconds": 2.1
+   "seconds": 2.6
   },
   {
    "suite": "mesh_test",
    "passed": 25,
    "failed": 0,
    "exit": 0,
-   "seconds": 1.1
+   "seconds": 1.3
   },
   {
    "suite": "academics_test",
    "passed": 24,
    "failed": 0,
    "exit": 0,
-   "seconds": 0.9
+   "seconds": 1.1
   },
   {
    "suite": "nlu_test",
    "passed": 49,
    "failed": 0,
    "exit": 0,
-   "seconds": 0.1
+   "seconds": 0.2
   },
   {
    "suite": "cie_test",
    "passed": 59,
    "failed": 0,
    "exit": 0,
-   "seconds": 2.7
+   "seconds": 3.6
   },
   {
    "suite": "accreditation_test",
    "passed": 28,
    "failed": 0,
    "exit": 0,
-   "seconds": 1.2
+   "seconds": 1.6
   },
   {
    "suite": "language_test",
    "passed": 19,
    "failed": 0,
    "exit": 0,
-   "seconds": 0.6
+   "seconds": 1.1
   },
   {
    "suite": "risk_test",
    "passed": 17,
    "failed": 0,
    "exit": 0,
-   "seconds": 0.9
+   "seconds": 1.2
   },
   {
    "suite": "notify_test",
    "passed": 50,
    "failed": 0,
    "exit": 0,
-   "seconds": 5.3
+   "seconds": 6.0
   },
   {
    "suite": "cohort_test",
    "passed": 40,
    "failed": 0,
    "exit": 0,
-   "seconds": 0.7
+   "seconds": 0.8
   },
   {
    "suite": "dashboard_test",
    "passed": 33,
    "failed": 0,
    "exit": 0,
-   "seconds": 2.4
+   "seconds": 2.7
   },
   {
    "suite": "calendar_test",
    "passed": 127,
    "failed": 0,
    "exit": 0,
-   "seconds": 1.5
+   "seconds": 1.7
   },
   {
    "suite": "teaching_test",
    "passed": 77,
    "failed": 0,
    "exit": 0,
-   "seconds": 1.5
+   "seconds": 1.7
+  },
+  {
+   "suite": "placement_test",
+   "passed": 77,
+   "failed": 0,
+   "exit": 0,
+   "seconds": 1.6
   }
  ]
 }

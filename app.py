@@ -338,11 +338,12 @@ def my_calendar(request: Request, month: str = "", event: str = ""):
 # a marks sheet. Each is one READ tool run through tools.execute as the signed-in
 # person, so access.py decides whose classes and courses come back; the page
 # draws them and decides nothing. Writes are not here - see /api/me/propose.
-ME_READS = {"teaching_day", "attendance_sheet", "attendance_history", "cie_sheet"}
+ME_READS = {"teaching_day", "attendance_sheet", "attendance_history", "cie_sheet", "placement_drives",
+            "drive_details"}
 # What a portal form may stage. U is empty, so each can only PROPOSE into the
 # person's own chat session; their confirmation is a later turn on /api/chat,
 # which runs the same tool through the same gate (portal._staged).
-ME_PROPOSALS = {"take_attendance", "record_cie_marks", "submit_cie_marks"}
+ME_PROPOSALS = {"take_attendance", "record_cie_marks", "submit_cie_marks", "apply_to_drive"}
 
 
 def _as(user):
@@ -372,6 +373,29 @@ def my_propose(request: Request, payload: dict = Body(default={})):
     r = tools.execute(con, S, "", tool, args)
     return {"blocks": r.get("blocks", []), "data": r.get("data"), "chips": r.get("chips", []),
             "staged": bool((S.get("pending") or {}).get("tool") == tool and "BLOCKED" in (r.get("data") or {})),
+            "trace": [{"agent": t[0], "action": t[1], "detail": t[2] if len(t) > 2 else "",
+                       "status": t[3] if len(t) > 3 else "ok", "ms": 0} for t in r.get("trace", [])]}
+
+
+# The console's placement forms (#115): create or edit a drive, change its
+# status, decide applications. Like the calendar form, they only PROPOSE (U is
+# empty) into the Registrar's own chat session; the "yes" goes through /api/chat.
+# Registrar-only: the path is not in auth.ANY_USER.
+PLACEMENT_PROPOSALS = {"save_placement_drive", "set_drive_status", "update_applications"}
+
+
+@app.post("/api/placement/propose")
+def placement_propose(request: Request, payload: dict = Body(default={})):
+    tool = _text(payload, "tool")
+    if tool not in PLACEMENT_PROPOSALS:
+        raise BadInput(f"'{tool}' cannot be proposed from the placement forms.")
+    args = payload.get("args") or {}
+    if not isinstance(args, dict):
+        raise BadInput("'args' must be an object.")
+    S = orch.sess(_sid(request.state.user, _text(payload, "session")))
+    S["user"] = None                                   # the Registrar: unrestricted, as in /api/chat
+    r = tools.execute(con, S, "", tool, args)
+    return {"blocks": r.get("blocks", []), "data": r.get("data"), "chips": r.get("chips", []),
             "trace": [{"agent": t[0], "action": t[1], "detail": t[2] if len(t) > 2 else "",
                        "status": t[3] if len(t) > 3 else "ok", "ms": 0} for t in r.get("trace", [])]}
 
@@ -494,6 +518,8 @@ PANELS = {"ops_radar", "library_overview", "library_overdue", "library_search", 
 PANELS.add("accreditation_evidence")
 # the academic calendar (#104): the console's month view reads through here
 PANELS.add("calendar_events")
+# placement drives as records (#115): the list, one drive, its applicants
+PANELS |= {"placement_drives", "drive_details", "drive_applications"}
 
 
 @app.get("/api/panel/{name}")
