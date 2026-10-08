@@ -19,7 +19,7 @@ from guard import approved_this_turn
 from agents import (rows, one, fac_name, subj_name, NotifyAgent, Auditor, ensure_makeups,
                     B_text, B_table, B_cards, B_checklist, B_bars)
 from campus import (_propose, _done, _err, _stu, _cls, _when, inr, GatePassAgent, DocumentAgent,
-                    LeaveAgent, PlacementAgent, LibraryAgent, VERDICT_MD, CERT_KINDS, cert_kind, NOW,
+                    LeaveAgent, LibraryAgent, VERDICT_MD, CERT_KINDS, cert_kind, NOW,
                     loans_question)
 
 # "my books", "books I borrowed", "my library fine": a person's own loans (#91).
@@ -362,41 +362,12 @@ def t_my_home(con, S, U, **kw):
 
 # =============================================================== student
 def t_my_placement(con, S, U, **kw):
+    """The student's drives, through the one eligibility engine (#115)."""
     P, e = _me(S, "student")
     if e:
         return e
-    s = _stu(con, P["usn"])
-    if s["sem"] != 7:
-        return {"data": {"note": "Placement drives open in the 7th semester."},
-                "blocks": [B_text(f"Placement drives open in the 7th semester — you are in semester {s['sem']}. "
-                                  f"Your CGPA is **{s['cgpa']}**; most drives ask for 6.5–8.0 with no backlogs.")],
-                "trace": [("PlacementAgent", "not_yet", f"sem {s['sem']}")]}
-    pa = PlacementAgent()
-    out = []
-    for d in pa.drives(con):
-        ok, _w = pa.eligibility(con, d)
-        me = next((x for x in ok if x["usn"] == s["usn"]), None)
-        reg = one(con, "SELECT status FROM drive_registrations WHERE drive_id=? AND usn=?", (d["id"], s["usn"]))
-        why = []
-        if s["dept"] not in d["depts"].split(","):
-            why.append(f"open to {d['depts']} only")
-        if s["cgpa"] < d["min_cgpa"]:
-            why.append(f"needs CGPA {d['min_cgpa']}")
-        if s["backlogs"] > d["max_backlogs"]:
-            why.append(f"allows ≤{d['max_backlogs']} backlog(s)")
-        if not me and not why:
-            why.append("one-offer rule: you already hold an offer")
-        out.append({"drive": d, "ok": bool(me), "why": why, "reg": reg["status"] if reg else None})
-    offers = rows(con, "SELECT * FROM student_offers WHERE usn=?", (s["usn"],))
-    return {"data": {"eligible_for": [o["drive"]["company"] for o in out if o["ok"]],
-                     "offers": [o["company"] for o in offers]},
-            "blocks": ([B_text("Offers: " + ", ".join(f"**{o['company']}** ₹{o['ctc']} LPA" for o in offers))] if offers else [])
-                      + [B_table(["Company", "Role", "CTC", "Date", "You", "Why / status"],
-                                 [[o["drive"]["company"], o["drive"]["role"], f"₹{o['drive']['ctc']} LPA", o["drive"]["drive_date"],
-                                   "**Eligible**" if o["ok"] else "—",
-                                   (o["reg"] or "shortlist not published yet") if o["ok"] else "; ".join(o["why"])]
-                                  for o in out], title="Upcoming drives and you")],
-            "trace": [("PlacementAgent", "self_eligibility", f"{sum(o['ok'] for o in out)}/{len(out)} drives")]}
+    import placement                           # lazily, like the other feature modules here
+    return placement.t_placement_drives(con, S, U, usn=P["usn"])
 
 
 def t_request_gate_pass(con, S, U, kind="Outing", out_at="", return_by="", reason="", parent_consent=False, **kw):
@@ -765,8 +736,10 @@ def route(con, text, P, ent):
         if re.search(r"no[- ]?dues|dues|fees?\b|clearance", t):
             # a named USN is passed on, so access.py refuses someone else's (#77)
             return "no_dues_status", {"usn": usn} if usn else {}
-        if re.search(r"placement|drive|eligible|offer|company|recruit", t):
-            return "my_placement", {}
+        if re.search(r"placement|drive|eligible|offer|company|recruit|\bappl(?:y|ied) (?:to|for)\b", t) or \
+                re.search(r"\bapplications?\b", t) and not re.search(r"leave|certificate|gate", t):
+            import placement                   # lazily, like the other feature modules here
+            return placement.student_route(con, text, P)
         if CIE_RX.search(t):
             # a USN is passed on, so access.py refuses someone else's instead of
             # quietly answering with the student's own

@@ -11,7 +11,7 @@ gave explicit approval **in the current turn**. The model cannot talk its way pa
 """
 import re, datetime as dt
 import nlu, db, solver, agents, campus, portal, access, academics, accreditation, notify_gateway
-import academic_calendar, teaching
+import academic_calendar, teaching, placement
 from nlu import TODAY, day_of
 from agents import (rows, one, fac_name, subj_name, plabel, _span, PERIOD_SPAN,
                     SubstitutionAgent, TimetableAgent, FacultyAgent, StudentAgent,
@@ -30,7 +30,7 @@ from guard import APPROVAL_RX, approved_this_turn                  # noqa: F401
 # contribute theirs from campus.GATED_WRITES - listed there, next to the tools.
 GATED_WRITES = ("apply_coverage_plan", "apply_timetable_generation", "decide_request",
                 "create_request", "broadcast_notice") + campus.GATED_WRITES + portal.GATED_WRITES \
-    + academics.GATED_WRITES + academic_calendar.GATED_WRITES + teaching.GATED_WRITES
+    + academics.GATED_WRITES + academic_calendar.GATED_WRITES + teaching.GATED_WRITES + placement.GATED_WRITES
 
 
 def inr(n):
@@ -918,6 +918,8 @@ REGISTRY += accreditation.REGISTRY
 REGISTRY += academic_calendar.REGISTRY
 # A teacher's day and the attendance register (#116, #117).
 REGISTRY += teaching.REGISTRY
+# Placement drives end to end: criteria, eligibility, applications (#115).
+REGISTRY += placement.REGISTRY
 
 FUNCS = {name: fn for fn, name, _d, _s in REGISTRY}
 
@@ -938,7 +940,7 @@ TOOL_AGENT = {
     "plan_timetable_generation": "TimetableAgent", "apply_timetable_generation": "TimetableAgent",
     "decide_request": "RequestAgent", "create_request": "RequestAgent",
     "broadcast_notice": "NotifyAgent", **campus.AGENT_OF, **portal.AGENT_OF, **academics.AGENT_OF,
-    **accreditation.AGENT_OF, **academic_calendar.AGENT_OF, **teaching.AGENT_OF}
+    **accreditation.AGENT_OF, **academic_calendar.AGENT_OF, **teaching.AGENT_OF, **placement.AGENT_OF}
 
 
 def agent_of(name):
@@ -1023,6 +1025,7 @@ TOOL_GROUPS = {
     **accreditation.TOOL_GROUPS,
     **academic_calendar.TOOL_GROUPS,
     **teaching.TOOL_GROUPS,
+    **placement.TOOL_GROUPS,
 }
 CORE = ["ops_radar", "institution_overview", "get_timetable", "faculty_profile", "student_lookup",
         "list_requests", "plan_absence_coverage"]

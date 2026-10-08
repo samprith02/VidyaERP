@@ -751,6 +751,58 @@ for path, period in zip(PATHS, (1, 2, 4)):
     check(f"20c approved attendance commits · {path}", verdict(r) == "ok" and got is not None and got["absent"] == 0,
           f"{verdict(r)}: {json.dumps(r.get('data'), default=str)[:120]}")
 
+# ======================================== 21 · the placement writes (#115)
+# The Registrar's three drive writes, held to the same standard: refused the same
+# way on every path without approval, nothing written; committed on every path
+# with it. apply_to_drive acts for a signed-in student, so like section 17 it
+# has nobody to act for over MCP and refuses on every path even when approved.
+print("\n21 · placement: same refusal, same commit, every path")
+print("-" * 78)
+import placement                                                   # noqa: E402
+
+probe = {"company": "Parity Probe Ltd", "role": "Analyst", "ctc": 5, "drive_date": "2026-10-27",
+         "reg_end": "2026-10-20", "depts": "CSE", "sems": "7", "min_cgpa": 6}
+first_drive = one(con, "SELECT id FROM placement_drives ORDER BY id")["id"]
+probe_usn = one(con, "SELECT usn FROM students WHERE sem=7 AND dept='CSE' ORDER BY usn")["usn"]
+con.execute("INSERT OR IGNORE INTO drive_registrations(drive_id,usn,status,registered_at) VALUES(?,?,'Applied',"
+            "'2026-09-01T10:00')", (first_drive, probe_usn))
+con.commit()
+PLC_ARGS = {"save_placement_drive": probe,
+            "set_drive_status": {"drive": str(first_drive), "action": "close_registration"},
+            "update_applications": {"drive": str(first_drive), "usns": probe_usn, "status": "Shortlisted"},
+            "apply_to_drive": {"drive": str(first_drive)}}
+check("21a every placement write has a parity probe", set(PLC_ARGS) == set(placement.GATED_WRITES))
+check("21b every placement write is in tools.GATED_WRITES", set(placement.GATED_WRITES) <= set(tools.GATED_WRITES))
+
+
+def plc_snapshot():
+    return [[tuple(r) for r in con.execute(f"SELECT * FROM {t} ORDER BY 1, 2")]
+            for t in ("placement_drives", "drive_registrations", "calendar_events", "student_offers")]
+
+
+for name, pargs in PLC_ARGS.items():
+    vs = {}
+    for path in PATHS:
+        before = plc_snapshot()
+        r = run_path(path, fresh_session(), name, pargs, approves=(name == "apply_to_drive"))
+        vs[path] = verdict(r)
+        want = "error" if name == "apply_to_drive" else "blocked"
+        check(f"21 {name} · {path} · refused, nothing written", vs[path] == want and plc_snapshot() == before,
+              f"{vs[path]}: {json.dumps(r.get('data'), default=str)[:120]}")
+    check(f"21 {name} · PARITY", len(set(vs.values())) == 1, str(vs))
+for i, path in enumerate(PATHS):
+    name = f"Parity Probe {i}"               # a different drive per path, so each commit is its own row
+    r = run_path(path, fresh_session(), "save_placement_drive", {**probe, "company": name}, approves=True)
+    got = one(con, "SELECT id, status FROM placement_drives WHERE company=?", (name,))
+    check(f"21c approved drive is saved as a draft · {path}", verdict(r) == "ok" and got and got["status"] == "Draft",
+          f"{verdict(r)}: {json.dumps(r.get('data'), default=str)[:120]}")
+    r = run_path(path, fresh_session(), "set_drive_status", {"drive": str(got["id"]), "action": "publish"},
+                 approves=True)
+    back = one(con, "SELECT status, calendar_ids FROM placement_drives WHERE id=?", (got["id"],))
+    check(f"21d approved publish puts it on the calendar · {path}",
+          verdict(r) == "ok" and back["status"] == "Published" and back["calendar_ids"],
+          f"{verdict(r)}: {json.dumps(r.get('data'), default=str)[:120]}")
+
 # ========================================================================= out
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")

@@ -219,7 +219,7 @@ DROP TABLE IF EXISTS certificates;
 DROP TABLE IF EXISTS makeup_sessions; DROP TABLE IF EXISTS faculty_availability;
 DROP TABLE IF EXISTS calendar_events;
 DROP TABLE IF EXISTS attendance_sessions; DROP TABLE IF EXISTS attendance_marks;
-DROP TABLE IF EXISTS cie_submissions;
+DROP TABLE IF EXISTS cie_submissions; DROP TABLE IF EXISTS student_school_marks;
 
 CREATE TABLE departments(code TEXT PRIMARY KEY, name TEXT, hod TEXT, intake INT);
 CREATE TABLE faculty(
@@ -588,6 +588,8 @@ def _campus():
     academic_calendar.ensure()
     import teaching                        # the attendance register, one class hour at a time (#116)
     teaching.ensure()
+    import placement                       # drive criteria, school marks, calendar entries (#115)
+    placement.ensure()
     import notify_gateway                 # delivery columns on an older notifications table (#26)
     con = connect()
     notify_gateway.ensure(con)
