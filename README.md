@@ -5,8 +5,8 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![Dependencies: 2](https://img.shields.io/badge/dependencies-2-brightgreen.svg)](requirements.txt)
-[![Tests: 1346 assertions](https://img.shields.io/badge/tests-1346_assertions_passing-brightgreen.svg)](#tests)
-[![Tools: 75, 25 gated](https://img.shields.io/badge/tools-75_·_25_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
+[![Tests: 1447 assertions](https://img.shields.io/badge/tests-1447_assertions_passing-brightgreen.svg)](#tests)
+[![Tools: 82, 29 gated](https://img.shields.io/badge/tools-82_·_29_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
 [![Data: synthetic](https://img.shields.io/badge/data-100%25_synthetic-lightgrey.svg)](NOTICE)
 
 A working prototype of a **SMART, agentic ERP for an Indian engineering college** (autonomous /
@@ -41,7 +41,7 @@ load no external scripts, styles or fonts.
 
 | | | | |
 |:--|:--|:--|:--|
-| **21** specialist agents, **33** in the mesh | **75** tools · **25** writes, every one gated | **1346** test assertions, 0 failing | **2** dependencies |
+| **21** specialist agents, **33** in the mesh | **82** tools · **29** writes, every one gated | **1447** test assertions, 0 failing | **2** dependencies |
 | **271** absences swept: the top plan fully covers **268** | **456 / 456** periods placed by the solver, 0 clashes | **94%** less tool payload per LLM turn | **0** external assets in the console |
 
 Every number above is measured by [`docs/charts/make_charts.py`](docs/charts/make_charts.py) and
@@ -62,7 +62,8 @@ README redraw themselves from the code.
    [5d internal marks](#5d-internal-marks-cie-entry-standing-and-the-see-minimum-academicspy) ·
    [5e accreditation](#5e-accreditation-evidence-naac-and-nba-from-the-live-records-accreditationpy) ·
    [5f academic calendar](#5f-the-academic-calendar-every-entry-for-the-classes-it-names-academic_calendarpy) ·
-   [5g teaching desk](#5g-the-teaching-desk-a-teachers-day-attendance-and-marks-teachingpy)
+   [5g teaching desk](#5g-the-teaching-desk-a-teachers-day-attendance-and-marks-teachingpy) ·
+   [5h placement drives](#5h-placement-drives-each-companys-own-criteria-every-reason-named-placementpy)
 6. [Guardrails](#6-guardrails-the-part-that-makes-it-deployable) and [MCP](#6a-driving-the-erp-from-claude-desktop-mcp)
 7. [Data model and the timetable solver](#7-data-model-seeded-realistic)
 8. [Files](#8-files) · [9. Design notes](#9-design-notes) and [the interface](#9a-the-interface-staticmawoscss) ·
@@ -123,10 +124,10 @@ listed in `.env.example`. No SDK is installed: `llm.py` talks raw HTTP over `url
 is nothing to `pip install`. Restart the server and the badge flips to green.
 
 <p align="center">
-  <img src="docs/charts/tools_by_module.svg" alt="Bar chart: 75 tools by module. core tools.py 21 reads and 5 writes; campus.py 15 reads and 11 writes; portal.py 6 reads and 3 writes; academics.py 3 reads and 3 writes; teaching.py 3 reads and 1 write; academic_calendar.py 1 read and 2 writes; accreditation.py 1 read" width="760">
+  <img src="docs/charts/tools_by_module.svg" alt="Bar chart: 82 tools by module. core (tools.py) 21 reads and 5 writes, campus.py 15 reads and 11 writes, portal.py 6 reads and 3 writes, placement.py 3 reads and 4 writes, academics.py 3 reads and 3 writes, teaching.py 3 reads and 1 write, academic_calendar.py 1 read and 2 writes, accreditation.py 1 read and 0 writes" width="760">
 </p>
 
-**The 75 tools the model can call** (a student, teacher or HOD is offered only their role's). 26 academic/admin:
+**The 82 tools the model can call** (a student, teacher or HOD is offered only their role's). 26 academic/admin:
 `institution_overview · get_timetable · faculty_timetable · find_free_faculty · find_free_rooms ·
 faculty_profile · faculty_workload · student_lookup · class_strength · top_students · attendance_defaulters · academic_risk · fee_summary ·
 exam_schedule · exam_eligibility · list_requests · list_leaves · plan_absence_coverage ·
@@ -142,9 +143,11 @@ request_gate_pass · request_certificate · my_mentees · my_leaves · apply_lea
 academic records: `faculty_availability · set_faculty_availability` (standing availability) and
 `cie_marks · record_cie_marks · cie_sheet · submit_cie_marks` (internal marks, §5d and §5g). 4 for
 a teacher's day and the attendance register (§5g): `teaching_day · attendance_sheet ·
-take_attendance · attendance_history`. 1 for accreditation evidence (§5e): `accreditation_evidence`.
+take_attendance · attendance_history`. 7 for placement drives (§5h): `placement_drives · drive_details ·
+drive_applications · save_placement_drive · set_drive_status · apply_to_drive · update_applications`.
+1 for accreditation evidence (§5e): `accreditation_evidence`.
 And 3 for the academic calendar (§5f): `calendar_events · save_calendar_event · cancel_calendar_event`.
-**25 of the 75 are writes, and every one is gated.**
+**29 of the 82 are writes, and every one is gated.**
 
 **Write-guard, proven by test:** `tests/mock_llm.py` includes a *rogue agent* endpoint that tries
 to call `apply_coverage_plan` with no admin approval. PolicyGuard returns `{"BLOCKED": ...}`,
@@ -161,13 +164,13 @@ multi-hop turn was spending 7,196 of them. Four things fixed that:
 
 | Technique | Effect |
 |---|---|
-| **Tool router**: the rule-engine NLU pre-selects 3–9 of the 75 tools per utterance | tool-schema payload **−94%** on the 40 example requests below, and the model picks better from a short menu |
+| **Tool router**: the rule-engine NLU pre-selects 3–9 of the 82 tools per utterance | tool-schema payload **−94%** on the 40 example requests below, and the model picks better from a short menu |
 | **Prompt diet**: live-context preamble trimmed, history 8→4 turns, tool results capped at 2.8 KB | system prompt ~1,500 → ~600 tokens |
 | **Model failover chain**: `LLM_FALLBACK_MODELS`, tried in order on 429/5xx/`tool_use_failed` | quotas are *per model*, so the chain multiplies usable throughput |
 | **Nullable optional params**: every non-required arg accepts `null` | models emit `{"dept": null}` constantly; strict validators 400 on it. 41 params were latent landmines |
 
 <p align="center">
-  <img src="docs/charts/router.svg" alt="Histogram: tools offered per request for 40 example requests, between 3 and 9, never all 75. Mean schema payload 1.8 KB instead of 28.8 KB" width="760">
+  <img src="docs/charts/router.svg" alt="Histogram: tools offered per request for 40 example requests, between 3 and 9, never all 82. Mean schema payload 2.0 KB instead of 33.4 KB" width="760">
 </p>
 
 Result: a typical turn now costs **~2,000 tokens and answers in ~1.2 s**, and the
@@ -176,14 +179,14 @@ if the whole chain is exhausted by falling back to the rule engine with an hones
 The trace shows exactly which of these happened:
 
 ```
-· ToolRouter    narrow_toolset    7 of 75 tools offered: plan_absence_coverage, …
+· ToolRouter    narrow_toolset    7 of 82 tools offered: plan_absence_coverage, …
 · LLM Planner   reason (hop 1)    openai/gpt-oss-120b · 1032→107 tok · 513ms
 · LLM Planner   model_failover    primary rate-limited → answered on qwen/qwen3.8-27b
 ```
 
 ```mermaid
 flowchart LR
-  Q[Admin's turn] --> TR[ToolRouter: 3 to 9 of 75 tools]
+  Q[Admin's turn] --> TR[ToolRouter: 3 to 9 of 82 tools]
   TR --> P[Primary model]
   P -->|429, 5xx, 400 tool_use_failed| F1[Fallback 1]
   F1 -->|same| F2[Fallback 2]
@@ -198,12 +201,12 @@ flowchart LR
 ### Tests
 
 <p align="center">
-  <img src="docs/charts/tests.svg" alt="Bar chart: 1346 assertions across 19 suites, all passing. mcp_parity 299, campus_test 160, calendar_test 127, auth_test 111, deploy_test 85, teaching_test 77, cie_test 59, ranking_test 57, solver_test 53, notify_test 50, nlu_test 49, cohort_test 40, makeup_test 33, dashboard_test 33, accreditation_test 28, mesh_test 25, academics_test 24, language_test 19, risk_test 17" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 1447 assertions across 20 suites, all passing. mcp_parity 323, campus_test 160, calendar_test 127, auth_test 111, deploy_test 85, teaching_test 77, placement_test 77, cie_test 59, ranking_test 57, solver_test 53, notify_test 50, nlu_test 49, cohort_test 40, makeup_test 33, dashboard_test 33, accreditation_test 28, mesh_test 25, academics_test 24, language_test 19, risk_test 17" width="760">
 </p>
 
 ```bash
 python3 tests/solver_test.py  # timetable solver: 53 assertions, no server, no API cost
-python3 tests/mcp_parity.py   # MCP guard parity: 299 assertions, no server, no API cost
+python3 tests/mcp_parity.py   # MCP guard parity: 323 assertions, no server, no API cost
 python3 tests/campus_test.py  # campus services: 160 assertions, no server, no API cost
 python3 tests/mesh_test.py    # the agent mesh's fault channel and approval stamp: 25 assertions, no server, no API cost
 python3 tests/auth_test.py    # logins, route gating, per-role policy: 111 assertions, no server, no API cost
@@ -221,6 +224,7 @@ python3 tests/cohort_test.py  # section strength and CGPA ranking, recounted; mi
 python3 tests/dashboard_test.py # the student dashboard: attendance and marks recomputed apart, gaps shown as gaps: 33 assertions, no server, no API cost
 python3 tests/calendar_test.py # the academic calendar: every entry reaches exactly the classes it names: 127 assertions, no server, no API cost
 python3 tests/teaching_test.py # the teaching desk: a teacher's day, attendance by the hour, the marks lock: 77 assertions, no server, no API cost
+python3 tests/placement_test.py # placement drives: own criteria, every reason named, applications re-checked: 77 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
 python3 docs/charts/make_charts.py --tests   # re-measure everything and redraw this README's charts
@@ -242,14 +246,14 @@ flowchart TB
   AG --> EN{Engine}
   EN -->|default, free| RE[orchestrator.py: rule engine + nlu.py]
   EN -->|LLM key set| LA[llm_agent.py: plan, call tools, answer]
-  LA --> TR[tools.select_tools: 3 to 9 of 75]
+  LA --> TR[tools.select_tools: 3 to 9 of 82]
   MC --> CA[mcp_server.call_as]
   TR --> EX[[tools.execute: the only dispatch point]]
   CA --> EX
   RE -->|campus tools| EX
   EX --> AC[access.py: role policy, default deny]
-  AC --> GD[guard.approved_this_turn: 25 gated writes]
-  GD --> SP[Specialist agents: agents.py, campus.py, portal.py, academics.py, teaching.py, academic_calendar.py]
+  AC --> GD[guard.approved_this_turn: 29 gated writes]
+  GD --> SP[Specialist agents: agents.py, campus.py, portal.py, academics.py, teaching.py, placement.py, academic_calendar.py]
   RE -->|core flows, own HITL state machine| SP
   SP --> DB[(SQLite: college.db)]
   SP --> VR[Verify by independent re-read]
@@ -281,7 +285,7 @@ AttendanceAgent owns the attendance register since #116, and still appears in St
 student's dashboard.
 
 <p align="center">
-  <img src="docs/charts/agents.svg" alt="Bar chart: 21 specialist agents own the 75 tools. TimetableAgent 7 reads 2 writes; LibraryAgent 4 and 3; StudentAgent 7 and 0; HRAgent 3 and 2; and so on down to FinanceAgent, IQACAgent, NotifyAgent, OpsRadar and RiskAgent with one tool each" width="760">
+  <img src="docs/charts/agents.svg" alt="Bar chart: 21 specialist agents own the 82 tools. TimetableAgent 7 reads 2 writes; LibraryAgent 4 and 3; StudentAgent 7 and 0; HRAgent 3 and 2; and so on down to FinanceAgent, IQACAgent, NotifyAgent, OpsRadar and RiskAgent with one tool each" width="760">
 </p>
 
 ---
@@ -568,16 +572,16 @@ that is decided per tool call in `tools.execute` (`access.py`), not in the UI or
 ```mermaid
 flowchart LR
   U[Signed-in person] --> R{Role}
-  R -->|Registrar| ALL[All 75 tools, institution-wide]
+  R -->|Registrar| ALL[All 82 tools, institution-wide]
   R -->|HOD, 37 tools| H[Self-service + department overview, workload, defaulters, CGPA ranking, leave decisions, absence cover: own department only]
   R -->|Faculty, 25 tools| F[Own day and timetable, attendance and marks for the classes they teach, mentees, leave with timetable impact, the department's calendar]
-  R -->|Student, 15 tools| S[Own day, own marks, own class's calendar, library loans, gate pass, certificates, placement eligibility, requests]
+  R -->|Student, 18 tools| S[Own day, own marks, own class's calendar, library loans, gate pass, certificates, placement drives: eligibility and applying, requests]
   H & F & S --> N[access.py can only NARROW an argument or refuse. Anything unlisted: DENIED]
 ```
 
 | Role | Their day | They can ask the agents to… |
 |---|---|---|
-| **Student** | today's classes marked done / now / next, **subject performance** (attendance and internal marks as two labelled meters per subject, each from its own record), what needs attention, what is coming up, library books with days left or the fine, quick-access questions | file a **gate pass** (pre-screened by GatePassAgent), request a **certificate** (eligibility pre-checked by DocumentAgent), see placement eligibility, their own internal marks and their class's **calendar**, track requests |
+| **Student** | today's classes marked done / now / next, **subject performance** (attendance and internal marks as two labelled meters per subject, each from its own record), what needs attention, what is coming up, library books with days left or the fine, quick-access questions | file a **gate pass** (pre-screened by GatePassAgent), request a **certificate** (eligibility pre-checked by DocumentAgent), see every **placement drive** meant for them with the reason they can or cannot apply, and **apply** (§5h), their own internal marks and their class's **calendar**, track requests |
 | **Faculty** | today's classes with Done / Now / Next and whether attendance is in, what is still owed (attendance to take, marks to enter or submit), load, mentees who need a conversation | **take attendance** and **enter or submit marks** for the classes they teach, from a **Timetable** view (§5g), **apply for leave with the timetable impact attached** (HRAgent runs the substitution planner for each day), see mentees, their own leave and the department's calendar |
 | **HOD** | the above for the classes they teach, plus the department's leave queue | the same teaching desk, for their own classes only, and department overview, workload, defaulters, academic risk and CGPA ranking (their department only), **decide their department's leave**, plan and apply absence cover for their own staff |
 
@@ -658,7 +662,7 @@ A **Calendar** sits beside *Your day* in the portal (a third tab on a phone) and
 sidebar. Students and teachers read it; only the Registrar puts anything on it.
 
 - **Three sources, one calendar.** What the Registrar adds (holidays, college events, an IA re-test,
-  a lab exam) sits next to the SEE timetable and the CIE scheme's dates, both read as they stand, so
+  a lab exam, and each published placement drive, §5h) sits next to the SEE timetable and the CIE scheme's dates, both read as they stand, so
   the calendar can never disagree with the exam timetable or the dashboard's "Coming up".
 - **Who sees what is one rule, on the server.** Every entry names its audience as department,
   semester and section, each "all" when left out, and a student sees it only when every part named
@@ -702,14 +706,15 @@ every class on the rolls):
 | Department tech talk, 18 Sep | CSE | shown | shown | shown | · |
 | Placement orientation, 9 Sep | semester 7 | shown | shown | · | shown |
 | IA re-test: Machine Learning, 10 Sep | CSE-7A | shown | · | · | · |
+| Placement drive: Konkan Cloud Systems, 15 Sep | CSE and ISE, semester 7 | shown | shown | · | shown |
 
 <table>
 <tr>
-<td width="50%"><img src="docs/img/portal-calendar-7a.png" alt="A CSE-7A student's calendar on a phone: dots on 9 and 10 Sep, the placement orientation for semester 7 and the CSE-7A IA re-test listed under This month"></td>
+<td width="50%"><img src="docs/img/portal-calendar-7a.png" alt="A CSE-7A student's calendar on a phone: the placement orientation for semester 7 on 9 Sep, the CSE-7A IA re-test on 10 Sep, and the placement drives open to CSE semester 7 on 11, 15 and 22 Sep"></td>
 <td width="50%"><img src="docs/img/portal-calendar-5a.png" alt="A CSE-5A student's calendar on a phone for the same month: no entries on 9 or 10 Sep; the CSE semester 5 assignment and lab test are listed instead"></td>
 </tr>
 <tr>
-<td><sub>A CSE-7A student: the semester-7 orientation and their section's IA re-test.</sub></td>
+<td><sub>A CSE-7A student: the semester-7 orientation, their section's IA re-test, and the drives open to CSE semester 7.</sub></td>
 <td><sub>A CSE-5A student, same month: neither of those, and their own semester's assignment and lab test instead.</sub></td>
 </tr>
 </table>
@@ -781,15 +786,68 @@ results, the pass rule and SGPA are a model of their own (#66). `tests/teaching_
 rest: 77 assertions, every rule mutation-checked, and `tests/mcp_parity.py` section 20 holds
 `take_attendance` to the same gate on every entry point.
 
+### 5h. Placement drives: each company's own criteria, every reason named (`placement.py`)
+
+The placement cell (the Registrar's office in this system) adds a drive with **+ Add placement drive**:
+company, job and drive details, and the drive's own eligibility criteria, which are minimum CGPA,
+backlogs allowed, 10th, 12th or diploma %, departments, semesters, sections and graduating batch.
+Two drives never share a rule. The form only prepares it: the PlacementAgent checks every field and
+shows how many students the criteria take in today, and why the rest are out, before the
+Registrar's "yes" saves it as a **draft**. A draft is invisible to students. **Publish** opens
+registration, puts the drive on the academic calendar of exactly the classes it is open to (through
+the calendar's own validation, §5f), and tells the eligible students. **Close registration**,
+**complete**, **cancel** (it leaves every calendar, and its applicants are told) and **archive** follow.
+An edit to a published drive moves its own calendar entries rather than adding new ones.
+
+**One eligibility engine** (`placement.evaluate`) answers everyone: the student's page, the agent,
+the Registrar's counts, the older drive-eligibility, shortlist and Ops-radar views, and the
+application write itself. It never says a bare yes or no. Every row is a criterion, with what is
+required, what the student has, and whether it is met. The rows are grouped in three layers that
+are reported apart: **academic** (CGPA, backlogs, 10th, 12th, or the diploma for a lateral entrant),
+**department, semester and batch**, and **placement policy** (the existing one-offer rule). A
+criterion the records cannot show, such as a 10th percentage that is not on file, is *not met*, and
+says so. The 10th, 12th and diploma marks are new synthetic data, drawn from each student's CGPA.
+About one student in twelve is a lateral entrant with a diploma and no 12th.
+
+**Applying** is the student's, from **Placement drives** in the portal or in words (“Am I eligible
+for Coastal Analytics?”, “Why am I not eligible for Konkan Cloud?”, “Apply for the Coastal
+Analytics drive”). The application is filled from their record and shown to them. It is filed
+only on their next “yes”, after eligibility has been worked out again from the records, so nothing
+the page sends can make a student eligible. Duplicates, closed registration and cancelled drives
+are refused. The Registrar sees the applicants, filters them by department, semester, status, CGPA
+or backlogs, and marks them **Shortlisted**, **Not shortlisted**, **Selected** or **Rejected**. A
+selection records the offer, and the one-offer rule then holds that student out of other non-dream
+drives.
+
+<table>
+<tr>
+<td width="25%" valign="top"><img src="docs/img/placement-drives.png" alt="A final-year student's Placement drives: three drives they can apply for, then open drives they are not eligible for, each with the failed criterion, e.g. CGPA 7.64, needs 8.00 or more"></td>
+<td width="25%" valign="top"><img src="docs/img/placement-eligibility.png" alt="One drive's eligibility for the student: department, semester, CGPA, backlogs, 10th, 12th and the one-offer rule, each with required, theirs and Met, then Apply now"></td>
+<td width="50%" valign="top"><img src="docs/img/placement-console.png" alt="The console's Placements page after a new drive was published: approved and verified, and the list of drives with status, eligible, applied, shortlisted and selected, and the actions for each"></td>
+</tr>
+<tr>
+<td><sub>A student's drives: what they can apply for, and why not for the rest.</sub></td>
+<td><sub>Criterion by criterion, from the records.</sub></td>
+<td><sub>The Registrar's drives, each with its own lifecycle.</sub></td>
+</tr>
+</table>
+
+Not built: notifications for an approaching deadline (the publish, decision and cancellation
+notices are sent through the existing gateway), a resume upload (the application tells the student
+to carry it on the day), withdrawing an application, and a placement-officer role separate from the
+Registrar. `tests/placement_test.py` pins the rest: 77 assertions, including the
+issue's nine end-to-end scenarios, with every rule mutation-checked. `tests/mcp_parity.py` section
+21 holds the four writes to the same gate on every entry point.
+
 ---
 
 ## 6. Guardrails (the part that makes it deployable)
 
 - **Role policy, per call**: `access.py` decides in `tools.execute` what each role may call, default
   deny. A rule may only *narrow* an argument (fill in "me", "my department") or refuse; it never
-  widens. A student is offered 15 tools, a teacher 25, an HOD 37 (their department only), the
-  Registrar all 75. A refusal is drawn as a guard verdict, not a fault.
-- **HITL gate on every write**: 25 write tools, and every one calls `guard.approved_this_turn` in
+  widens. A student is offered 18 tools, a teacher 25, an HOD 37 (their department only), the
+  Registrar all 82. A refusal is drawn as a guard verdict, not a fault.
+- **HITL gate on every write**: 29 write tools, and every one calls `guard.approved_this_turn` in
   its own body. Called without the admin's approval *in the same turn*, a write computes its
   change, stages it and writes nothing. The test suite derives the gated set from each tool's
   bytecode, so a write that skipped the check would be found.
@@ -812,7 +870,7 @@ rest: 77 assertions, every rule mutation-checked, and `tests/mcp_parity.py` sect
   gets exactly the verdicts the in-app planner gets, and cannot approve its own writes.
 
 <details>
-<summary>The 25 gated writes, by owning agent</summary>
+<summary>The 29 gated writes, by owning agent</summary>
 
 | Module | Write | Agent |
 |---|---|---|
@@ -833,6 +891,7 @@ rest: 77 assertions, every rule mutation-checked, and `tests/mcp_parity.py` sect
 | `academics.py` | `set_faculty_availability` | TimetableAgent |
 | | `record_cie_marks` · `submit_cie_marks` | ExamAgent |
 | `teaching.py` | `take_attendance` | AttendanceAgent |
+| `placement.py` | `save_placement_drive` · `set_drive_status` · `apply_to_drive` · `update_applications` | PlacementAgent |
 | `academic_calendar.py` | `save_calendar_event` · `cancel_calendar_event` | CalendarAgent |
 
 </details>
@@ -851,7 +910,7 @@ stateDiagram-v2
 
 ### 6a. Driving the ERP from Claude Desktop (MCP)
 
-`mcp_server.py` puts the same 75 tools in front of any MCP client. Registration needs no install
+`mcp_server.py` puts the same 82 tools in front of any MCP client. Registration needs no install
 step, because there is no SDK to install:
 
 ```json
@@ -1145,13 +1204,14 @@ VidyaERP/
 ├── guard.py            approved_this_turn(): the one write gate, importable by every tool module
 ├── orchestrator.py     rule-engine supervisor: routing, HITL state machine
 ├── llm.py              provider-agnostic OpenAI-compatible client (urllib, no SDK)
-├── tools.py            the 75 tool schemas + the single dispatch point (gate + role policy)
+├── tools.py            the 82 tool schemas + the single dispatch point (gate + role policy)
 ├── auth.py             sign-in: principals, PBKDF2, hashed sessions, auth.gate() for every route
 ├── access.py           per-role tool policy: default deny, rules that only ever narrow
 ├── portal.py           self-service tools for students, faculty and HODs
 ├── academics.py        standing faculty availability (#19) and CIE marks (#32): seeds, reads, gated writes,
 │                       and the submission that locks a marks register (#116)
 ├── teaching.py         a teacher's day from the timetable and the attendance register, by the hour (#116, #117)
+├── placement.py        placement drives: each drive's criteria, the one eligibility engine, applications (#115)
 ├── accreditation.py    NAAC / NBA evidence from the records, gaps named (#29); reads only
 ├── academic_calendar.py holidays, events and exams; one visibility rule, gated writes (#104)
 ├── notify_gateway.py   notice delivery: webhook or outbox file, honest status, never the URL (#26)
@@ -1282,7 +1342,8 @@ it. These are open:
 
 Shipped from the earlier roadmap: NAAC/NBA evidence (#29, §5e), Kannada and Hindi input (#31, §2),
 CIE marks (#32, §5d), notice delivery (#26, §11), the academic calendar (#104, §5f) and the teaching
-desk, attendance by the hour and the marks lock (#116, #117, §5g).
+desk, attendance by the hour and the marks lock (#116, #117, §5g), and placement drives with their own
+criteria and applications (#115, §5h).
 
 ---
 

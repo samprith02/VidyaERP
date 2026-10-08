@@ -989,14 +989,153 @@ async function renderGate(el){
      <div class="cap" style="margin-top:10px">Policy: emergencies and medical passes clear on policy · outings must be outside class hours and back by 20:00 ·
      a class-hour outing needs 85% attendance just to be reviewable · home visits that miss class days need 75% and at most 2 days · no parent consent means the warden calls first.</div></div>`;
 }
+/* ---------------- placement drives (#115) ----------------
+   Reads through /api/panel (placement_drives, drive_applications,
+   drive_eligibility, placement_overview). The forms only PROPOSE:
+   /api/placement/propose passes no approval, so the PlacementAgent validates
+   the drive, shows who its criteria take in, and stages it in this console's
+   own chat session; the Registrar's yes goes through /api/chat - the calendar
+   form's pattern, the same gate and verify step as a request typed in the chat. */
+const PLC={el:null,drives:[],sel:null};
+const PLC_ACT={Draft:[['publish','Publish'],['cancel','Cancel']],
+  Published:[['close_registration','Close registration'],['complete','Mark completed'],['cancel','Cancel']],
+  Completed:[['archive','Archive']],Cancelled:[['archive','Archive']],Archived:[]};
+const PLC_ST={Published:'Accepted',Draft:'Recorded',Completed:'Applied',Cancelled:'Rejected',Archived:'Recorded'};
 async function renderPlc(el){
-  const r=await panel('placement_overview');
-  const up=(r.data&&r.data.upcoming)||[];
+  PLC.el=el;
+  const [r,ov]=await Promise.all([panel('placement_drives'),panel('placement_overview')]);
+  PLC.drives=(r.data&&r.data.drives)||[];
+  const up=PLC.drives.filter(d=>d.status==='Published');
   el.innerHTML=head(up.slice(0,2).map(d=>[`Shortlist for ${d.company}`,`Prepare the shortlist for the ${d.company} drive`,'']),
-      `<span class="spacer" style="flex:1"></span><select id="drv">${up.map(d=>`<option value="${d.id}">${esc(d.company)} · ${d.date}</option>`).join('')}</select>
-       <button class="btn sm ghost" id="drvgo" type="button">Who is eligible?</button>`)+
-    `<div id="drvbox"></div><div class="pnl">${blocksHTML(r.blocks)}</div>`;
-  $('#drvgo').onclick=async()=>{const x=await panel('drive_eligibility',{drive:$('#drv').value});$('#drvbox').innerHTML=`<div class="pnl">${blocksHTML(x.blocks)}</div>`;};
+      `<span class="spacer" style="flex:1"></span><button class="btn sm" id="plcNew" type="button">+ Add placement drive</button>`)+
+    `<div id="plcRes"></div>
+    <div class="pnl"><h3>Placement drives</h3><div class="cap">Each drive has its own eligibility criteria. A draft is not shown to students until it is published; publishing puts it on the academic calendar of the classes it is open to.</div>
+    <div class="tblwrap dense"><table><thead><tr><th>#</th><th>Company</th><th>Role</th><th>CTC</th><th>Drive</th><th>Status</th><th>Eligible</th><th>Applied</th><th>Shortlisted</th><th>Selected</th><th></th></tr></thead><tbody>
+    ${PLC.drives.map((d,i)=>`<tr><td>${esc(d.id)}</td><td><b>${esc(d.company)}</b></td><td>${esc(d.role)}</td><td>₹${esc(d.ctc)} LPA</td><td>${esc(d.drive_date)}</td>
+      <td><span class="st ${PLC_ST[d.status]||'Recorded'}">${esc(d.status)}</span>${d.status==='Published'?`<div class="plc-sub">registration ${esc(String(d.registration).toLowerCase())}</div>`:''}</td>
+      <td>${esc(d.eligible)}</td><td>${esc(d.applications)}</td><td>${esc(d.shortlisted)}</td><td>${esc(d.selected)}</td>
+      <td class="plc-acts"><button class="btn sm ghost" type="button" data-pv="${i}">Applicants</button><button class="btn sm ghost" type="button" data-pel="${i}">Eligibility</button>${d.status==='Draft'||d.status==='Published'?`<button class="btn sm ghost" type="button" data-pe="${i}">Edit</button>`:''}${(PLC_ACT[d.status]||[]).map(([a,l])=>`<button class="btn sm ghost" type="button" data-pa="${i}" data-act="${a}">${l}</button>`).join('')}</td></tr>`).join('')}
+    </tbody></table></div></div>
+    <div id="plcApps"></div>
+    <div class="pnl">${blocksHTML(ov.blocks)}</div>`;
+  $('#plcNew').onclick=()=>drvForm(null);
+  el.querySelectorAll('[data-pv]').forEach(b=>b.onclick=()=>plcApps(+b.dataset.pv,{}));
+  el.querySelectorAll('[data-pel]').forEach(b=>b.onclick=async()=>{const x=await panel('drive_eligibility',{drive:String(PLC.drives[+b.dataset.pel].id)});
+    $('#plcApps').innerHTML=`<div class="pnl">${blocksHTML(x.blocks)}</div>`;$('#plcApps').scrollIntoView({block:'nearest'});});
+  el.querySelectorAll('[data-pe]').forEach(b=>b.onclick=()=>drvForm(PLC.drives[+b.dataset.pe]));
+  el.querySelectorAll('[data-pa]').forEach(b=>b.onclick=()=>plcPropose('set_drive_status',{drive:String(PLC.drives[+b.dataset.pa].id),action:b.dataset.act}));
+}
+async function plcApps(i,f){
+  const d=PLC.drives[i];PLC.sel=i;
+  const r=await panel('drive_applications',{drive:String(d.id),...f});
+  const a=(r.data&&r.data.applicants)||[];
+  const opt=(id,label,vals,cur)=>`<select id="${id}" aria-label="${label}"><option value="">${label}</option>${vals.map(v=>`<option ${String(cur||'')===String(v)?'selected':''}>${esc(v)}</option>`).join('')}</select>`;
+  $('#plcApps').innerHTML=`<div class="pnl"><h3>${esc(d.company)} · ${esc(d.role)}: applicants</h3>
+    ${blocksHTML((r.blocks||[]).slice(0,1))}
+    <div class="toolbar">${opt('paD','All departments',CAL_D,f.dept)}${opt('paS','All semesters',[3,5,7],f.sem)}
+      ${opt('paT','Any status',['Applied','Shortlisted','Not shortlisted','Selected','Rejected'],f.status)}
+      <input id="paC" type="number" step="0.1" min="0" max="10" placeholder="Min CGPA" value="${attr(f.min_cgpa||'')}" style="width:100px">
+      <input id="paB" type="number" min="0" placeholder="Max backlogs" value="${attr(f.max_backlogs||'')}" style="width:110px">
+      <button class="btn sm ghost" id="paGo" type="button">Filter</button></div>
+    ${a.length?`<div class="tblwrap dense"><table><thead><tr><th><input type="checkbox" id="paAll" aria-label="Select all"></th><th>USN</th><th>Name</th><th>Class</th><th>CGPA</th><th>Backlogs</th><th>Status</th></tr></thead><tbody>
+      ${a.map(x=>`<tr><td><input type="checkbox" class="paX" value="${attr(x.usn)}" aria-label="Select ${attr(x.usn)}"></td><td>${esc(x.usn)}</td><td>${esc(x.name)}</td><td>${esc(x.dept)}-${esc(x.sem)}${esc(x.section)}</td><td>${esc(Number(x.cgpa).toFixed(2))}</td><td>${esc(x.backlogs)}</td><td>${esc(x.status)}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="cal-acts"><span class="cap" style="margin:0 6px 0 0">With the ticked applicants:</span>${[['Shortlisted','Shortlist'],['Not shortlisted','Not shortlisted'],['Selected','Select'],['Rejected','Reject']].map(([s,l])=>`<button class="btn sm" type="button" data-dec="${attr(s)}">${esc(l)}</button>`).join('')}</div>`
+      :'<div class="cap">No applicants match.</div>'}</div>`;
+  $('#plcApps').scrollIntoView({block:'nearest'});
+  $('#paGo').onclick=()=>plcApps(i,{dept:$('#paD').value,sem:$('#paS').value,status:$('#paT').value,min_cgpa:$('#paC').value,max_backlogs:$('#paB').value});
+  if($('#paAll'))$('#paAll').onchange=e=>$$('.paX').forEach(x=>x.checked=e.target.checked);
+  $$('#plcApps [data-dec]').forEach(b=>b.onclick=()=>{const u=$$('.paX').filter(x=>x.checked).map(x=>x.value);
+    if(!u.length){notify('Tick the applicants first.',false);return;}
+    plcPropose('update_applications',{drive:String(d.id),usns:u.join(', '),status:b.dataset.dec});});
+}
+// the drive form: company, job, dates and the drive's own criteria; it only stages
+function drvForm(d){
+  const c=(d&&d.criteria)||{depts:[],sems:[7],sections:[],batches:[]};
+  const v=k=>attr(d&&d[k]!=null?d[k]:'');
+  const cv=k=>attr(c[k]!=null?c[k]:'');
+  const box=(name,vals,on)=>vals.map(x=>`<label class="plc-chk"><input type="checkbox" name="${name}" value="${attr(x)}" ${on.map(String).includes(String(x))?'checked':''}>${esc(x)}</label>`).join('');
+  const sel=(id,vals,cur)=>`<select id="${id}">${vals.map(x=>`<option ${x===cur?'selected':''}>${esc(x)}</option>`).join('')}</select>`;
+  const w=document.createElement('div');w.className='plc-modal';
+  w.innerHTML=`<form class="plc-form"><h3>${d?'Edit '+esc(d.company):'Add placement drive'}</h3>
+    <fieldset><legend>Company</legend><div class="plc-grid">
+      <label>Company name *<input id="pfCo" value="${v('company')}" required maxlength="80"></label>
+      <label>Industry<input id="pfIn" value="${v('industry')}"></label>
+      <label>Website<input id="pfWe" value="${v('website')}" placeholder="https://"></label>
+      <label>Company location<input id="pfLo" value="${v('location')}"></label>
+      <label class="wide">Company description<textarea id="pfDe" rows="2">${esc(d&&d.description||'')}</textarea></label></div></fieldset>
+    <fieldset><legend>Job</legend><div class="plc-grid">
+      <label>Job role *<input id="pfRo" value="${v('role')}" required maxlength="80"></label>
+      <label>CTC, lakh per annum *<input id="pfCt" type="number" step="0.1" min="0.5" value="${v('ctc')}" required></label>
+      <label>Job location<input id="pfJl" value="${v('job_location')}"></label>
+      <label>Employment type${sel('pfEm',['Full-time','Internship','Internship + full-time'],d&&d.employment_type||'Full-time')}</label>
+      <label>Work mode${sel('pfWm',['On-site','Hybrid','Remote'],d&&d.work_mode||'On-site')}</label>
+      <label class="plc-chk"><input type="checkbox" id="pfDr" ${d&&d.dream?'checked':''}>Dream drive (open to placed students at 1.5x their offer)</label>
+      <label class="wide">Job description<textarea id="pfJd" rows="2">${esc(d&&d.job_description||'')}</textarea></label></div></fieldset>
+    <fieldset><legend>Drive</legend><div class="plc-grid">
+      <label>Drive date *<input id="pfDd" type="date" value="${v('drive_date')}" required></label>
+      <label>Reporting time<input id="pfTm" type="time" value="${v('drive_time')||'09:30'}"></label>
+      <label>Registration opens<input id="pfRs" type="date" value="${v('reg_start')}"></label>
+      <label>Registration closes *<input id="pfRe" type="date" value="${v('reg_end')}" required></label>
+      <label>Interview date<input id="pfIv" type="date" value="${v('interview_date')}"></label>
+      <label>Openings<input id="pfOp" type="number" min="1" value="${v('openings')}"></label>
+      <label>Venue<input id="pfVe" value="${v('venue')}"></label>
+      <label class="wide">Selection process<input id="pfSp" value="${v('selection_process')}" placeholder="Aptitude test · technical interview · HR interview"></label></div></fieldset>
+    <fieldset><legend>Eligibility criteria</legend><div class="plc-grid">
+      <label>Minimum CGPA<input id="pfCg" type="number" step="0.01" min="0" max="10" value="${cv('min_cgpa')}"></label>
+      <label>Backlogs allowed<input id="pfBl" type="number" min="0" value="${cv('max_backlogs')}"></label>
+      <label>10th, minimum %<input id="pfT0" type="number" step="0.1" min="0" max="100" value="${cv('min_tenth')}"></label>
+      <label>12th, minimum %<input id="pfT2" type="number" step="0.1" min="0" max="100" value="${cv('min_twelfth')}"></label>
+      <label>Diploma (lateral entry), minimum %<input id="pfDp" type="number" step="0.1" min="0" max="100" value="${cv('min_diploma')}"></label>
+      <label>Graduating batch<input id="pfBa" value="${attr((c.batches||[]).join(', '))}" placeholder="e.g. 2027"></label>
+      <div class="wide"><span class="plc-l">Departments *</span>${box('pfDept',CAL_D,c.depts||[])}</div>
+      <div><span class="plc-l">Semesters *</span>${box('pfSem',[3,5,7],c.sems||[])}</div>
+      <div><span class="plc-l">Sections (none ticked: all)</span>${box('pfSec',['A','B'],c.sections||[])}</div></div></fieldset>
+    <p class="cap">Saving only prepares it: the placement agent checks every field, shows who these criteria take in, and waits for your yes. A new drive starts as a draft.</p>
+    <div class="cal-acts"><button class="btn" type="submit">${d?'Prepare the change':'Prepare the drive'}</button><button class="btn ghost" type="button" data-x>Cancel</button></div></form>`;
+  document.body.appendChild(w);
+  const q=s=>w.querySelector(s), ticks=n=>[...w.querySelectorAll(`[name=${n}]:checked`)].map(x=>x.value).join(', ');
+  w.querySelector('[data-x]').onclick=()=>w.remove();
+  w.addEventListener('keydown',e=>{if(e.key==='Escape')w.remove();});
+  q('form').onsubmit=e=>{e.preventDefault();
+    const a={company:q('#pfCo').value.trim(),industry:q('#pfIn').value.trim(),website:q('#pfWe').value.trim(),location:q('#pfLo').value.trim(),
+      description:q('#pfDe').value.trim(),role:q('#pfRo').value.trim(),ctc:q('#pfCt').value,job_location:q('#pfJl').value.trim(),
+      employment_type:q('#pfEm').value,work_mode:q('#pfWm').value,dream:q('#pfDr').checked,job_description:q('#pfJd').value.trim(),
+      drive_date:q('#pfDd').value,drive_time:q('#pfTm').value,reg_start:q('#pfRs').value,reg_end:q('#pfRe').value,
+      interview_date:q('#pfIv').value,openings:q('#pfOp').value,venue:q('#pfVe').value.trim(),selection_process:q('#pfSp').value.trim(),
+      min_cgpa:q('#pfCg').value,max_backlogs:q('#pfBl').value,min_tenth:q('#pfT0').value,min_twelfth:q('#pfT2').value,
+      min_diploma:q('#pfDp').value,batches:q('#pfBa').value.trim(),depts:ticks('pfDept'),sems:ticks('pfSem'),sections:ticks('pfSec')};
+    if(d)a.drive=String(d.id);
+    Object.keys(a).forEach(k=>{if(a[k]===''&&k!=='sections'&&k!=='batches')delete a[k];});
+    w.remove();plcPropose('save_placement_drive',a);};
+  setTimeout(()=>q('#pfCo').focus(),20);
+}
+async function plcPropose(tool,args){
+  const res=$('#plcRes');
+  res.innerHTML='<div class="pnl"><div class="loading-state">The placement agent is checking it</div></div>';
+  res.scrollIntoView({block:'nearest'});
+  const r=await api('/api/placement/propose',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({tool,args,session:SID})});
+  if(r.trace&&r.trace.length)MESH.play(r.trace,`placement · ${tool}`,r);
+  const d=r.data||{};
+  if(!d.BLOCKED){res.innerHTML=`<div class="pnl">${blocksHTML(r.blocks)||esc(d.error||r.error||'It could not be checked.')}</div>`;return;}
+  res.innerHTML=`<div class="pnl">${blocksHTML(r.blocks)}<div class="cal-acts">
+      <button class="btn ok" type="button" id="plcYes">Yes, go ahead</button>
+      <button class="btn ghost" type="button" id="plcNo">No, discard it</button></div></div>`;
+  push('bot',`<p><b>From the placement page.</b> Staged for your approval: ${esc(d.proposal||'')}.</p>`+blocksHTML(r.blocks));
+  setChips(r.chips);
+  const reply=async text=>{
+    push('user',`<p>${esc(text)}</p>`);
+    const c=await api('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text,session:SID,engine:'rule'})});
+    MESH.play(c.trace||[],text,c);
+    const html=approvalMark(c.trace)+blocksHTML(c.blocks);
+    push('bot',html);setChips(c.chips);
+    if(c.refresh)await renderPlc(PLC.el);
+    $('#plcRes').innerHTML=`<div class="pnl">${html}</div>`;
+  };
+  $('#plcYes').onclick=()=>reply('Yes, go ahead');
+  $('#plcNo').onclick=()=>reply('No, discard it');
 }
 async function renderAcc(el){
   // Reads only (/api/panel/accreditation_evidence): every figure comes with its

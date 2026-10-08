@@ -18,10 +18,10 @@
       <div class="menu"><button type="button" data-m="pw">Change my password</button><button type="button" data-m="out">Sign out</button></div>
     </div>
   </header>
-  <nav class="tabs"><button class="on" data-t="day">Your day</button><button class="staff-only hidden" data-t="tt">Timetable</button><button data-t="cal">Calendar</button><button data-t="chat">Assistant</button></nav>
+  <nav class="tabs"><button class="on" data-t="day">Your day</button><button class="staff-only hidden" data-t="tt">Timetable</button><button class="student-only hidden" data-t="plc">Placement drives</button><button data-t="cal">Calendar</button><button data-t="chat">Assistant</button></nav>
   <main>
     <section class="col day on" id="day">
-      <div class="hd"><div class="seg" role="tablist" aria-label="Views"><button class="on" data-t="day" role="tab">Your day</button><button class="staff-only hidden" data-t="tt" role="tab">Timetable</button><button data-t="cal" role="tab">Calendar</button></div><button class="btn sm ghost" id="refresh" type="button">Refresh</button></div>
+      <div class="hd"><div class="seg" role="tablist" aria-label="Views"><button class="on" data-t="day" role="tab">Your day</button><button class="staff-only hidden" data-t="tt" role="tab">Timetable</button><button class="student-only hidden" data-t="plc" role="tab">Placement drives</button><button data-t="cal" role="tab">Calendar</button></div><button class="btn sm ghost" id="refresh" type="button">Refresh</button></div>
       <div id="home"><div class="loading">Loading your day…</div></div>
       <div id="calbox" class="hidden">
         <div class="cal-bar"><button class="cal-nav" id="calPrev" type="button" aria-label="Previous month">‹</button>
@@ -50,6 +50,15 @@
       <div id="attbox" class="hidden">
         <div class="cal-bar"><button class="cal-nav" id="attBack" type="button" aria-label="Back to the timetable">‹</button><h3>Attendance</h3></div>
         <div id="attBody"></div>
+      </div>
+      <div id="plcbox" class="hidden">
+        <div class="cal-bar"><h3>Placement drives</h3></div>
+        <div id="plcList"><div class="loading">Loading the drives…</div></div>
+        <p class="cal-note">Every drive has its own criteria. Whether you can apply is worked out from your record, criterion by criterion; nothing you could change on this page affects it.</p>
+      </div>
+      <div id="drvbox" class="hidden">
+        <div class="cal-bar"><button class="cal-nav" id="drvBack" type="button" aria-label="Back to the drives">‹</button><h3 id="drvTitle">Drive</h3></div>
+        <div id="drvBody"></div>
       </div>
       <div id="mkbox" class="hidden">
         <div class="cal-bar"><button class="cal-nav" id="mkBack" type="button" aria-label="Back">‹</button><h3 id="mkTitle">Marks</h3></div>
@@ -111,15 +120,16 @@ async function loadHome(){
 // three views: the day and the calendar share the left column, the assistant
 // has the right; on a phone each is a tab of its own
 // a teacher also has the timetable, and under it the attendance and marks desks
-const VIEWS={day:'#home',tt:'#ttbox',cal:'#calbox',att:'#attbox',mk:'#mkbox'};
-function tab(t){const top=t==='att'||t==='mk'?'tt':t;
+const VIEWS={day:'#home',tt:'#ttbox',cal:'#calbox',att:'#attbox',mk:'#mkbox',plc:'#plcbox',drv:'#drvbox'};
+function tab(t){const top=t==='att'||t==='mk'?'tt':t==='drv'?'plc':t;
   $$('[data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t===top));
   $('#day').classList.toggle('on',t!=='chat');$('#chat').classList.toggle('on',t==='chat');
   if(t==='chat')return;
   Object.entries(VIEWS).forEach(([k,s])=>$(s).classList.toggle('hidden',k!==t));
   $('#refresh').classList.toggle('hidden',t!=='day');
   if(t==='cal'&&!CAL.month)loadCal();
-  if(t==='tt')loadTT(TT.date);}
+  if(t==='tt')loadTT(TT.date);
+  if(t==='plc')loadPlc();}
 $$('[data-t]').forEach(b=>b.onclick=()=>tab(b.dataset.t));
 /* ---------------- calendar (#104) ----------------
    Read-only. /api/me/calendar runs the CalendarAgent's read tool as the
@@ -371,6 +381,49 @@ $('#mkbox').addEventListener('click',e=>{
 });
 $('#mkBack').onclick=()=>MK.mode==='sheet'?openMarks():tab('tt');
 
+/* ---------------- placement drives (#115) ----------------
+   Two reads run as the signed-in student (/api/me/read: placement_drives,
+   drive_details), so what comes back is only theirs, and every criterion row
+   is computed on the server from their record. Apply only stages
+   (/api/me/propose); the student's Confirm is their own next turn, and the
+   PlacementAgent checks eligibility again from the records before it writes. */
+async function loadPlc(){
+  const d=(await read('placement_drives',{})).data||{};
+  if(d.error||d.DENIED){$('#plcList').innerHTML=empty(d.error||d.DENIED);return;}
+  const sec=(k,title,cls)=>(d[k]||[]).length?`<h4 class="blk">${esc(title)}</h4>`+d[k].map(x=>`<div class="plc-card ${cls}"><div>
+      <b>${esc(x.company)} · ${esc(x.role)}</b>
+      <span>₹${esc(x.ctc)} LPA · ${esc(x.job_location||x.location||'')} · drive ${esc(MawosCalendar.longDate(x.drive_date))} · registration closes ${esc(x.reg_end?MawosCalendar.longDate(x.reg_end):'—')}</span>
+      ${k==='other'?`<span class="why">${esc((x.reasons||[]).join('; '))}</span>`:''}</div>
+      <div class="desk-act"><span class="desk-att">${esc(x.action)}</span><button type="button" class="btn sm ghost" data-drv="${attr(x.id)}">Details</button></div></div>`).join(''):'';
+  const offers=(d.offers||[]).length?`<p class="desk-state">Your offers: ${d.offers.map(o=>`<b>${esc(o.company)}</b> ₹${esc(o.ctc)} LPA`).join(', ')}</p>`:'';
+  $('#plcList').innerHTML=(offers+sec('eligible','You can apply','ok')+sec('applied','Your applications','app')
+    +sec('other','Open drives you are not eligible for','no')+sec('closed','Closed drives',''))||empty('No placement drives are published yet.');
+}
+async function openDrive(id){
+  tab('drv');$('#drvBody').innerHTML='<div class="loading">Loading…</div>';
+  const d=(await read('drive_details',{drive:String(id)})).data||{};
+  if(d.error||d.DENIED){$('#drvBody').innerHTML=empty(d.error||d.DENIED);return;}
+  const x=d.drive,y=d.you;
+  const kv=[['Role',x.role],['CTC',`₹${x.ctc} LPA`+(x.dream?' · dream drive':'')],['Location',x.job_location||x.location||'—'],
+    ['Work mode',x.work_mode||'—'],['Employment',x.employment_type||'—'],
+    ['Drive',`${MawosCalendar.longDate(x.drive_date)}${x.drive_time?' · '+x.drive_time:''}`],
+    ['Registration closes',x.reg_end?MawosCalendar.longDate(x.reg_end):'—'],['Openings',x.openings||'—']];
+  $('#drvTitle').textContent=x.company;
+  $('#drvBody').innerHTML=`<div class="desk-kv">${kv.map(([k,v])=>`<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>
+    ${x.description?`<p class="desk-state">${esc(x.description)}</p>`:''}
+    ${x.job_description?`<p class="desk-state"><b>The job.</b> ${esc(x.job_description)}</p>`:''}
+    ${x.selection_process?`<p class="desk-state"><b>Selection.</b> ${esc(x.selection_process)}</p>`:''}
+    <h4 class="blk">${esc(y.eligible?`You are eligible for ${x.company}.`:`You are not eligible for ${x.company}.`)}</h4>
+    <div class="tblwrap dense"><table class="plc-crit"><thead><tr><th>Criterion</th><th>Required</th><th>You</th><th></th></tr></thead><tbody>
+    ${y.criteria.map(c=>`<tr><td>${esc(c.label)}</td><td>${esc(c.required)}</td><td>${esc(c.actual)}</td><td class="${c.ok?'met':'unmet'}">${c.ok?'Met':'Not met'}</td></tr>`).join('')}</tbody></table></div>
+    <p class="desk-state">Academic criteria ${y.academic_ok?'met':'not met'} · department, semester and batch ${y.cohort_ok?'met':'not met'} · placement policy ${y.policy_ok?'met':'not met'}.</p>
+    <div class="desk-foot">${y.can_apply?`<button class="btn" type="button" id="drvApply">Apply now</button>`:`<span class="st Recorded">${esc(y.action)}</span>`}</div>
+    <div id="drvProp"></div>`;
+  if($('#drvApply'))$('#drvApply').onclick=()=>propose('apply_to_drive',{drive:String(x.id)},'#drvProp',()=>openDrive(x.id));
+}
+$('#plcbox').addEventListener('click',e=>{const b=e.target.closest('[data-drv]');if(b)openDrive(b.dataset.drv);});
+$('#drvBack').onclick=()=>tab('plc');
+
 $('#send').onclick=()=>say($('#ta').value);
 $('#ta').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();say($('#ta').value)}});
 $('#ta').addEventListener('input',e=>{e.target.style.height='auto';e.target.style.height=e.target.scrollHeight+'px'});
@@ -391,6 +444,7 @@ document.addEventListener('click',e=>{const p=e.target.closest('[data-print]');i
   $('#av').textContent=ME.name.split(' ').filter(w=>!/^(Dr|Prof)\.?$/.test(w)).map(w=>w[0]).join('').slice(0,2);
   $('#roleLabel').textContent=ROLE[ME.role]+' view';
   $$('.staff-only').forEach(e=>e.classList.toggle('hidden',ME.role==='student'));
+  $$('.student-only').forEach(e=>e.classList.toggle('hidden',ME.role!=='student'));
   $('#calNote').textContent=ME.role==='student'?'Only what is meant for your class is shown. The Registrar\'s office keeps this calendar.'
     :'Everything that reaches a class in your department is shown. The Registrar\'s office keeps this calendar.';
   push('bot',`<p><strong>Hello, ${esc(first)}.</strong> I work with the agents that keep your ${ME.role==='student'?'classes, attendance, dues, gate passes and certificates':'classes, mentees and leave'}${ME.role==='hod'?', and your department,':''} and I only see what is yours.</p><p>Ask for something in your own words. If it files or changes anything, you will see it first, and nothing is sent until you say yes.</p>`);

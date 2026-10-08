@@ -606,6 +606,27 @@ textarea::placeholder, input::placeholder { color: var(--muted) }
 .desk-comps { display: flex; flex-wrap: wrap; gap: 6px }
 @media (max-width: 560px) { .desk-cls { grid-template-columns: 56px minmax(0, 1fr) } .desk-side { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; align-items: center } }
 
+/* ===================================================== placement drives (#115)
+   The console's drive form and list, and the student's drive cards. Every
+   class starts plc- . Violet stays on the approval buttons alone. */
+.plc-sub { margin-top: 2px; color: var(--graphite); font-size: 11.5px }
+.plc-acts { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end }
+.plc-modal { position: fixed; inset: 0; z-index: 100; display: grid; place-items: start center; overflow: auto; padding: 24px 16px; background: rgba(15, 23, 42, .45) }
+.plc-form { width: min(760px, 100%); padding: 18px 20px 16px; border-radius: 12px; background: var(--surface); box-shadow: var(--float) }
+.plc-form h3 { margin: 0 0 6px; font: 600 18px var(--display); color: var(--ink) }
+.plc-form fieldset { margin: 10px 0 0; padding: 10px 12px 12px; border: 1px solid var(--rule); border-radius: var(--r-s) }
+.plc-form legend { padding: 0 6px; color: var(--ink-2); font-size: 12.5px; font-weight: 600 }
+.plc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px 12px }
+.plc-grid label, .plc-l { display: block; color: var(--graphite); font-size: 11.5px; font-weight: 600 }
+.plc-grid input:not([type=checkbox]), .plc-grid select, .plc-grid textarea { display: block; width: 100%; margin-top: 3px; padding: 6px 9px; border: 1px solid var(--rule-2); border-radius: 7px; background: var(--surface); font: 13px/1.4 inherit; color: var(--ink) }
+.plc-grid .wide { grid-column: 1 / -1 }
+.plc-chk { display: inline-flex !important; align-items: center; gap: 5px; margin: 6px 12px 0 0; color: var(--ink-2) !important; font-weight: 500 !important; font-size: 12.5px !important }
+.plc-card { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; padding: 12px 14px; border: 1px solid var(--rule); border-left: 3px solid var(--rule-2); border-radius: var(--r-s); background: var(--surface) }
+.plc-card.ok { border-left-color: var(--ok) } .plc-card.no { border-left-color: var(--bad) } .plc-card.app { border-left-color: var(--blue) }
+.plc-card b { color: var(--ink) } .plc-card span { display: block; color: var(--graphite); font-size: 12.5px }
+.plc-card .why { color: var(--bad) }
+.plc-crit td.met { color: var(--ok); font-weight: 600 } .plc-crit td.unmet { color: var(--bad); font-weight: 600 }
+
 /* ===================================================== academic calendar (#104)
    One colour per kind of entry, drawn as a rule down the pill's left edge on a
    pale ground. None of them is violet: violet means approval and nothing else.
