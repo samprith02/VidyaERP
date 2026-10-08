@@ -71,13 +71,43 @@ async def signed_in(request: Request, call_next):
     return await call_next(request)
 
 
+def _git_dirs(root):
+    """(git dir, common dir) for a checkout, or (None, None).
+
+    In a linked worktree `.git` is a FILE ("gitdir: <path>") naming a private
+    directory that holds HEAD; the branches and packed-refs stay in the main
+    repository, which that directory's `commondir` points back to. Reading
+    `.git/HEAD` as a path found nothing there, so /health said "unavailable"
+    in every worktree (#113).
+    """
+    g = os.path.join(root, ".git")
+    if os.path.isfile(g):
+        try:
+            with open(g, encoding="utf-8") as f:
+                line = f.read().strip()
+        except OSError:
+            return None, None
+        if not line.startswith("gitdir:"):
+            return None, None
+        g = os.path.normpath(os.path.join(root, line[len("gitdir:"):].strip()))
+    common = g
+    try:
+        with open(os.path.join(g, "commondir"), encoding="utf-8") as f:
+            common = os.path.normpath(os.path.join(g, f.read().strip()))
+    except OSError:
+        pass
+    return g, common
+
+
 def _git_head(root):
     """(commit, branch) read straight out of .git, with no subprocess.
 
     Only for local development — a deployment gets the commit from the platform
     instead. Resolved once at import, never per request.
     """
-    g = os.path.join(root, ".git")
+    g, common = _git_dirs(root)
+    if g is None:
+        return None, None
     try:
         with open(os.path.join(g, "HEAD"), encoding="utf-8") as f:
             head = f.read().strip()
@@ -86,14 +116,16 @@ def _git_head(root):
     if not head.startswith("ref:"):
         return head, None                                   # detached HEAD
     ref = head.split(" ", 1)[1].strip()
-    branch = ref.rsplit("/", 1)[-1]
-    try:
-        with open(os.path.join(g, ref), encoding="utf-8") as f:
-            return f.read().strip(), branch
-    except OSError:
-        pass
+    # the whole branch name: "docs/sync-after-104" is one branch, not "sync-after-104"
+    branch = ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
+    for d in (g, common):
+        try:
+            with open(os.path.join(d, ref), encoding="utf-8") as f:
+                return f.read().strip(), branch
+        except OSError:
+            pass
     try:                                                    # a packed ref
-        with open(os.path.join(g, "packed-refs"), encoding="utf-8") as f:
+        with open(os.path.join(common, "packed-refs"), encoding="utf-8") as f:
             for line in f:
                 if line.rstrip().endswith(" " + ref):
                     return line.split()[0], branch

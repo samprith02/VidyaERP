@@ -73,6 +73,30 @@ for q in ["What needs my attention today?", "Brief me on today's institution sta
     seen |= {t["agent"] for t in orch.handle(con, q, "mesh")["trace"]}
 check("1d every agent a real rule-engine run emits is in the catalog", seen <= CATALOG, str(seen - CATALOG))
 
+# #113: the sign-in page, the console's welcome and the persona all said
+# "sixteen agents" long after the measured figure (#107) had moved on. A count
+# typed into copy goes stale silently, so the copy states none; the README's
+# figures come from make_charts.py.
+_NUM = (r"\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|"
+        r"fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty")
+_COUNT_RX = re.compile(r"\b(" + _NUM + r")[ -]+(specialist )?agents\b", re.I)
+_typed = {}
+for _f in ["static/login.html", "static/index.html", "static/portal.html", "static/mesh.js",
+           "orchestrator.py", "campus.py", "portal.py", "llm_agent.py"]:
+    _hits = _COUNT_RX.findall(open(os.path.join(HERE, _f), encoding="utf-8").read())
+    if _hits:
+        _typed[_f] = _hits
+check("1e no page or reply states an agent count typed by hand", not _typed, str(_typed))
+_notify = re.search(r"'NotifyAgent':.*", MESH).group(0)
+check("1f the NotifyAgent card does not say there is no gateway (#26 added one)",
+      "no gateway" not in _notify and "configured" in _notify, _notify)
+orch.SESS.pop("mesh", None)
+_radar = tools.execute(con, S(), "", "ops_radar", {})["trace"]
+_asked = {t[0] for t in _radar[1:-1]}                             # (agent, action, detail)
+check("1g the radar's 'asking N agents' is the number it asked",
+      _radar[0][0] == "OpsRadar" and f"asking {len(_asked)} agents" in _radar[0][2],
+      f"{_radar[0]} vs {sorted(_asked)}")
+
 # ======================================================= 2 · failures are said
 print("\n2 · a failed tool call is reported as an error, on the agent that owns it")
 print("-" * 78)

@@ -338,7 +338,8 @@ ships a timetable back.
   nothing at all, just a stale box behind a green health check. Compare
   `curl .../health | grep short` against `git rev-parse --short HEAD` rather than inferring from
   behaviour. `app.resolve_build()` takes the platform's `RENDER_GIT_COMMIT` first and falls back
-  to reading `.git/HEAD` directly (no subprocess, resolved once at import);
+  to reading `.git/HEAD` directly (no subprocess, resolved once at import; a linked worktree's
+`.git` file is followed to the shared refs, and a branch keeps its slashes, `deploy_test.py:3u-3y`);
   `deploy_test.py:3q-3t` exercise the env read itself, not just the reporting — asserting on the
   module constant alone passes even when the variable is never read.
   **Still unresolved as of 2026-10-07 (#15):** the likely cause is the Render GitHub App's access to
@@ -390,12 +391,12 @@ ships a timetable back.
 python tests/solver_test.py    # 53 assertions, no server, no API cost
 python tests/mcp_parity.py     # 323 assertions, no server, no API cost
 python tests/campus_test.py    # 160 assertions, no server, no API cost
-python tests/mesh_test.py      # 25 assertions, no server, no API cost (6a-6c need node)
+python tests/mesh_test.py      # 28 assertions, no server, no API cost (6a-6c need node)
 python tests/auth_test.py      # 111 assertions, no server, no API cost
 python tests/makeup_test.py    # 33 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
-python tests/deploy_test.py    # 85 assertions, no server, no API cost
+python tests/deploy_test.py    # 90 assertions, no server, no API cost
 python tests/nlu_test.py       # 49 assertions, no server, no API cost
 python tests/language_test.py  # 19 assertions, no server, no API cost
 python tests/cie_test.py       # 59 assertions, no server, no API cost
@@ -419,7 +420,9 @@ and commit the SVGs with the change; the charts must never disagree with the cod
 `docs/img/` were taken headlessly (see the README's "How the screenshots and charts were made").
 The README's agent figure is measured too (#107): a *specialist* is an agent that owns a tool
 (`tools.TOOL_AGENT`, 21), and the mesh total is read from `static/mesh.js`'s `CATALOG` (33).
-A new agent name moves both; never type the number into the README by hand.
+A new agent name moves both; never type the number into the README by hand, nor into a page or
+a reply: the sign-in page, the console's welcome and the persona said "sixteen" long after it had
+stopped being true, so they state no count now (`mesh_test.py` 1e; #113).
 
 `ranking_test.py` is the one to run after touching `SubstitutionAgent`. Four of its assertions
 encode real defects and say so in their comments — leave them labelled: a swap must not change the

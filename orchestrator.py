@@ -1074,8 +1074,8 @@ def h_fallback(con, text, ent, st, tr, actor):
             ["Faculty leave", "“Review pending leave applications”"],
             ["Student 360", "“Everything about 4VP24CS017”"]]
     return {"blocks": [
-        B_text("I'm **MAWOS**, the Multi-Agent Workflow Orchestration System: a supervisor with sixteen specialist agents behind it "
-               "(timetable, substitution, faculty, student, finance, exam, approvals, notifications, analytics, "
+        B_text("I'm **MAWOS**, the Multi-Agent Workflow Orchestration System: a supervisor with specialist agents behind it "
+               "(among them timetable, substitution, faculty, student, finance, exam, approvals, notifications, analytics, "
                "library, hostel, transport, gate pass, placement, documents, HR). "
                "I didn't catch a clear intent in that. Here's what I can do:"),
         B_table(["Domain", "Try saying"], caps)],

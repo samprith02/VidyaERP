@@ -5,7 +5,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![Dependencies: 2](https://img.shields.io/badge/dependencies-2-brightgreen.svg)](requirements.txt)
-[![Tests: 1447 assertions](https://img.shields.io/badge/tests-1447_assertions_passing-brightgreen.svg)](#tests)
+[![Tests: 1455 assertions](https://img.shields.io/badge/tests-1455_assertions_passing-brightgreen.svg)](#tests)
 [![Tools: 82, 29 gated](https://img.shields.io/badge/tools-82_·_29_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
 [![Data: synthetic](https://img.shields.io/badge/data-100%25_synthetic-lightgrey.svg)](NOTICE)
 
@@ -41,7 +41,7 @@ load no external scripts, styles or fonts.
 
 | | | | |
 |:--|:--|:--|:--|
-| **21** specialist agents, **33** in the mesh | **82** tools · **29** writes, every one gated | **1447** test assertions, 0 failing | **2** dependencies |
+| **21** specialist agents, **33** in the mesh | **82** tools · **29** writes, every one gated | **1455** test assertions, 0 failing | **2** dependencies |
 | **271** absences swept: the top plan fully covers **268** | **456 / 456** periods placed by the solver, 0 clashes | **94%** less tool payload per LLM turn | **0** external assets in the console |
 
 Every number above is measured by [`docs/charts/make_charts.py`](docs/charts/make_charts.py) and
@@ -201,19 +201,19 @@ flowchart LR
 ### Tests
 
 <p align="center">
-  <img src="docs/charts/tests.svg" alt="Bar chart: 1447 assertions across 20 suites, all passing. mcp_parity 323, campus_test 160, calendar_test 127, auth_test 111, deploy_test 85, teaching_test 77, placement_test 77, cie_test 59, ranking_test 57, solver_test 53, notify_test 50, nlu_test 49, cohort_test 40, makeup_test 33, dashboard_test 33, accreditation_test 28, mesh_test 25, academics_test 24, language_test 19, risk_test 17" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 1455 assertions across 20 suites, all passing. mcp_parity 323, campus_test 160, calendar_test 127, auth_test 111, deploy_test 90, teaching_test 77, placement_test 77, cie_test 59, ranking_test 57, solver_test 53, notify_test 50, nlu_test 49, cohort_test 40, makeup_test 33, dashboard_test 33, mesh_test 28, accreditation_test 28, academics_test 24, language_test 19, risk_test 17" width="760">
 </p>
 
 ```bash
 python3 tests/solver_test.py  # timetable solver: 53 assertions, no server, no API cost
 python3 tests/mcp_parity.py   # MCP guard parity: 323 assertions, no server, no API cost
 python3 tests/campus_test.py  # campus services: 160 assertions, no server, no API cost
-python3 tests/mesh_test.py    # the agent mesh's fault channel and approval stamp: 25 assertions, no server, no API cost
+python3 tests/mesh_test.py    # the agent mesh's fault channel and approval stamp: 28 assertions, no server, no API cost
 python3 tests/auth_test.py    # logins, route gating, per-role policy: 111 assertions, no server, no API cost
 python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits verified by re-read: 33 assertions, no server, no API cost
 python3 tests/academics_test.py # standing faculty availability, honoured by every planner: 24 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
-python3 tests/deploy_test.py  # deployment readiness: 85 assertions, no server, no API cost
+python3 tests/deploy_test.py  # deployment readiness: 90 assertions, no server, no API cost
 python3 tests/nlu_test.py     # date resolution, ISO dates included: 49 assertions, no server, no API cost
 python3 tests/language_test.py # Kannada and Hindi input, never widening the write gate: 19 assertions, no server, no API cost
 python3 tests/cie_test.py     # CIE marks: seed, standing, validated gated entry, role scope: 59 assertions, no server, no API cost
