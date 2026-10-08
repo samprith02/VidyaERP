@@ -645,6 +645,8 @@ def route(con, text, P, ent):
         return "attendance_history", {}
     if TAKE_RX.search(t):
         d = ent.get("date") or TODAY
+        if con is None:                              # routed without a database: the day it would resolve from
+            return "teaching_day", {"date": d.isoformat()}
         items = [r for r in day_classes(con, P["fid"], d) if r["attendance"]["can_take"]]
         # "P3" is how a teacher names an hour; nlu.extract_periods reads "period 3" / "3rd hour"
         periods = ent.get("periods") or [int(p) for p in re.findall(r"\bp([1-7])\b", t)]
@@ -679,6 +681,8 @@ def route(con, text, P, ent):
     if re.search(r"\b(?:enter|record|fill|upload|add|open)\b.*\b(?:marks?|ia ?[12]|internals?)\b", t) \
             and not USN_RX.search(t):
         import academics
+        if con is None:
+            return "cie_sheet", {}
         mine = academics._courses(con, teacher=P["fid"])
         named = _subject_hint(text, mine)
         if ent.get("section") and len(named) > 1:
