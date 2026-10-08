@@ -1649,7 +1649,8 @@ def t_ops_radar(con, S, U, **kw):
                               f"button hands the job to the agent that owns it — it prepares the change and "
                               f"shows you exactly what it would do; nothing is written until you say yes."),
                        B_actions(items, title="Ops radar")],
-            "trace": [("OpsRadar", "fan_out", "asking 9 agents what needs a human today")] + tr
+            "trace": [("OpsRadar", "fan_out",
+                       f"asking {len({t[0] for t in tr})} agents what needs a human today")] + tr
                      + [("OpsRadar", "rank", f"{len(items)} items · severity, then records affected")],
             "chips": [i["command"] for i in items[:4]]}
 

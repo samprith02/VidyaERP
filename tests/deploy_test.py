@@ -316,6 +316,53 @@ check("3t a blank platform variable does not count as an answer",
       A.resolve_build({"RENDER_GIT_COMMIT": "   "})[2] == "git",
       "an empty env var must fall through, not report an empty commit")
 
+
+# #113: git's own layouts, built by hand so they do not depend on how this
+# suite's checkout happens to be laid out. A branch name keeps its slashes, and
+# a linked worktree (where .git is a FILE pointing at a private directory, and
+# the branches live back in the main repository) still resolves.
+def _w(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+
+
+_fx = tempfile.mkdtemp(prefix="vidya-git-")
+_sha1, _sha2, _sha3 = "1" * 40, "2" * 40, "3" * 40
+_main = os.path.join(_fx, "main")
+_w(os.path.join(_main, ".git", "HEAD"), "ref: refs/heads/docs/sync-after-104\n")
+_w(os.path.join(_main, ".git", "refs", "heads", "docs", "sync-after-104"), _sha1 + "\n")
+_w(os.path.join(_main, ".git", "refs", "heads", "feat", "x"), _sha2 + "\n")
+_w(os.path.join(_main, ".git", "packed-refs"),
+   "# pack-refs with: peeled fully-peeled sorted\n" + _sha3 + " refs/heads/fix/packed\n")
+check("3u a branch name keeps its slashes",
+      A._git_head(_main) == (_sha1, "docs/sync-after-104"), str(A._git_head(_main)))
+
+_wt_dir = os.path.join(_main, ".git", "worktrees", "wt")          # git's private dir
+_w(os.path.join(_wt_dir, "HEAD"), "ref: refs/heads/feat/x\n")
+_w(os.path.join(_wt_dir, "commondir"), "../..\n")
+_wt = os.path.join(_fx, "wt")
+_w(os.path.join(_wt, ".git"), "gitdir: " + _wt_dir + "\n")
+check("3v a linked worktree resolves through its .git file to the shared branches",
+      A._git_head(_wt) == (_sha2, "feat/x"), str(A._git_head(_wt)))
+check("3w and /health's resolver reports it as git, not unavailable",
+      A.resolve_build({}, root=_wt) == (_sha2, "feat/x", "git"), str(A.resolve_build({}, root=_wt)))
+
+_wt2_dir = os.path.join(_main, ".git", "worktrees", "wt2")
+_w(os.path.join(_wt2_dir, "HEAD"), "ref: refs/heads/fix/packed\n")
+_w(os.path.join(_wt2_dir, "commondir"), "../..\n")
+_wt2 = os.path.join(_main, "nested")                               # a relative gitdir
+_w(os.path.join(_wt2, ".git"), "gitdir: ../.git/worktrees/wt2\n")
+check("3x a relative gitdir and a packed branch both resolve",
+      A._git_head(_wt2) == (_sha3, "fix/packed"), str(A._git_head(_wt2)))
+
+_bad = os.path.join(_fx, "bad")
+# its tail names a real git directory, so only the "gitdir:" check stops it being followed
+_w(os.path.join(_bad, ".git"), "notgit: " + os.path.join(_main, ".git") + "\n")
+check("3y a .git file that is not a gitdir pointer is 'unavailable', not followed",
+      A.resolve_build({}, root=_bad) == (None, "", "unavailable"), str(A.resolve_build({}, root=_bad)))
+shutil.rmtree(_fx, ignore_errors=True)
+
 check("3p the 503 path still reports the build",
       "build" in json.loads(body_of(broken)),
       "an unhealthy instance is exactly when you need to know which code it is")

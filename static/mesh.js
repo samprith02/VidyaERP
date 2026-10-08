@@ -66,7 +66,7 @@ const CATALOG = {
   'DocumentAgent':     {g: 'camp', role: 'No-dues clearance and certificates with register serials.', ask: 'Certificate register'},
   'RequestAgent':      {g: 'ops',  role: 'Approvals inbox: raise, route and decide requests.', ask: 'Pending approvals in my inbox'},
   'SLAMonitor':        {g: 'ops',  role: 'Flags requests past their service level.'},
-  'NotifyAgent':       {g: 'ops',  role: 'Drafts and dispatches notices. Recorded, not delivered - there is no gateway.'},
+  'NotifyAgent':       {g: 'ops',  role: 'Drafts and dispatches notices. Delivered through the notice gateway when one is configured; otherwise recorded, not delivered.'},
   'AnalyticsAgent':    {g: 'ops',  role: 'Institution KPIs and the daily brief.', ask: 'Brief me on today\'s institution status'},
   'OpsRadar':          {g: 'ops',  role: 'Asks every agent what needs a human today and ranks the answers.', ask: 'What needs my attention today?'},
   'IQACAgent':         {g: 'ops',  role: 'NAAC and NBA evidence computed from the records, with every gap named.', ask: 'NAAC evidence pack'},
