@@ -150,7 +150,10 @@ function rPerf(b){
 // Buttons that ask the assistant a read-only question (#97); the page sends data-say.
 function rQuick(b){
   return (b.title?`<h4 class="blk">${esc(b.title)}</h4>`:'')+'<div class="quick">'+
-    b.items.map(i=>`<button type="button" class="btn sm ghost" data-say="${attr(i.ask)}">${esc(i.label)}</button>`).join('')+'</div>';
+    // an item either asks the assistant a question (ask) or opens one of the
+    // page's own views (view: the portal's timetable, attendance or marks desk)
+    b.items.map(i=>i.view?`<button type="button" class="btn sm" data-view="${attr(i.view)}">${esc(i.label)}</button>`
+      :`<button type="button" class="btn sm ghost" data-say="${attr(i.ask)}">${esc(i.label)}</button>`).join('')+'</div>';
 }
 let DOCN=0;
 function rDocument(b){

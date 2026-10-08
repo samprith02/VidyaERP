@@ -388,7 +388,7 @@ def portal_turn(con, text, st, tr, P):
 def _portal_chips(P):
     return {"student": ["My day", "My timetable", "My internal marks", "Request a gate pass for Saturday 2pm to 7pm",
                         "My no-dues status", "My requests"],
-            "faculty": ["My day", "My timetable", "Internal marks of my courses", "My mentees",
+            "faculty": ["My day", "My pending attendance", "My timetable", "Internal marks of my courses", "My mentees",
                         "Apply for casual leave on 10 sep", "My leave"],
             "hod": ["Department overview", "Pending leave applications", "Department internal marks",
                     "Faculty workload", "My day"]}.get(
