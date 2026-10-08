@@ -1338,7 +1338,6 @@ it. These are open:
 | [#25](https://github.com/samprith02/VidyaERP/issues/25) | limitation | Hostel gender is inferred from the synthetic first-name pools |
 | [#23](https://github.com/samprith02/VidyaERP/issues/23) | limitation | MCP is stdio, so it cannot reach a remote deployment |
 | [#24](https://github.com/samprith02/VidyaERP/issues/24) | ops | Storage is ephemeral on the free host |
-| [#15](https://github.com/samprith02/VidyaERP/issues/15) | ops | Render auto-deploy does not fire on push |
 
 Shipped from the earlier roadmap: NAAC/NBA evidence (#29, §5e), Kannada and Hindi input (#31, §2),
 CIE marks (#32, §5d), notice delivery (#26, §11), the academic calendar (#104, §5f) and the teaching
@@ -1365,9 +1364,7 @@ that a failed provider call does not echo it back.
 
 ```mermaid
 flowchart LR
-  GH[git push to main] -. webhook, currently not firing .-> RD[Render deploy]
-  GH --> MD[Manual Deploy in the dashboard]
-  MD --> RD
+  GH[git push to main] -- webhook --> RD[Render deploy]
   RD --> HC{GET /health}
   HC -->|db answers| OK[200: build.short = git rev-parse --short HEAD?]
   HC -->|db unreachable| BAD[503: drops out of rotation]
@@ -1405,9 +1402,10 @@ a superseded ranking weight in an API response. `source` says where the commit
 came from: `platform` (Render's `RENDER_GIT_COMMIT`), `git` (local `.git`), or
 `unavailable`.
 
-The underlying cause, most likely the Render GitHub App's access to the repository, is not
-something code can fix, and is unresolved at the time of writing. Until it is, treat every push
-as needing a manual deploy (dashboard → **Manual Deploy**) followed by the check above.
+The cause was access, not configuration (#15). The repository had been connected on Render's
+side, but the Render GitHub App's installation on GitHub did not include it, so GitHub never
+sent the push. Both sides have to grant it. Fixed on 2026-10-08; the check above is still how
+you know a deploy happened, because a webhook that stops arriving fails silently.
 
 An unreachable database returns **503**, so a broken instance drops out of rotation instead of
 serving errors behind a green tick. Nothing secret is in that payload: whether a key is
