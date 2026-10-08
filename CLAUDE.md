@@ -342,12 +342,11 @@ ships a timetable back.
 `.git` file is followed to the shared refs, and a branch keeps its slashes, `deploy_test.py:3u-3y`);
   `deploy_test.py:3q-3t` exercise the env read itself, not just the reporting — asserting on the
   module constant alone passes even when the variable is never read.
-  **Still unresolved as of 2026-10-07 (#15):** the likely cause is the Render GitHub App's access to
-  `samprith02/VidyaERP`, which is fixed in the GitHub/Render dashboards, not in code. Until it is,
-  **every push needs a manual deploy** (Render dashboard → Manual Deploy, or the API trigger), and
-  then the `/health` check above. Every deploy since has been manual; last verified live on
-  2026-10-07: `short: 9161a2f`, `source: platform`. A docs-only commit need not be deployed, so
-  `/health` may then trail `HEAD` by design.
+  **Fixed 2026-10-08 (#15):** the repository was connected on Render's side, but the Render GitHub
+  App's installation on GitHub did not include `samprith02/VidyaERP`, so no push ever reached
+  Render. Granting it on the GitHub side too fixed it. Every deploy from 2026-09-25 to 2026-10-08
+  was manual. Still run the `/health` check after a merge: if the webhook stops again it fails
+  just as silently, and the fallback is a manual deploy (dashboard or the API trigger).
 - **Storage is ephemeral on a free host, and `/health` says so.** `db.seed()` rebuilds the whole
   institution on a cold start (~0.25 s with the campus services), so a restart silently discards
   every applied override.
