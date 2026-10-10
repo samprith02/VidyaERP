@@ -26,7 +26,7 @@ function rNotice(b){
 function rPlans(b){
   return b.plans.map((p,i)=>{
     const legs=p.legs.map(l=>{
-      const cls={SUBSTITUTE:'sub',SWAP:'swap',MAKEUP:'makeup',UNCOVERED:'unc',VACATED:'vacated'}[l.action];
+      const cls={SUBSTITUTE:'sub',SWAP:'swap',MAKEUP:'makeup',UNCOVERED:'unc',VACATED:'vacated',RELEASED:'vacated'}[l.action];
       return `<div class="leg"><div class="p">P${l.period}<br><small style="color:#54648f">${l.time}</small></div>
         <div class="act"><span class="chipx ${cls}">${String(l.action).charAt(0)+String(l.action).slice(1).toLowerCase()}</span></div>
         <div class="d"><b>${esc(l.class)}</b> · ${esc(l.subject)} ${esc(l.subject_name||'')}

@@ -38,9 +38,9 @@ tools) → `tools.py` (82 tool schemas, PolicyGuard-wrapped, role policy enforce
 
 | Piece | Where | Note |
 |---|---|---|
-| PolicyGuard | `agents.py:84` | RBAC, scope, rupee ceilings, HITL gate. **Outside the model** |
-| Substitution | `agents.py:103` | the flagship: absence → 3 ranked coverage plans |
-| Timetable / Faculty / Student / Finance / Exam / Request / Notify / Analytics | `agents.py:367+` | specialists, all return structured dicts |
+| PolicyGuard | `agents.PolicyGuard` | RBAC, scope, rupee ceilings, HITL gate. **Outside the model** |
+| Substitution | `agents.SubstitutionAgent` | the flagship: absence → 3 ranked coverage plans |
+| Timetable / Faculty / Student / Finance / Exam / Request / Notify / Analytics | `agents.TimetableAgent` onward | specialists, all return structured dicts |
 | Auditor | `agents.py` (`class Auditor`) | immutable ledger of who asked, which agent acted, what changed |
 | Campus services | `campus.py` | library, hostel, transport, gate pass, placement, documents, leave review, Student 360, Ops radar — tools + `rule_route` |
 | Campus data | `campus_data.py` | their tables + seed, own `Random`; `ensure()` is additive to an old DB |
@@ -261,13 +261,13 @@ Four things that will bite you:
 - **MRV staleness is fine; stuck-variable thrash is not.** `dom[]` is an ordering heuristic
   refreshed only for variables a placement can affect, because `build_cands()` re-derives the
   truth for the variable actually chosen. But a variable that wipes out repeatedly must be
-  **parked** (`STUCK_LIMIT`, `solver.py:669`). The reference's `recovered` flag goes true when
+  **parked** (`STUCK_LIMIT`, in `solver.solve`). The reference's `recovered` flag goes true when
   some *other* frame retries, so the culprit is never parked and the search oscillates. Measured
   before the fix: 3,205 placements against 3,183 undos, 24 of 456 periods surviving, 20 s budget
   burned. After: 288 ms. Do not raise `STUCK_LIMIT` to "try harder".
 - **Backtracking is conflict-directed, not chronological.** Undoing another department's theory
   period cannot free a lab room, so irrelevant frames are frozen rather than unwound
-  (`related()`, `solver.py:671`). This is why it degrades gracefully instead of collapsing.
+  (`related()`, beside `STUCK_LIMIT` in `solver.solve`). This is why it degrades gracefully instead of collapsing.
 - **Labs run in batches, and a variable has legs (#20).** A section larger than a lab seats (36)
   is split into batches (`students.batch`, `db.assign_batches`, roll order), and its labs ROTATE:
   block j gives batch i lab (i + j) mod L, so the batches are in different labs at once and each
@@ -419,7 +419,7 @@ python tests/mcp_parity.py     # 324 assertions, no server, no API cost
 python tests/campus_test.py    # 160 assertions, no server, no API cost
 python tests/mesh_test.py      # 28 assertions, no server, no API cost (6a-6c need node)
 python tests/auth_test.py      # 111 assertions, no server, no API cost
-python tests/makeup_test.py    # 34 assertions, no server, no API cost
+python tests/makeup_test.py    # 46 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 90 assertions, no server, no API cost
@@ -496,8 +496,8 @@ and room scarcity must degrade rather than collapse.
      penalised `-9` per assignment only A would have made. The plans are alternatives; B has its
      own accumulator now.
 - **Coverage is a floor, not a ranking axis, because it was being counted twice.**
-  `coverage = mean(hours)` (`agents.py:411`) and `continuity = 100·(0.45·hours + …)`
-  (`:412`) — coverage IS the hours term, and continuity already contains 45% of it. The old
+  `coverage = mean(hours)` and `continuity = 100·(0.45·hours + …)`, side by side in
+  `SubstitutionAgent.score_leg` — coverage IS the hours term, and continuity already contains 45% of it. The old
   formula therefore weighted hours at `0.25 + 0.15×0.45 = 0.3175` while the card told the
   administrator they were two separate axes worth 0.25 and 0.15. That double-count is the reason
   the weight is gone, and it holds for every instance. `ranking_test.py:7c/7e/7f` assert the
@@ -562,6 +562,14 @@ and room scarcity must degrade rather than collapse.
   from P1, so no in-week lab window is ever free for a whole batch — measured, plan C found a slot
   for 0 of the lab blocks before. A teacher missing two labs gets the second one honestly marked
   "NOT yet scheduled" rather than the same hour twice.
+- **An absent teacher's activity hours are supervised or released, never made up (#130).** The
+  owner's decision. `build_plans` decides every kind-`A` block ONCE (a free teacher via
+  `rank_candidates`, else `RELEASED`) and puts the same leg in all three plans, so activities cannot
+  pick the winner; only class hours are swapped or deferred. A released hour is written as a
+  `VACATED` override with nobody assigned (grid and desk show it released) and gets no booking.
+  Every card with one says so in its summary. Before: 81 activity make-ups offered across the
+  seeded week, holding a teacher, a room and a class for a Saturday hour (`makeup_test.py` 9a-9l;
+  9f-9l construct the released case, since the seed always has someone free).
 - ~~Teacher unavailability is never populated.~~ **Done 2026-09-25 (#19)** as *standing* weekly
   windows (`faculty_availability`), because a weekly timetable can only honour a weekly
   constraint. Dated leave still drives rescheduling, not generation. The solver reads the windows

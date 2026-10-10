@@ -168,9 +168,11 @@ check("3c a make-up plan is never more timely than same-slot substitution",
       <= min((p["components"]["hours_preserved"] and p["components"]["timing_intact"]
               for p in same_day), default=100),
       f"C timing max {max((p['components']['timing_intact'] for p in deferred), default=0)}")
+# Per leg since #130: plan C also carries the absence's activity hours, which are
+# supervised by someone else or released, so a whole plan C is no longer all make-ups.
 check("3d a make-up is delivered by the subject's own teacher",
-      all(p["components"]["own_teacher"] == 100 for p in deferred
-          if p["coverage"] == 100), "plan C should be 100% own-teacher when fully covered")
+      all(l["measured"]["teacher"] == AUTHENTICITY["own"] for p in deferred for l in p["legs"]
+          if l["action"] == "MAKEUP" and l.get("makeup")), "every booked make-up leg should be own-teacher")
 
 # Authenticity has to be ordered, or "delivered by its own teacher" is noise.
 check("3e authenticity is strictly ordered",
@@ -309,9 +311,13 @@ in_day_free = sum(1 for r in rows(con, """SELECT dept,sem,section,day,COUNT(*) n
 check("5a the seeded college genuinely has no free in-day period", in_day_free == 0,
       f"{in_day_free} class-days have one — the original search would have worked")
 
-made = [p for _f, ps, _a in SAMPLE for p in ps if p["code"] == "C" and p["coverage"] > 0]
-check("5b plan C schedules make-ups for most absences",
-      len(made) >= 0.8 * len(SAMPLE), f"{len(made)} of {len(SAMPLE)}")
+# Counted over absences with a class hour to make up (#130): an absence of only
+# activity hours has no make-up to schedule, and its plan C folds into plan A.
+WITH_CLASS = [(f, ps, a) for f, ps, a in SAMPLE if any((x.get("kind") or "T") != "A" for x in a)]
+made = [p for _f, ps, _a in WITH_CLASS for p in ps
+        if p["code"] == "C" and any(l["action"] == "MAKEUP" and l.get("makeup") for l in p["legs"])]
+check("5b plan C schedules make-ups for most absences that have a class hour",
+      len(WITH_CLASS) >= 5 and len(made) >= 0.8 * len(WITH_CLASS), f"{len(made)} of {len(WITH_CLASS)}")
 check("5c a make-up lands after the absence, never before",
       all(dt.date.fromisoformat(l["makeup"]["date"]) > DATE
           for _f, ps, _a in SAMPLE for p in ps if p["code"] == "C"
@@ -389,7 +395,7 @@ check("7b every plan still reports coverage, labelled as a floor",
 worst_gap = max(abs(p["coverage"] - p["components"]["hours_preserved"])
                 for _f, ps, _a in SAMPLE for p in ps)
 check("7c coverage IS the hours component, not an independent axis", worst_gap <= 1,
-      f"largest divergence {worst_gap} — coverage = mean(hours) at agents.py:411 and "
+      f"largest divergence {worst_gap} — coverage = mean(hours) in SubstitutionAgent.score_leg and "
       f"hours_preserved is the same mean, so these must track exactly")
 check("7d continuity is built from that same hours term",
       CONTINUITY_WEIGHTS["hours"] > 0,
