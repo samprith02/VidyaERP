@@ -287,6 +287,8 @@ select:focus, input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var
 .cell.has { background: #F3F5FB }
 .cell.lab { background: #EEF6F3 }
 .cell.lab .s { color: #1F5E4B }
+.cell .ttb + .ttb { margin-top: 4px; padding-top: 4px; border-top: 1px dashed #C5DDD4 }
+.cell .ttbn { display: inline-block; padding: 0 4px; border-radius: 3px; background: #D3E9E1; color: #1F5E4B; font-size: 10.5px; font-weight: 700 }
 .cell.actv { background: var(--paper) }
 .cell.actv .s { color: var(--graphite); font-weight: 600 }
 .cell.ovr { background: var(--violet-soft); box-shadow: inset 3px 0 0 var(--violet) }

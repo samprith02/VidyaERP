@@ -180,9 +180,10 @@ def subject_performance(con, s):
 def _student_home(con, s):
     import academics
     dy = day_of(TODAY)
+    # a split lab hour shows the student's own batch's lab (#20)
     today = rows(con, """SELECT t.*, sb.name sname FROM timetable t LEFT JOIN subjects sb ON sb.code=t.subject
-                         WHERE t.dept=? AND t.sem=? AND t.section=? AND t.day=? ORDER BY t.period""",
-                 (s["dept"], s["sem"], s["section"], dy))
+                         WHERE t.dept=? AND t.sem=? AND t.section=? AND t.day=? AND (t.batch IS NULL OR t.batch=?)
+                         ORDER BY t.period""", (s["dept"], s["sem"], s["section"], dy, s.get("batch")))
     perf = subject_performance(con, s)
     loans = LibraryAgent().active(con, s["usn"])
     passes = rows(con, "SELECT * FROM gate_passes WHERE usn=? AND status='Pending'", (s["usn"],))

@@ -5,7 +5,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![Dependencies: 2](https://img.shields.io/badge/dependencies-2-brightgreen.svg)](requirements.txt)
-[![Tests: 1455 assertions](https://img.shields.io/badge/tests-1455_assertions_passing-brightgreen.svg)](#tests)
+[![Tests: 1473 assertions](https://img.shields.io/badge/tests-1473_assertions_passing-brightgreen.svg)](#tests)
 [![Tools: 82, 29 gated](https://img.shields.io/badge/tools-82_·_29_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
 [![Data: synthetic](https://img.shields.io/badge/data-100%25_synthetic-lightgrey.svg)](NOTICE)
 
@@ -41,8 +41,8 @@ load no external scripts, styles or fonts.
 
 | | | | |
 |:--|:--|:--|:--|
-| **21** specialist agents, **33** in the mesh | **82** tools · **29** writes, every one gated | **1455** test assertions, 0 failing | **2** dependencies |
-| **271** absences swept: the top plan fully covers **268** | **456 / 456** periods placed by the solver, 0 clashes | **94%** less tool payload per LLM turn | **0** external assets in the console |
+| **21** specialist agents, **33** in the mesh | **82** tools · **29** writes, every one gated | **1473** test assertions, 0 failing | **2** dependencies |
+| **289** absences swept: the top plan fully covers **287** | **456 / 456** periods placed by the solver, 0 clashes | **94%** less tool payload per LLM turn | **0** external assets in the console |
 
 Every number above is measured by [`docs/charts/make_charts.py`](docs/charts/make_charts.py) and
 stored in [`docs/charts/results.json`](docs/charts/results.json). Re-run it and the charts in this
@@ -201,16 +201,16 @@ flowchart LR
 ### Tests
 
 <p align="center">
-  <img src="docs/charts/tests.svg" alt="Bar chart: 1455 assertions across 20 suites, all passing. mcp_parity 323, campus_test 160, calendar_test 127, auth_test 111, deploy_test 90, teaching_test 77, placement_test 77, cie_test 59, ranking_test 57, solver_test 53, notify_test 50, nlu_test 49, cohort_test 40, makeup_test 33, dashboard_test 33, mesh_test 28, accreditation_test 28, academics_test 24, language_test 19, risk_test 17" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 1473 assertions across 20 suites, all passing. mcp_parity 324, campus_test 160, calendar_test 127, auth_test 111, deploy_test 90, teaching_test 84, placement_test 77, solver_test 62, cie_test 59, ranking_test 57, notify_test 50, nlu_test 49, cohort_test 40, makeup_test 34, dashboard_test 33, mesh_test 28, accreditation_test 28, academics_test 24, language_test 19, risk_test 17" width="760">
 </p>
 
 ```bash
-python3 tests/solver_test.py  # timetable solver: 53 assertions, no server, no API cost
-python3 tests/mcp_parity.py   # MCP guard parity: 323 assertions, no server, no API cost
+python3 tests/solver_test.py  # timetable solver and lab batches: 62 assertions, no server, no API cost
+python3 tests/mcp_parity.py   # MCP guard parity: 324 assertions, no server, no API cost
 python3 tests/campus_test.py  # campus services: 160 assertions, no server, no API cost
 python3 tests/mesh_test.py    # the agent mesh's fault channel and approval stamp: 28 assertions, no server, no API cost
 python3 tests/auth_test.py    # logins, route gating, per-role policy: 111 assertions, no server, no API cost
-python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits verified by re-read: 33 assertions, no server, no API cost
+python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits verified by re-read: 34 assertions, no server, no API cost
 python3 tests/academics_test.py # standing faculty availability, honoured by every planner: 24 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
 python3 tests/deploy_test.py  # deployment readiness: 90 assertions, no server, no API cost
@@ -223,7 +223,7 @@ python3 tests/notify_test.py  # notice delivery through a stub gateway: 50 asser
 python3 tests/cohort_test.py  # section strength and CGPA ranking, recounted; missing classes refused: 40 assertions, no server, no API cost
 python3 tests/dashboard_test.py # the student dashboard: attendance and marks recomputed apart, gaps shown as gaps: 33 assertions, no server, no API cost
 python3 tests/calendar_test.py # the academic calendar: every entry reaches exactly the classes it names: 127 assertions, no server, no API cost
-python3 tests/teaching_test.py # the teaching desk: a teacher's day, attendance by the hour, the marks lock: 77 assertions, no server, no API cost
+python3 tests/teaching_test.py # the teaching desk: a teacher's day, attendance by the hour and by lab batch, the marks lock: 84 assertions, no server, no API cost
 python3 tests/placement_test.py # placement drives: own criteria, every reason named, applications re-checked: 77 assertions, no server, no API cost
 python3 tests/smoke.py        # deterministic rule-engine regression (needs the server, no API cost)
 python3 tests/live_llm.py     # 6 real-model queries: engine, latency, tokens, table leaks
@@ -360,7 +360,7 @@ sequenceDiagram
 
    **Two plans that would commit the same rows are one option.** When no period can be
    re-sequenced, Plan B falls back to substitution and picks the same candidates as Plan A.
-   Measured: 90 of 271 absences, a third of them, produced two byte-identical cards at an exact
+   Measured: 131 of 289 absences, nearly half of them, produced two byte-identical cards at an exact
    rank tie, which made "recommended" arbitrary. They are folded by *committed effect*
    (`commit_signature`), and the surviving card names what it subsumed. Applying by the folded
    letter still works.
@@ -394,20 +394,20 @@ sequenceDiagram
 
 ### The ranking, measured across every absence the timetable can produce
 
-Each of the 53 teachers made absent on each teaching day of one week gives **271 absences**
+Each of the 53 teachers made absent on each teaching day of one week gives **289 absences**
 (9.6 ms each to plan, wall-clock on a laptop). The recommendation is spread across all three strategies. None of them is
 a default that wins by construction:
 
 <p align="center">
-  <img src="docs/charts/plans_recommended.svg" alt="Bar chart: the recommended plan across 271 absences. A substitute 77, B swap forward 76, C release plus make-up 118. The top plan fully covers 268" width="760">
+  <img src="docs/charts/plans_recommended.svg" alt="Bar chart: the recommended plan across 289 absences. A substitute 40, B swap forward 55, C release plus make-up 194. The top plan fully covers 287" width="760">
 </p>
 
 <p align="center">
-  <img src="docs/charts/plans_scatter.svg" alt="Scatter plot of every plan card: confidence on x, continuity on y. 271 plan A, 181 plan B after folding 90 duplicates, 271 plan C. Most plans cluster above 80 continuity; plan C spreads lower where a make-up slips" width="760">
+  <img src="docs/charts/plans_scatter.svg" alt="Scatter plot of every plan card: confidence on x, continuity on y. 289 plan A, 158 plan B after folding 131 duplicates, 289 plan C. Most plans cluster above 80 continuity; plan C spreads lower where a make-up slips" width="760">
 </p>
 
 <p align="center">
-  <img src="docs/charts/plans_rank.svg" alt="Histogram of the recommended plan's rank across 271 absences. Median 94.7; 135 absences at 95 or above; a thin tail down to 48.5" width="760">
+  <img src="docs/charts/plans_rank.svg" alt="Histogram of the recommended plan's rank across 289 absences. Median 94.8; 143 absences at 95 or above; a thin tail down to 49.0" width="760">
 </p>
 
 The low tail is honest. It is the partial-scarcity case (a teacher whose block cannot be fully
@@ -418,11 +418,11 @@ arranged), and those cards are flagged **incomplete** on the page rather than ra
 
 | Measurement | Value |
 |---|---|
-| Absences swept | 271 (53 faculty × Sat 05 – Fri 11 Sep 2026, days with classes) |
-| Recommended plan | A 77 · B 76 · C 118 |
-| Plan B folded into plan A (identical committed rows) | 90 |
-| Top plan covers every hour | 268 of 271 |
-| Rank of the recommended plan | min 48.5 · median 94.7 · max 98.95 |
+| Absences swept | 289 (53 faculty × Sat 05 – Fri 11 Sep 2026, days with classes) |
+| Recommended plan | A 40 · B 55 · C 194 |
+| Plan B folded into plan A (identical committed rows) | 131 |
+| Top plan covers every hour | 287 of 289 |
+| Rank of the recommended plan | min 49.0 · median 94.75 · max 98.95 |
 | Planning time | 9.6 ms per absence (wall-clock) |
 
 </details>
@@ -783,7 +783,7 @@ the class hour comes from the timetable, so there is no semester or section to g
 
 SEE marks are not entered here: on the demo date (Fri 4 Sep) no SEE paper has been held, and SEE
 results, the pass rule and SGPA are a model of their own (#66). `tests/teaching_test.py` pins the
-rest: 77 assertions, every rule mutation-checked, and `tests/mcp_parity.py` section 20 holds
+rest: 84 assertions, every rule mutation-checked, and `tests/mcp_parity.py` section 20 holds
 `take_attendance` to the same gate on every entry point.
 
 ### 5h. Placement drives: each company's own criteria, every reason named (`placement.py`)
@@ -1035,7 +1035,7 @@ erDiagram
 Plus the office ledgers that stand alone: `requests · notifications · audit · placements ·
 student_offers · hostel_complaints · bus_stops · credentials · sessions · mcp_approvals`.
 
-Seed: **5 departments, 53 faculty, 1,095 students, 707 timetable slots** across semesters 3/5/7,
+Seed: **5 departments, 53 faculty, 1,095 students, 791 timetable rows** (a split lab hour is a row per batch) across semesters 3/5/7,
 plus leave records, an approvals inbox, the SEE timetable and placement stats; then the campus
 ledgers (library, hostels, buses, gate passes, drives, certificates), CIE marks and the academic
 calendar, each from its own seed after the core one.
@@ -1043,7 +1043,7 @@ calendar, each from its own seed after the core one.
 <table>
 <tr>
 <td width="50%"><img src="docs/charts/students_by_dept.svg" alt="Students by department: CSE 350, ECE 328, ISE 177, CIVIL 124, MECH 116"></td>
-<td width="50%"><img src="docs/charts/faculty_load.svg" alt="Faculty load histogram: curriculum periods as a share of sanctioned load, mean 52%, highest 81%"></td>
+<td width="50%"><img src="docs/charts/faculty_load.svg" alt="Faculty load histogram: curriculum periods as a share of sanctioned load, mean 60%, highest 83%"></td>
 </tr>
 </table>
 
@@ -1055,7 +1055,7 @@ The attendance chart is shown because it is a **known weak point**, not a streng
 student's figure is one independent `gauss(80, 12)` draw, so any "attendance risk" analytics built
 on it are shallow by construction. Per-subject attendance is derived from it, and adds no signal.
 
-### The timetable generator (`db.py`): how a real college day is modelled
+### The timetable: how a real college day is modelled
 
 ```
 P1 09:00–09:55   P2 09:55–10:50   ┃ 20-min break ┃   P3 11:10–12:05   P4 12:05–13:00
@@ -1066,31 +1066,53 @@ P1 09:00–09:55   P2 09:55–10:50   ┃ 20-min break ┃   P3 11:10–12:05   
   <img src="docs/charts/timetable_mix.svg" alt="Stacked bars, periods per section per week. Semester 3: 22 theory, 6 lab, 11 activity, 39 hours. Semester 5: 21, 6, 7, 34 hours. Semester 7: 16, 6, 6, 28 hours" width="760">
 </p>
 
-Hard rules the generator enforces, and `db.verify()` asserts:
+The seed's timetable is built by the solver below (one code path with a rebuild), under these
+hard rules, and `db.verify()` asserts each of them:
 
 1. **No holes.** A class's day is periods 1…N back-to-back. You will never see
    `class / free / free / class`. Breaks are gaps in the *clock*, not empty slots.
 2. **Day length by seniority**: sem 3 runs to P7 (39 hrs/wk), sem 5 to P6 (34), sem 7 to P5 (28),
    because final-year batches leave early for project work. Saturdays are short.
 3. **Labs are 3 consecutive periods**, inside one session (P1–P3 or P5–P7) so they never straddle
-   lunch. Project Phase-I gets two such blocks.
-4. **One teacher owns a subject for a class** all semester, allocated up front by expertise and
+   lunch. Project Phase-I gets two such blocks, in a room that seats the section.
+4. **Labs run in batches (#20).** A lab room seats 36 and a section is up to 64, so every section
+   larger than a lab is split into batches B1 and B2 (`students.batch`, in roll order), and its two
+   labs **rotate**: in one block B1 is in lab X with its teacher while B2 is in lab Y with its
+   teacher, in the other block they change over. Each student still does each lab once a week;
+   each lab teacher teaches it once per batch, which is what a college actually staffs. A split lab
+   hour is one timetable row per batch, and every room seats the group in it.
+5. **One teacher owns a subject for a class** all semester, allocated up front by expertise and
    load balance, exactly like a department meeting would.
-5. **No faculty or room is ever double-booked**, and nobody exceeds their sanctioned load
+6. **No faculty or room is ever double-booked**, and nobody exceeds their sanctioned load
    (3 hrs of every cap is reserved for activity supervision).
-6. **Curriculum gaps become real academic activities** (placement training, mini-project, library,
+7. **Every class gets its full weekly quota** of every subject (credits + 1 for theory). A greedy
+   generator built the seed until #20; measured, it left 5 class-subjects an hour short and nothing
+   said so, and 10 once batches doubled the lab hours. `db.verify()` checks the quota now.
+8. **Curriculum gaps become real academic activities** (placement training, mini-project, library,
    mentoring, sports, remedial), never a blank cell. That's ~24% of slots, which matches a real
    VTU timetable.
 
 Because labs are contiguous blocks, the SubstitutionAgent groups consecutive periods of the same
 subject into **one teaching block**: an absent lab instructor produces a single `P1–P3` coverage
-decision, not three unrelated ones.
+decision, not three unrelated ones, and for a split section it is their batch's block alone. The
+other batch's lab, with its own teacher, runs as timetabled.
+
+<p align="center">
+  <img src="docs/img/timetable-batches.png" alt="Master timetable for ECE semester 3 section B: lectures Monday to Thursday; on Friday P1 to P3 batch B1 is in BECL306 with Dr. Lakshmi Upadhyaya in SB-103 while batch B2 is in BECL307 with Prof. Ganesh Upadhyaya in SB-106; on Saturday they change over, in WB-107 and WB-108" width="100%">
+  <br><sub><i>ECE-3B's two labs rotate: Friday B1 is in the analog lab while B2 is in the digital lab, Saturday they change over. Every attendance register, roster and student's day follows the batch.</i></sub>
+</p>
+
+A split lab hour is one class hour **per batch** everywhere it is read: each lab teacher's desk
+opens their own batch's register with only that batch on the roll (`attendance_sessions.batch`),
+another teacher is refused and told who teaches each batch, the Registrar is asked which batch,
+a student's day shows their own batch's lab, and a make-up for one batch is booked for that batch.
 
 ### Building a timetable from scratch (`solver.py`)
 
-The seeder above *generates the shipped data*. `solver.py` is the same job as a **feature**: a
-constraint solver an admin can run on demand, watch, and approve (Master Timetable →
-**Generate from scratch**).
+`solver.py` builds the shipped timetable when the institution is seeded (#20), and it is the same
+job as a **feature**: a constraint solver an admin can run on demand, watch, and approve (Master
+Timetable → **Generate from scratch**). One code path for both, so the seed meets every rule a
+rebuild does.
 
 Ported from the Chronos reference solver (`teacher-erp-with-timetable-simulation`, 755 lines of
 TypeScript) and adapted to the rules above. Five phases:
@@ -1118,8 +1140,8 @@ flowchart LR
 | Fill | every remaining period becomes a real academic activity, so the day stays solid |
 
 <p align="center">
-  <img src="docs/img/solver.png" alt="The live solver rebuilding CSE-5A: 25 of 25 placed, 0 backtracks, 543 rejected slots, the grid filling in and the decision stream on the right, an amber capacity warning, and a violet Apply button" width="100%">
-  <br><sub><i>The solver streaming onto a live grid. The right column is the actual decision stream. The amber line names every lab block that exceeds room capacity. Violet means approval: nothing is written until “Apply this timetable”.</i></sub>
+  <img src="docs/img/solver.png" alt="The live solver rebuilding CSE-5A: 25 of 25 placed in 0.11 s, 0 backtracks, the lab blocks shown as B1 and B2 in two rooms each, the decision stream on the right, a violet Apply button, and the current timetable below with its batch cells" width="100%">
+  <br><sub><i>The solver streaming onto a live grid. The right column is the actual decision stream. A lab block is both batches at once, each in its own room. Violet means approval: nothing is written until “Apply this timetable”.</i></sub>
 </p>
 
 `solve()` is a **generator**. The browser streams every decision over SSE and replays it onto a
@@ -1139,29 +1161,37 @@ reporting success. Through the copilot the same work is two tools,
 `plan_timetable_generation` then `apply_timetable_generation`, and the second refuses without
 explicit admin approval in the current turn, like every other write.
 
-Measured on the seeded institution: **456 curriculum periods across 21 sections in under a
-second**, 0 backtracks, 0 clashes, on every one of ten seeds. Under deliberate room scarcity it
-degrades instead of collapsing: at one lab room for the whole college it still places 93% and
-keeps every day contiguous.
+Measured on the seeded institution: **456 curriculum blocks across 21 sections in under a
+second**, 0 backtracks, 0 clashes, 0 rooms too small, on every one of ten seeds. Under deliberate
+room scarcity it degrades instead of collapsing: at one lab room for the whole college (every lab
+block now needs two at once) it still places 94% and keeps every day contiguous.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/charts/solver_scarcity.svg" alt="Columns: share of 456 periods placed as lab rooms are removed. 6 rooms 100%, 5 100%, 4 99.1%, 3 97.8%, 2 95.6%, 1 93.2%"></td>
+<td width="50%"><img src="docs/charts/solver_scarcity.svg" alt="Columns: share of 456 periods placed as lab rooms are removed. 6 rooms 100%, 5 98.7%, 4 98.5%, 3 96.3%, 2 96.3%, 1 93.9%"></td>
 <td width="50%"><img src="docs/charts/solver_seeds.svg" alt="Columns: solve time for ten seeds, every one under a second on this machine, every seed placing 456 of 456"></td>
 </tr>
 </table>
 
 <p align="center">
-  <img src="docs/charts/solver_rejections.svg" alt="Bar chart: 1,269 candidate slots refused in one solve. Class already busy 1,204, teacher already busy 54, no free room 6, teacher's standing window 4, teacher's daily cap 1" width="760">
+  <img src="docs/charts/solver_rejections.svg" alt="Bar chart: 1,280 candidate slots refused in one solve. Class already busy 1,170, teacher already busy 99, teacher's standing window 4, teacher's daily cap 3, subject already that day 2, no free room 2" width="760">
 </p>
 
 Timings are wall-clock on a laptop and vary from run to run (0.3–1.0 s has been seen for the
 same solve); the placement counts do not. `docs/charts/results.json` has this run's figures.
 
-**Two limits it reports rather than hides.** Lab rooms seat 36 and a CSE section is ~60, because
-real colleges split a lab into batches and this dataset has no batches. The solver relaxes the
-capacity constraint and names every affected class in `capacity_relaxed`, shown as an amber
-warning above the Apply button. Teachers' **standing availability** (a visiting professor's
+**Lab batches (#20).** A variable is a 3-period block with one *leg* per group taught at once:
+the whole section, or each lab batch in its own lab with its own teacher and room, and every hard
+rule is checked for every leg. Room capacity is hard: a batch needs a lab that seats it, a project
+a room that seats the section. It is relaxed, and every affected class named in
+`capacity_relaxed` as an amber warning above the Apply button, only when no room can seat a
+group: a section with more batches than labs to rotate, or an older database whose students carry
+no batches. On the seeded institution it is empty (`solver_test` 20a; it was 40 lab blocks before
+batches). The cost is real and measured: lab teachers now teach twice, curriculum load rose from
+52% to 60% of sanctioned and 12 teachers are at their cap, so free substitutes are scarcer and the
+coverage planner recommends a make-up (C) more often than a substitute (A).
+
+**One limit it reports rather than hides.** Teachers' **standing availability** (a visiting professor's
 off-campus day, a council, a research afternoon) is recorded as weekly windows in
 `faculty_availability` (#19). Generation never places a class in one, `solver.verify` reports any
 committed class that does, and the substitution planner and make-up booking respect them. The
@@ -1175,15 +1205,15 @@ Dated leave still drives the *rescheduling* path, not generation.
 | Lab rooms available | Placed | Backtracks |
 |---|---|---|
 | 6 | 456 / 456 | 0 |
-| 5 | 456 / 456 | 0 |
-| 4 | 452 / 456 | 20 |
-| 3 | 446 / 456 | 30 |
-| 2 | 436 / 456 | 60 |
-| 1 | 425 / 456 | 88 |
+| 5 | 450 / 456 | 20 |
+| 4 | 449 / 456 | 28 |
+| 3 | 439 / 456 | 49 |
+| 2 | 439 / 456 | 49 |
+| 1 | 428 / 456 | 0 |
 
-Full college, seed 7: 456 / 456 placed, 0 backtracks, 1,269 candidate slots rejected (class 1,204 ·
-teacher 54 · room 6 · standing window 4 · daily cap 1), 167 activity periods, 40 lab blocks over
-room capacity (reported, not hidden). The college has 15 lab rooms.
+Full college, seed 7: 456 / 456 placed, 0 backtracks, 1,280 candidate slots rejected (class 1,170 ·
+teacher 99 · standing window 4 · daily cap 3 · subject already that day 2 · room 2), 167 activity
+periods, 0 lab blocks over room capacity (40 before lab batches, #20). The college has 15 lab rooms.
 
 </details>
 
@@ -1333,7 +1363,6 @@ it. These are open:
 | [#28](https://github.com/samprith02/VidyaERP/issues/28) | feature | Parent WhatsApp agent, behind the notice gateway of §11 |
 | [#30](https://github.com/samprith02/VidyaERP/issues/30) | feature | A predictive dropout model. Today's early-warning list is rule-based and says so; the data has no outcomes to validate a prediction against |
 | [#105](https://github.com/samprith02/VidyaERP/issues/105) | proposal | Move the frontend to React. It conflicts with the no-external-assets and two-dependency rules, so it is an owner's decision |
-| [#20](https://github.com/samprith02/VidyaERP/issues/20) | limitation | Lab batches are not modelled; the solver relaxes room capacity and names every class it affects |
 | [#21](https://github.com/samprith02/VidyaERP/issues/21) | limitation | Attendance is one independent draw per student; per-subject figures are derived from it |
 | [#25](https://github.com/samprith02/VidyaERP/issues/25) | limitation | Hostel gender is inferred from the synthetic first-name pools |
 | [#23](https://github.com/samprith02/VidyaERP/issues/23) | limitation | MCP is stdio, so it cannot reach a remote deployment |
@@ -1341,8 +1370,8 @@ it. These are open:
 
 Shipped from the earlier roadmap: NAAC/NBA evidence (#29, §5e), Kannada and Hindi input (#31, §2),
 CIE marks (#32, §5d), notice delivery (#26, §11), the academic calendar (#104, §5f) and the teaching
-desk, attendance by the hour and the marks lock (#116, #117, §5g), and placement drives with their own
-criteria and applications (#115, §5h).
+desk, attendance by the hour and the marks lock (#116, #117, §5g), placement drives with their own
+criteria and applications (#115, §5h), and lab batches with a rotating lab timetable (#20, §7).
 
 ---
 
@@ -1376,7 +1405,7 @@ flowchart LR
 {"status":"ok","service":"vidyaerp",
  "build":{"commit":"9161a2f...","short":"9161a2f","branch":"main","source":"platform"},
  "today":"2026-09-04",
- "db":{"ok":true,"students":1095,"faculty":53,"timetable":707,"path":"college.db","persistent":false},
+ "db":{"ok":true,"students":1095,"faculty":53,"timetable":791,"path":"college.db","persistent":false},
  "engine":"llm","llm":{"configured":true,"provider":"groq","model":"openai/gpt-oss-120b"},
  "operator_endpoints":"registrar-session-or-token",
  "auth":{"logins":true,"mode":"demo","passwords_published":true},

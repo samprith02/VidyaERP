@@ -88,12 +88,15 @@ print("-" * 78)
 # changed on purpose these must be re-recorded; if they move by accident, the
 # campus layer has started drawing from the core's random stream.
 # Re-recorded on purpose: exams when Sunday papers moved to Monday (#101), and when
-# the Gandhi Jayanti papers moved to Saturday 3 Oct (#106).
+# the Gandhi Jayanti papers moved to Saturday 3 Oct (#106). Lab batches (#20): students
+# gained `batch` (every other column identical), the timetable is built by the
+# solver, and the leaves, requests, exams and placements after it moved ONCE,
+# because the timetable no longer draws from the global stream they share.
 CORE_BEFORE = {"departments": "7efe9382b9c8b4e3", "faculty": "67edc5d63dfad417",
                "subjects": "bdd0f4967bf5f247", "rooms": "62f84e7ff4ae41b3",
-               "students": "7d9127ed8d4ac6f7", "timetable": "096aa88cd3f8fcc0",
-               "leaves": "cfd3933e747f6a46", "requests": "d1f416a9743bf9df",
-               "exams": "597118dafeb7564e", "placements": "fd42282b0b344f8b"}
+               "students": "97d41df86fb84c43", "timetable": "42931afe949bb4cb",
+               "leaves": "fd4d59605dd1e5c1", "requests": "b091c1f0c815d3ad",
+               "exams": "594c3bbfc5c5cb49", "placements": "d960289a08c17148"}
 
 
 def fresh(name):

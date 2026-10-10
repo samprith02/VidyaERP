@@ -31,7 +31,7 @@ import orchestrator                                                # noqa: E402
 import portal                                                      # noqa: E402
 import teaching as T                                               # noqa: E402
 import tools                                                       # noqa: E402
-from agents import one, rows                                       # noqa: E402
+from agents import TimetableAgent, one, rows                       # noqa: E402
 from nlu import TODAY                                              # noqa: E402
 
 FAILED, PASSED = [], 0
@@ -418,6 +418,79 @@ row = one(con, "SELECT * FROM attendance_sessions WHERE date=? AND period=1 AND 
 check("6f end to end on the rule engine: proposed, then 'yes' records it",
       staged == "take_attendance" and row and row["absent"] == 1 and row["taken_by"] == p1b["faculty"],
       str(out2.get("blocks"))[:160])
+
+# ------------------------------------------------------------------ 8 · lab batches (#20)
+print("\n8 · a split lab hour is one class hour per batch (#20)")
+print("-" * 78)
+away = {r["faculty"] for r in rows(con, "SELECT faculty FROM leaves WHERE status='Approved' AND from_date<=? AND to_date>=?",
+                                   (THU, THU))}
+lab = next(r for r in rows(con, """SELECT dept, sem, section, period, faculty FROM timetable WHERE batch='B1' AND day='Thu'
+                                   ORDER BY dept, sem, section, period""")
+           if not {x["faculty"] for x in rows(con, "SELECT faculty FROM timetable WHERE dept=? AND sem=? AND section=? "
+                                                   "AND day='Thu' AND period=?",
+                                              (r["dept"], r["sem"], r["section"], r["period"]))} & away)
+hour = {"date": THU, "period": lab["period"], "dept": lab["dept"], "sem": lab["sem"], "section": lab["section"]}
+legs = {r["batch"]: r for r in rows(con, "SELECT * FROM timetable WHERE dept=? AND sem=? AND section=? AND day='Thu' "
+                                         "AND period=?", (lab["dept"], lab["sem"], lab["section"], lab["period"]))}
+roll = {b: [r["usn"] for r in rows(con, "SELECT usn FROM students WHERE dept=? AND sem=? AND section=? AND batch=? "
+                                        "ORDER BY usn", (lab["dept"], lab["sem"], lab["section"], b))] for b in legs}
+t1, t2 = who(legs["B1"]["faculty"]), who(legs["B2"]["faculty"])
+sh1, sh2 = call("attendance_sheet", hour, t1), call("attendance_sheet", hour, t2)
+check("8a each lab teacher opens their own batch's register, with only that batch's students on it",
+      sorted(legs) == ["B1", "B2"] and all(roll.values()) and set(roll["B1"]).isdisjoint(roll["B2"])
+      and sh1["data"].get("batch") == "B1" and sh1["data"]["subject"] == legs["B1"]["subject"]
+      and [x["usn"] for x in sh1["data"]["students"]] == roll["B1"]
+      and sh2["data"].get("batch") == "B2" and sh2["data"]["subject"] == legs["B2"]["subject"]
+      and [x["usn"] for x in sh2["data"]["students"]] == roll["B2"], f"{sh1['data']}"[:200])
+other = next(who(f["id"]) for f in rows(con, "SELECT id FROM faculty WHERE dept=? AND is_hod=0 ORDER BY id", (lab["dept"],))
+             if f["id"] not in (t1["fid"], t2["fid"]))
+r = call("attendance_sheet", hour, other)
+check("8b a teacher delivering neither batch is refused, and told who is",
+      r["data"].get("DENIED") and "batch B1" in r["data"]["DENIED"] and "batch B2" in r["data"]["DENIED"],
+      str(r["data"])[:200])
+asked, named = call("attendance_sheet", hour), call("attendance_sheet", {**hour, "batch": "b2"})
+check("8c the Registrar is asked which batch, and naming one opens that batch's register",
+      refused(asked) and "Name the batch" in asked["data"].get("error", "")
+      and [x["usn"] for x in named["data"].get("students", [])] == roll["B2"], str(asked["data"])[:160])
+subj = {b: legs[b]["subject"] for b in legs}
+before = {u: (total(u, subj["B1"]), total(u, subj["B2"])) for b in roll for u in roll[b]}
+p1, c1 = staged_commit(t1, {**hour, "absent": roll["B1"][0]})
+p2, c2 = staged_commit(t2, {**hour, "absent": "none"})
+moved = {u for u in before if (total(u, subj["B1"]), total(u, subj["B2"])) != before[u]}
+s1 = one(con, "SELECT * FROM attendance_sessions WHERE date=? AND dept=? AND sem=? AND section=? AND period=? "
+              "AND batch='B1'", (THU, lab["dept"], lab["sem"], lab["section"], lab["period"]))
+s2 = one(con, "SELECT * FROM attendance_sessions WHERE date=? AND dept=? AND sem=? AND section=? AND period=? "
+              "AND batch='B2'", (THU, lab["dept"], lab["sem"], lab["section"], lab["period"]))
+check("8d the two batches of one hour are two registers: each adds its lab's hour to its own students only",
+      c1["data"].get("recorded") and c2["data"].get("recorded") and s1 and s2
+      and (s1["present"], s1["absent"]) == (len(roll["B1"]) - 1, 1) and (s2["present"], s2["absent"]) == (len(roll["B2"]), 0)
+      and moved == set(before)
+      and all(total(u, subj["B1"]) == (before[u][0][0] + 1, before[u][0][1] + (u != roll["B1"][0]))
+              and total(u, subj["B2"]) == before[u][1] for u in roll["B1"])
+      and all(total(u, subj["B2"]) == (before[u][1][0] + 1, before[u][1][1] + 1)
+              and total(u, subj["B1"]) == before[u][0] for u in roll["B2"]),
+      f"{c1['data']} {c2['data']}"[:200])
+day = T.day_classes(con, t1["fid"], dt.date.fromisoformat(THU))
+mine = [c for c in day if c["period"] == lab["period"] and c["dept"] == lab["dept"]]
+check("8e the teacher's day lists the hour once, as their batch, sized to it",
+      len(mine) == 1 and mine[0]["batch"] == "B1" and mine[0]["size"] == len(roll["B1"]), str(mine)[:200])
+fri = next(r for r in rows(con, "SELECT dept, sem, section, period FROM timetable WHERE batch='B2' AND day=? "
+                                "ORDER BY dept, sem, section", (TODAY.strftime("%a"),)))
+kid = dict(one(con, "SELECT * FROM students WHERE dept=? AND sem=? AND section=? AND batch='B2' ORDER BY usn",
+               (fri["dept"], fri["sem"], fri["section"])))
+own = one(con, "SELECT subject FROM timetable WHERE dept=? AND sem=? AND section=? AND day=? AND period=? AND batch='B2'",
+          (fri["dept"], fri["sem"], fri["section"], TODAY.strftime("%a"), fri["period"]))["subject"]
+today = next(b for b in portal._student_home(con, kid)["blocks"] if b.get("type") == "table"
+             and str(b.get("title", "")).startswith("Today"))
+at = [row for row in today["rows"] if row[0] == f"P{fri['period']}"]
+check("8f a student's day shows their own batch's lab, once per hour",
+      len(at) == 1 and at[0][2].startswith(own) and len({row[0] for row in today["rows"]}) == len(today["rows"]),
+      str(at))
+g = TimetableAgent().class_grid(con, lab["dept"], lab["sem"], lab["section"], THU)
+cell = g["cells"].get(f"Thu-{lab['period']}") or {}
+check("8g the class grid draws the hour as one cell holding both batches",
+      [x["batch"] for x in cell.get("batches", [])] == ["B1", "B2"]
+      and {x["subject"] for x in cell["batches"]} == set(subj.values()), str(cell)[:200])
 
 # ------------------------------------------------------------------ 7 · the page
 print("\n7 · the portal page")

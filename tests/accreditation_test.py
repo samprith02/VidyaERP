@@ -98,12 +98,16 @@ intake = one(con, "SELECT SUM(intake) n FROM departments")["n"]
 sem3 = one(con, "SELECT COUNT(*) n FROM students WHERE sem=3")["n"]
 check("2d enrolment against intake", metric("Enrolment against sanctioned intake")["value"]
       .startswith(f"{sem3} of {intake}"))
-over = sum(1 for r in rows(con, """SELECT t.*, r.capacity FROM timetable t JOIN rooms r ON r.id=t.room
-                                   WHERE t.kind='L'""")
-           if one(con, "SELECT COUNT(*) n FROM students WHERE dept=? AND sem=? AND section=?",
-                  (r["dept"], r["sem"], r["section"]))["n"] > r["capacity"])
-check("2e lab periods over capacity - the #20 limitation, stated as evidence",
-      metric("Lab periods where the section outnumbers")["value"].startswith(f"{over} of "), str(over))
+lab_rows = rows(con, "SELECT t.*, r.capacity FROM timetable t JOIN rooms r ON r.id=t.room WHERE t.kind='L'")
+group = lambda r: one(con, "SELECT COUNT(*) n FROM students WHERE dept=? AND sem=? AND section=?"
+                           + (" AND batch=?" if r["batch"] else ""),
+                      (r["dept"], r["sem"], r["section"], *([r["batch"]] if r["batch"] else [])))["n"]
+over = sum(1 for r in lab_rows if group(r) > r["capacity"])
+whole = sum(1 for r in lab_rows if group({**r, "batch": None}) > r["capacity"])
+check("2e lab periods over capacity, counted by the group in the room: 0 now that labs run in batches (#20), "
+      "where counting the whole section would not be",
+      metric("Lab periods where the group outnumbers")["value"] == f"{over} of {len(lab_rows)}" and over == 0
+      and whole > 0, f"{over} by group, {whole} by section")
 
 # ------------------------------------------------------------------ 3 · they move
 print("\n3 · a measurement that never varies is a constant wearing a function's clothes")

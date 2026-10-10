@@ -102,8 +102,9 @@ def t_get_timetable(con, S, U, dept="CSE", sem=5, section="A", date=None, **kw):
         row = []
         for p in sorted(g["periods"]):
             c = g["cells"].get(f"{day}-{p}")
-            if c:
-                row.append(f"P{p} {c['subject']} ({c['faculty']}{'/OVERRIDE→'+c['override']['faculty'] if c.get('override') and c['override'].get('faculty') else ''})")
+            for x in (c.get("batches") or [c]) if c else []:     # a split lab hour: one entry per batch (#20)
+                row.append(f"P{p} {x['batch'] + ' ' if x.get('batch') else ''}{x['subject']} ({x['faculty']}"
+                           f"{'/OVERRIDE→'+x['override']['faculty'] if x.get('override') and x['override'].get('faculty') else ''})")
         compact[day] = row
     S["ctx"]["last_class"] = f"{dept.upper()}-{sem}{section.upper()}"
     return {"data": {"class": f"{dept.upper()}-{sem}{section.upper()}", "date": d.isoformat(),
@@ -123,11 +124,11 @@ def t_faculty_timetable(con, S, U, name=None, **kw):
                (f["id"],))
     return {"data": {"faculty": f["name"], "load": len(tt), "cap": f["max_load"],
                      "slots": [{"day": x["day"], "period": x["period"],
-                                "class": f"{x['dept']}-{x['sem']}{x['section']}",
+                                "class": f"{x['dept']}-{x['sem']}{x['section']}", "batch": x["batch"],
                                 "subject": x["subject"]} for x in tt]},
             "blocks": [B_table(["Day", "Period", "Class", "Subject", "Room"],
                                [[x["day"], f"P{x['period']} {PERIOD_SPAN[x['period']]}",
-                                 f"{x['dept']}-{x['sem']}{x['section']}",
+                                 f"{x['dept']}-{x['sem']}{x['section']}" + (f" · batch {x['batch']}" if x["batch"] else ""),
                                  f"{x['subject']} · {x['sname'] or ''}", x["room"]] for x in tt],
                                title=f"{f['name']} — {len(tt)}/{f['max_load']} periods per week", dense=True)],
             "trace": [("TimetableAgent", "faculty_schedule", f"{f['id']} · {len(tt)} periods")]}
@@ -693,8 +694,8 @@ def t_plan_timetable_generation(con, S, U, scope="class", dept=None, sem=None, s
     if res["capacity_relaxed"]:
         over = sorted({r["cls"] for r in res["capacity_relaxed"]})
         warn.append(f"{len(res['capacity_relaxed'])} lab block(s) exceed room capacity for "
-                    f"{', '.join(over[:4])}{'...' if len(over) > 4 else ''} — this dataset has no "
-                    f"lab batch splitting, so the constraint was relaxed and recorded.")
+                    f"{', '.join(over[:4])}{'...' if len(over) > 4 else ''} — no room of that kind seats "
+                    f"the group and it has no lab batches to rotate, so the constraint was relaxed and recorded.")
     return {"data": {"proposed": True, "target": target, "scope": scope,
                      "placed": res["placed"], "total": res["total"],
                      "activity_slots": res["activity_slots"], "sections": len(res["classes"]),

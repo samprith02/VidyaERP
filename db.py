@@ -1,18 +1,24 @@
 """
 VidyaERP :: Data Layer
-Realistic Indian engineering-college dataset + a CONTIGUOUS timetable generator.
+Realistic Indian engineering-college dataset; its timetable is built by solver.py.
 
-Timetable rules enforced by the generator (this is how real colleges actually run):
+Timetable rules, enforced by the solver and checked by verify() (this is how real colleges run):
   • Every working day is a solid block of back-to-back periods — NO free holes in between.
   • Mon–Fri : 7 periods (09:00 → 16:30) · Sat : 4 periods (09:00 → 13:00)
   • 20-min short break after P2, 45-min lunch after P4.
   • Labs occupy 3 CONSECUTIVE periods inside one session (P1–P3 morning or P5–P7 afternoon)
     and never straddle lunch.
-  • A faculty member is never in two rooms at once; a room is never double-booked.
+  • A section larger than a lab seats is split into lab batches (#20), and its two labs
+    ROTATE: in one block B1 takes lab X while B2 takes lab Y, in the other they change
+    over. Each student still does each lab once a week; each lab teacher teaches it
+    once per batch, in a room that seats the batch.
+  • Every class gets its full weekly quota of every subject (credits + 1 for theory).
+  • A faculty member is never in two rooms at once; a room is never double-booked, and
+    seats the class or batch in it.
   • Any slot that curriculum hours can't fill is given a real academic activity
     (placement training, mentoring, library, project, sports) — never left blank.
 """
-import os, sqlite3, random, itertools, datetime as dt
+import os, sqlite3, random, datetime as dt
 
 ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 
@@ -194,6 +200,46 @@ def holiday(d):
     return HOLIDAYS.get((d.month, d.day))
 
 
+LAB_SEATS = 36            # every lab room seats 36; a section above it is split into batches (#20)
+
+
+def batch_plan(n, seats=LAB_SEATS):
+    """Batch sizes for a section of `n` students: as few batches as fit the lab
+    seats, as even as possible. [] means the section is not split."""
+    k = -(-n // seats) if n > seats else 1
+    if k <= 1:
+        return []
+    return [n // k + (1 if i < n % k else 0) for i in range(k)]
+
+
+def assign_batches(con):
+    """Give every student of a split section a lab batch (B1, B2, ...), in roll
+    order. Only students with none yet, and only for a section that needs it, so
+    an older database picks batches up without anyone being moved. Draws nothing
+    from `random`."""
+    cols = {r[1] for r in con.execute("PRAGMA table_info(students)")}
+    if "batch" not in cols:
+        con.execute("ALTER TABLE students ADD COLUMN batch TEXT")
+    for r in con.execute("SELECT dept, sem, section, COUNT(*) n, COUNT(batch) b FROM students "
+                         "GROUP BY dept, sem, section").fetchall():
+        if r["b"]:
+            continue
+        sizes = batch_plan(r["n"])
+        usns = [x["usn"] for x in con.execute("SELECT usn FROM students WHERE dept=? AND sem=? AND section=? "
+                                              "ORDER BY usn", (r["dept"], r["sem"], r["section"]))]
+        i = 0
+        for b, size in enumerate(sizes, 1):
+            con.executemany("UPDATE students SET batch=? WHERE usn=?", [(f"B{b}", u) for u in usns[i:i + size]])
+            i += size
+
+
+def batches_of(con, dept, sem, section):
+    """{batch: headcount} for a split section, {} for one taught whole."""
+    return {r["batch"]: r["n"] for r in con.execute(
+        "SELECT batch, COUNT(*) n FROM students WHERE dept=? AND sem=? AND section=? AND batch IS NOT NULL "
+        "GROUP BY batch ORDER BY batch", (dept, int(sem), section))}
+
+
 def connect():
     d = os.path.dirname(os.path.abspath(DB_PATH))
     if d and not os.path.isdir(d):
@@ -229,10 +275,11 @@ CREATE TABLE subjects(code TEXT PRIMARY KEY, name TEXT, dept TEXT, sem INT, cred
 CREATE TABLE rooms(id TEXT PRIMARY KEY, kind TEXT, capacity INT, block TEXT);
 CREATE TABLE students(
   usn TEXT PRIMARY KEY, name TEXT, dept TEXT, sem INT, section TEXT, cgpa REAL,
-  attendance REAL, fee_due INT, mentor TEXT, phone TEXT, hostel INT, category TEXT, backlogs INT);
+  attendance REAL, fee_due INT, mentor TEXT, phone TEXT, hostel INT, category TEXT, backlogs INT,
+  batch TEXT);
 CREATE TABLE timetable(
   id INTEGER PRIMARY KEY AUTOINCREMENT, dept TEXT, sem INT, section TEXT, day TEXT, period INT,
-  subject TEXT, faculty TEXT, room TEXT, kind TEXT);
+  subject TEXT, faculty TEXT, room TEXT, kind TEXT, batch TEXT);
 CREATE TABLE leaves(
   id INTEGER PRIMARY KEY AUTOINCREMENT, faculty TEXT, from_date TEXT, to_date TEXT, kind TEXT,
   reason TEXT, status TEXT, applied_on TEXT);
@@ -352,7 +399,8 @@ def seed(force=False):
                     tag = {"CSE": "CS", "ISE": "IS", "ECE": "EC", "MECH": "ME", "CIVIL": "CV"}[d]
                     num = i + (100 if sec == "B" else 0)
                     usn = f"4VP{yr}{tag}{num:03d}"
-                    cur.execute("INSERT INTO students VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    cur.execute("""INSERT INTO students(usn,name,dept,sem,section,cgpa,attendance,fee_due,mentor,
+                                   phone,hostel,category,backlogs) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                                 (usn, random.choice(STUD_FIRST) + " " + random.choice(LAST), d, sem, sec,
                                  round(min(9.9, max(5.0, random.gauss(7.6, .9))), 2),
                                  round(min(99, max(46, random.gauss(80, 12))), 1),
@@ -362,164 +410,31 @@ def seed(force=False):
                                  1 if random.random() < .38 else 0,
                                  random.choice(["GM", "GM", "2A", "3B", "SC", "ST", "OBC"]),
                                  0 if random.random() < .78 else random.randint(1, 3)))
+    assign_batches(con)
 
     # ================================================== CONTIGUOUS TIMETABLE
-    fac_busy = {}     # (day, period) -> {faculty}
-    room_busy = {}    # (day, period) -> {room}
-    fac_load = {f: 0 for d in fac_by_dept for f in fac_by_dept[d]}
-    PROJ = {}
-    max_load = {r["id"]: r["max_load"] for r in cur.execute("SELECT id,max_load FROM faculty")}
-    expertise = {r["id"]: r["expertise"].split(",") for r in cur.execute("SELECT id,expertise FROM faculty")}
-
-    classes = [(d, sem, sec) for d in DEPTS for sem in SEMS for sec in SECTIONS[d]]
-    random.shuffle(classes)
-    home_room = {c: class_rooms[i % len(class_rooms)] for i, c in enumerate(classes)}
-
-    # ---- subject allocation: exactly ONE teacher owns a subject for a class, all semester.
-    #      (Department meeting in code form: expertise first, then load balance.)
-    ALLOC, projected = {}, {f: 0 for f in fac_load}
-    demand = []
-    for cls in classes:
-        d, sem, sec = cls
-        for c, nm, cr, k in SUBJECTS[d][sem]:
-            hrs = 6 if k == "P" else 3 if k == "L" else cr + 1
-            demand.append((hrs, cls, c, k))
-    demand.sort(key=lambda x: -x[0])            # hardest-to-place first
-    for hrs, cls, code, kind in demand:
-        d = cls[0]
-        best, bscore = None, -1e9
-        for f in fac_by_dept[d]:
-            if projected[f] + hrs > max_load[f] - 3:      # keep 3 hrs for activity duty
-                continue
-            score = (5 if code in expertise[f] else 0) - projected[f] * 0.35 + random.random() * .5
-            if score > bscore:
-                best, bscore = f, score
-        if best is None:                         # cap-relaxed fallback
-            best = min(fac_by_dept[d], key=lambda f: projected[f])
-        ALLOC[(cls, code)] = best
-        projected[best] += hrs
-    PROJ.update(projected)
-
-    act_load = {f: 0 for f in fac_load}
-
-    def free_fac(dept, subject, day, periods, prefer=None):
-        """A faculty free for ALL given periods, respecting load caps."""
-        if prefer and all(prefer not in fac_busy.get((day, p), set()) for p in periods) \
-                and fac_load[prefer] + len(periods) <= max_load[prefer]:
-            return prefer
-        cands = []
-        for f in fac_by_dept[dept]:
-            if any(f in fac_busy.get((day, p), set()) for p in periods):
-                continue
-            if fac_load[f] + len(periods) > max_load[f]:
-                continue
-            if PROJ and PROJ.get(f, 0) + act_load[f] + len(periods) > max_load[f]:
-                continue
-            score = (3 if subject in expertise[f] else 0) - fac_load[f] * .1 + random.random() * .4
-            cands.append((score, f))
-        if not cands:
-            return None
-        return max(cands)[1]
-
-    def free_room(pool, day, periods):
-        for r in pool:
-            if all(r not in room_busy.get((day, p), set()) for p in periods):
-                return r
-        return None
-
-    def book(cls, day, periods, subject, fac, room, kind):
-        d, sem, sec = cls
-        for p in periods:
-            cur.execute("""INSERT INTO timetable(dept,sem,section,day,period,subject,faculty,room,kind)
-                           VALUES(?,?,?,?,?,?,?,?,?)""", (d, sem, sec, day, p, subject, fac, room, kind))
-            if fac:
-                fac_busy.setdefault((day, p), set()).add(fac)
-            room_busy.setdefault((day, p), set()).add(room)
-        if fac:
-            fac_load[fac] += len(periods)
-
-    filled = {c: {day: set() for day in DAYS} for c in classes}
-
-    # ---- pass 1: lab / project blocks (3 consecutive, session-aligned)
-    for cls in classes:
-        d, sem, sec = cls
-        blocks = []
-        for c, nm, cr, k in SUBJECTS[d][sem]:
-            if k == "L":
-                blocks.append((c, nm))
-            elif k == "P":
-                blocks += [(c, nm), (c, nm)]        # project = two 3-hour blocks
-        for code, nm in blocks:
-            placed = False
-            for day in random.sample(DAYS, len(DAYS)):
-                if placed:
-                    break
-                for (a, b) in random.sample(LAB_WINDOWS[day], len(LAB_WINDOWS[day])):
-                    ps = list(range(a, b + 1))
-                    if any(p in filled[cls][day] for p in ps) or b > day_periods(sem, day):
-                        continue
-                    if any(cur.execute("""SELECT 1 FROM timetable WHERE dept=? AND sem=? AND section=?
-                                          AND day=? AND subject=?""", (d, sem, sec, day, code)).fetchone()
-                           for _ in [0]):
-                        continue                      # one lab of a subject per day
-                    f = ALLOC[(cls, code)]
-                    if any(f in fac_busy.get((day, q), set()) for q in ps):
-                        continue
-                    r = free_room(labs, day, ps)
-                    if not r:
-                        continue
-                    book(cls, day, ps, code, f, r, "L")
-                    filled[cls][day].update(ps)
-                    placed = True
-                    break
-
-    # ---- pass 2: theory, day-by-day, strictly contiguous (every remaining slot filled)
-    for cls in classes:
-        d, sem, sec = cls
-        theory = [(c, cr) for c, nm, cr, k in SUBJECTS[d][sem] if k == "T"]
-        # weekly quota = credits + 1 tutorial hour
-        need = {c: cr + 1 for c, cr in theory}
-        act_cycle = itertools.cycle([a for a in ACTIVITIES for _ in range(a[3])])
-
-        for day in DAYS:
-            per_day = {}
-            for p in range(1, day_periods(sem, day) + 1):
-                if p in filled[cls][day]:
-                    continue
-                choices = sorted([c for c in need if need[c] > 0 and per_day.get(c, 0) < 2],
-                                 key=lambda c: (-need[c], per_day.get(c, 0), random.random()))
-                done = False
-                for c in choices:
-                    f = ALLOC[(cls, c)]
-                    if f in fac_busy.get((day, p), set()):
-                        continue
-                    r = home_room[cls] if home_room[cls] not in room_busy.get((day, p), set()) \
-                        else free_room(class_rooms, day, [p])
-                    if not r:
-                        continue
-                    book(cls, day, [p], c, f, r, "T")
-                    filled[cls][day].add(p)
-                    need[c] -= 1
-                    per_day[c] = per_day.get(c, 0) + 1
-                    done = True
-                    break
-                if done:
-                    continue
-                # ---- safety valve: a real academic activity, never a blank hole
-                code, nm, kind, _w = next(act_cycle)
-                f = free_fac(d, code, day, [p]) if code in ("ACT-PT", "ACT-MP", "ACT-RM", "ACT-MC") else None
-                if f:
-                    act_load[f] += 1
-                r = home_room[cls] if home_room[cls] not in room_busy.get((day, p), set()) \
-                    else free_room(class_rooms + labs, day, [p])
-                book(cls, day, [p], code, f, r or home_room[cls], "A")
-                filled[cls][day].add(p)
+    # Built by the solver (#20), the same code path the console streams and a
+    # rebuild commits: solver.py places every curriculum period (theory, the lab
+    # batch rotations, the projects) under every hard rule, then fills each day
+    # solid with activities. A greedy generator lived here before; measured, it
+    # left 5 class-subjects an hour short of their weekly quota, and 10 once lab
+    # batches doubled the lab teachers' hours (CSE-7B's BCS703 had none at all),
+    # because when every classroom is taught in at an hour only a search can move
+    # something to make room. The step limits bound the solver, so an unlimited
+    # time budget keeps the seed identical on a slow machine. It draws from its
+    # own Random, never the global stream the rest of the seed uses.
+    con.commit()
+    import solver
+    res = solver.run(solver.build_input(con, seed=7, time_budget_s=float("inf")))
+    solver.apply(con, res)
 
     # ---------------------------------------------------------- leaves
     all_fac = [f for d in fac_by_dept for f in fac_by_dept[d]]
     for _ in range(16):
         f = random.choice(all_fac)
         start = today + dt.timedelta(days=random.randint(-6, 12))
+        if start.weekday() == 6:                # nobody applies for leave from a Sunday; no extra draw
+            start += dt.timedelta(days=1)
         end = start + dt.timedelta(days=random.choice([0, 0, 1, 2]))
         cur.execute("INSERT INTO leaves(faculty,from_date,to_date,kind,reason,status,applied_on) VALUES(?,?,?,?,?,?,?)",
                     (f, start.isoformat(), end.isoformat(),
@@ -580,6 +495,12 @@ def _campus():
     and per-subject attendance. Seeded AFTER the core institution and from its
     own Random, so the core tables are byte-identical with or without it -
     tests/campus_test.py pins that. Imported lazily: campus_data imports db."""
+    con = connect()
+    if "batch" not in {r[1] for r in con.execute("PRAGMA table_info(timetable)")}:
+        con.execute("ALTER TABLE timetable ADD COLUMN batch TEXT")   # an older database: whole-section rows (#20)
+    assign_batches(con)
+    con.commit()
+    con.close()
     import campus_data
     campus_data.ensure()
     import academics
@@ -597,6 +518,33 @@ def _campus():
 
 
 # ====================================================================== check
+def batch_problems(con, where="", args=()):
+    """The batch rules (#20), read from the rows alone: a class hour is either
+    ONE row for the whole section, or one row per lab batch of the section, each
+    batch once; and every teaching row's room seats the people in it (the batch
+    when it names one, the section when not). Shared by db.verify() and
+    solver.verify(), so the seed and a regenerated timetable meet one standard."""
+    out = []
+    want = {}
+    for r in con.execute("SELECT dept, sem, section, batch, COUNT(*) n FROM students GROUP BY 1, 2, 3, 4"):
+        want.setdefault((r["dept"], r["sem"], r["section"]), {})[r["batch"]] = r["n"]
+    hours = {}
+    for r in con.execute("SELECT t.*, rm.capacity cap FROM timetable t LEFT JOIN rooms rm ON rm.id=t.room" + where, args):
+        cls = (r["dept"], r["sem"], r["section"])
+        hours.setdefault((cls, r["day"], r["period"]), []).append(r["batch"])
+        size = want.get(cls, {})
+        n = size.get(r["batch"], 0) if r["batch"] else sum(size.values())
+        if r["kind"] in ("T", "L") and r["cap"] is not None and n > r["cap"]:
+            out.append(f"OVER CAPACITY {cls} {r['day']}P{r['period']} {r['subject']}"
+                       f"{' ' + r['batch'] if r['batch'] else ''}: {n} in {r['room']} (seats {r['cap']})")
+    for (cls, day, p), bs in hours.items():
+        named = sorted(b for b in want.get(cls, {}) if b)
+        if bs == [None] or (None not in bs and sorted(bs) == named):
+            continue
+        out.append(f"BATCHES {cls} {day}P{p}: {sorted(bs, key=str)} (section's batches: {named})")
+    return out
+
+
 def verify():
     con = connect()
     c = con.cursor()
@@ -606,10 +554,24 @@ def verify():
     for cls in classes:
         for day in DAYS:
             ps = sorted(r["period"] for r in c.execute(
-                "SELECT period FROM timetable WHERE dept=? AND sem=? AND section=? AND day=?", (*cls, day)))
+                "SELECT DISTINCT period FROM timetable WHERE dept=? AND sem=? AND section=? AND day=?", (*cls, day)))
             want = list(range(1, day_periods(cls[1], day) + 1))
             if ps != want:
                 problems.append(f"GAP {cls} {day}: {ps} != {want}")
+    problems += batch_problems(con)
+    # every student gets each subject's full weekly hours: a batch counts its own
+    # lab rows and the section's rows (#20). Silent before: the greedy generator
+    # this replaced left 5 class-subjects an hour short and nothing said so.
+    for cls in classes:
+        groups = [b for b in batches_of(con, *cls)] or [None]
+        for code, _nm, cr, kind in SUBJECTS.get(cls[0], {}).get(cls[1], []):
+            need = 6 if kind == "P" else 3 if kind == "L" else cr + 1
+            got = {g: c.execute("SELECT COUNT(*) FROM timetable WHERE dept=? AND sem=? AND section=? AND subject=? "
+                                "AND (batch IS NULL OR batch=?)", (*cls, code, g)).fetchone()[0] for g in groups}
+            if len(set(got.values())) == 1:                  # the same for everyone: one line, not one per batch
+                got = {None: next(iter(got.values()))}
+            problems += [f"QUOTA {cls}{' ' + g if g else ''} {code}: {n} of {need} periods a week"
+                         for g, n in got.items() if n != need]
     for r in c.execute("""SELECT day,period,faculty,COUNT(*) n FROM timetable WHERE faculty IS NOT NULL
                           GROUP BY day,period,faculty HAVING n>1"""):
         problems.append(f"FACULTY CLASH {r['faculty']} {r['day']}P{r['period']} x{r['n']}")

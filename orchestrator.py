@@ -623,9 +623,11 @@ def h_timetable(con, text, ent, st, tr, actor):
         a = [day, p]
         if ent["dept"]: q += " AND t.dept=?"; a.append(ent["dept"])
         r = rows(con, q, tuple(a))
-        return {"blocks": [B_text(f"Live board — **{day} P{p} ({PERIOD_TIME[p]})**, {len(r)} classes running:"),
+        n = len({(x["dept"], x["sem"], x["section"]) for x in r})      # a split lab hour is two rows, one class
+        return {"blocks": [B_text(f"Live board — **{day} P{p} ({PERIOD_TIME[p]})**, {n} classes running:"),
                            B_table(["Class", "Subject", "Faculty", "Room"],
-                                   [[f"{x['dept']}-{x['sem']}{x['section']}", f"{x['subject']} {x['sname'] or ''}",
+                                   [[f"{x['dept']}-{x['sem']}{x['section']}" + (f" {x['batch']}" if x["batch"] else ""),
+                                     f"{x['subject']} {x['sname'] or ''}",
                                      fac_name(con, x["faculty"]), x["room"]] for x in r], dense=True)],
                 "agent": "TimetableAgent"}
 
@@ -640,7 +642,7 @@ def h_timetable(con, text, ent, st, tr, actor):
                                   f"(cap {f['max_load']}, utilisation {round(100*len(tt)/f['max_load'])}%)"),
                            B_table(["Day", "Period", "Class", "Subject", "Room"],
                                    [[x["day"], f"P{x['period']} {PERIOD_TIME[x['period']]}",
-                                     f"{x['dept']}-{x['sem']}{x['section']}",
+                                     f"{x['dept']}-{x['sem']}{x['section']}" + (f" {x['batch']}" if x["batch"] else ""),
                                      f"{x['subject']} · {x['sname'] or ''}", x["room"]] for x in tt], dense=True)],
                 "agent": "TimetableAgent",
                 "chips": [f"{f['name'].split()[-1]} is absent tomorrow", "Faculty workload above 90%"]}

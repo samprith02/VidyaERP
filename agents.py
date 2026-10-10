@@ -179,7 +179,7 @@ MAKEUP_DDL = """
 CREATE TABLE IF NOT EXISTS makeup_sessions(
   id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, day TEXT, period INT, dept TEXT, sem INT, section TEXT,
   subject TEXT, faculty TEXT, room TEXT, plan_ref TEXT, status TEXT, created_at TEXT, created_by TEXT,
-  reason TEXT)"""
+  reason TEXT, batch TEXT)"""
 
 
 # Where a missed multi-period block (a 3-period lab) can be made up. Every batch
@@ -205,6 +205,8 @@ def ensure_makeups(con):
     pattern, so a make-up cannot be a timetable row without changing every
     week. Created on demand so an existing college.db needs no migration."""
     con.execute(MAKEUP_DDL)
+    if "batch" not in {r[1] for r in con.execute("PRAGMA table_info(makeup_sessions)")}:
+        con.execute("ALTER TABLE makeup_sessions ADD COLUMN batch TEXT")   # one lab batch's make-up (#20)
 
 
 # A teacher's STANDING unavailability (#19): a weekly window they cannot teach
@@ -524,10 +526,11 @@ class SubstitutionAgent:
             ps = mk["periods"]
         for p in ps:
             con.execute("""INSERT INTO makeup_sessions(date,day,period,dept,sem,section,subject,faculty,room,
-                           plan_ref,status,created_at,created_by,reason) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           plan_ref,status,created_at,created_by,reason,batch) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (mk["date"], mk["day"], p, slot["dept"], slot["sem"], slot["section"], leg["subject"],
                          faculty_id, mk["room"], plan_ref, "Scheduled", now, actor,
-                         f"Make-up for {leg['subject']} missed on {leg['day']} P{leg['period']}"))
+                         f"Make-up for {leg['subject']}{' ' + leg['batch'] if leg.get('batch') else ''} missed on "
+                         f"{leg['day']} P{leg['period']}", leg.get("batch")))
         return mk
 
     # ---------------------------------------------------------- measurement
@@ -641,7 +644,7 @@ class SubstitutionAgent:
         for r in raw:
             prev = affected[-1] if affected else None
             if (prev and r["subject"] == prev["subject"] and r["section"] == prev["section"]
-                    and r["sem"] == prev["sem"] and r["dept"] == prev["dept"]
+                    and r["sem"] == prev["sem"] and r["dept"] == prev["dept"] and r["batch"] == prev["batch"]
                     and r["period"] == prev["periods"][-1] + 1):
                 prev["periods"].append(r["period"])
                 prev["slot_ids"].append(r["id"])
@@ -667,7 +670,7 @@ class SubstitutionAgent:
                 "slot_id": s["id"], "slot_ids": s["slot_ids"], "periods": s["periods"],
                 "period": s["period"], "time": _span(s["periods"]),
                 "dept": s["dept"], "sem": s["sem"], "day": day,
-                "class": f"{s['dept']}-{s['sem']}{s['section']}", "subject": s["subject"],
+                "class": f"{s['dept']}-{s['sem']}{s['section']}", "batch": s.get("batch"), "subject": s["subject"],
                 "subject_name": subj_name(con, s["subject"]), "room": s["room"],
                 "action": "SUBSTITUTE" if top else "UNCOVERED",
                 "to": top["name"] if top else "— no free competent faculty —",
@@ -696,7 +699,7 @@ class SubstitutionAgent:
                     "slot_id": s["id"], "slot_ids": s["slot_ids"], "periods": s["periods"],
                     "period": s["period"], "time": _span(s["periods"]),
                     "dept": s["dept"], "sem": s["sem"], "day": day,
-                    "class": f"{s['dept']}-{s['sem']}{s['section']}", "subject": s["subject"],
+                    "class": f"{s['dept']}-{s['sem']}{s['section']}", "batch": s.get("batch"), "subject": s["subject"],
                     "subject_name": subj_name(con, s["subject"]),
                     "action": "SWAP", "to": fac_name(con, sw["faculty"]), "to_id": sw["faculty"],
                     "swap_with": sw["id"], "swap_period": sw["period"],
@@ -716,7 +719,7 @@ class SubstitutionAgent:
                     "slot_id": s["id"], "slot_ids": s["slot_ids"], "periods": s["periods"],
                     "period": s["period"], "time": _span(s["periods"]),
                     "dept": s["dept"], "sem": s["sem"], "day": day,
-                    "class": f"{s['dept']}-{s['sem']}{s['section']}", "subject": s["subject"],
+                    "class": f"{s['dept']}-{s['sem']}{s['section']}", "batch": s.get("batch"), "subject": s["subject"],
                     "subject_name": subj_name(con, s["subject"]), "room": s["room"],
                     "action": "SUBSTITUTE" if top else "UNCOVERED",
                     "to": top["name"] if top else "—", "to_id": top["id"] if top else None,
@@ -733,7 +736,7 @@ class SubstitutionAgent:
                 "slot_id": s["id"], "slot_ids": s["slot_ids"], "periods": s["periods"],
                 "period": s["period"], "time": _span(s["periods"]),
                 "dept": s["dept"], "sem": s["sem"], "day": day,
-                "class": f"{s['dept']}-{s['sem']}{s['section']}", "subject": s["subject"],
+                "class": f"{s['dept']}-{s['sem']}{s['section']}", "batch": s.get("batch"), "subject": s["subject"],
                 "subject_name": subj_name(con, s["subject"]), "room": s["room"],
                 "action": "MAKEUP", "to": faculty["name"], "to_id": faculty["id"],
                 "makeup": mk,
@@ -996,16 +999,24 @@ class TimetableAgent:
             subject, sname = r["subject"], r["sname"]
             if o and o["new_subject"]:
                 subject, sname = o["new_subject"], subj_name(con, o["new_subject"])
-            cells[f"{r['day']}-{r['period']}"] = {
+            cells.setdefault(f"{r['day']}-{r['period']}", []).append({
                 "subject": subject, "sname": sname, "room": (o and o["new_room"]) or r["room"],
-                "kind": r["kind"] or "T",
+                "kind": r["kind"] or "T", "batch": r["batch"],
                 "faculty": fac_name(con, r["faculty"]) if r["faculty"] else "Class Mentor",
                 "override": ({"action": o["action"],
                               "faculty": fac_name(con, o["new_faculty"]) if o["new_faculty"] else None,
                               "subject": o["new_subject"],
                               "released": o["action"] in ("VACATED", "MAKEUP"),
                               "was": r["subject"] if o["new_subject"] else None,
-                              "reason": o["reason"]} if o else None)}
+                              "reason": o["reason"]} if o else None)})
+        # A lab hour of a split section is one row per batch (#20): the cell
+        # carries every batch, and its headline names them all.
+        for key, got in cells.items():
+            got.sort(key=lambda c: c["batch"] or "")
+            cells[key] = got[0] if len(got) == 1 and not got[0]["batch"] else {
+                **got[0], "subject": " / ".join(c["subject"] for c in got),
+                "faculty": " / ".join(c["faculty"] for c in got), "room": " / ".join(c["room"] or "—" for c in got),
+                "override": next((c["override"] for c in got if c["override"]), None), "batches": got}
         # The week's booked make-ups (#18). They are dated, so they appear only
         # in the week that holds them - usually after the batch's normal day
         # ends, which is exactly where a real extra hour goes.
@@ -1018,7 +1029,8 @@ class TimetableAgent:
                                   AND m.section=? AND m.date BETWEEN ? AND ?""",
                           (dept, sem, sec, mon.isoformat(), (mon + dt.timedelta(days=5)).isoformat())):
                 cells[f"{m['day']}-{m['period']}"] = {
-                    "subject": m["subject"], "sname": m["sname"], "room": m["room"], "kind": "M",
+                    "subject": m["subject"] + (f" {m['batch']}" if m["batch"] else ""), "sname": m["sname"],
+                    "room": m["room"], "kind": "M", "batch": m["batch"],
                     "faculty": fac_name(con, m["faculty"]), "makeup": {"date": m["date"], "reason": m["reason"]},
                     "override": None}
                 maxp = max(maxp, m["period"])

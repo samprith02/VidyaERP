@@ -119,22 +119,44 @@ check("2b the booking's own plan can still see its hour (re-check at apply time 
       not sub._busy_at(con, slot, first["day"], first["date"], first["period"], first["plan_ref"])
       and sub._busy_at(con, slot, first["day"], first["date"], first["period"], "other-plan"))
 
-# a stale proposal: plan the second absence, let someone else book its slot, then apply
-f3, ps3 = plans_for(same_class[1] if len(same_class) > 1 else teachers[5], MON)
-c3 = plan(ps3, "C")
-leg3 = next(l for l in c3["legs"] if l.get("makeup"))
-m = leg3["makeup"]
-con.execute("""INSERT INTO makeup_sessions(date,day,period,dept,sem,section,subject,faculty,room,plan_ref,status,
-               created_at,created_by,reason) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (m["date"], m["day"], m["period"], leg3["dept"], leg3["sem"], leg3["class"][-1], "X", "F999",
-             m["room"], "squatter", "Scheduled", "now", "test", "someone else got there first"))
-con.commit()
-sub.apply_plan(con, c3, f3, MON)
-mine = [r for r in booked(c3["id"]) if r["subject"] == leg3["subject"]]
+# A stale proposal: plan an absence, let someone else book its make-up slot, then
+# apply. Two honest outcomes, and the seed decides which a given leg meets: another
+# free hour that week is booked instead, or - a semester-3 class whose only make-up
+# hours are Saturday afternoon, already taken - the leg says it is NOT scheduled.
+# Each is found in the data rather than assumed of an arbitrary teacher (#20 moved
+# the seed, and the first teacher this used to pick now has no hour left).
+cases = {}
+for t in same_class[1:] + teachers[5:]:
+    f3, ps3 = plans_for(t, MON)
+    c3 = plan(ps3, "C")
+    leg3 = next((l for l in c3["legs"] if l.get("makeup")), None) if c3 else None
+    if not leg3:
+        continue
+    m = leg3["makeup"]
+    con.execute("""INSERT INTO makeup_sessions(date,day,period,dept,sem,section,subject,faculty,room,plan_ref,status,
+                   created_at,created_by,reason) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (m["date"], m["day"], m["period"], leg3["dept"], leg3["sem"], leg3["class"][-1], "X", "F999",
+                 m["room"], "squatter", "Scheduled", "now", "test", "someone else got there first"))
+    alt = sub.find_makeup(con, {"dept": leg3["dept"], "sem": leg3["sem"], "section": leg3["class"][-1],
+                                "faculty": f3["id"], "period": leg3["period"], "periods": leg3["periods"],
+                                "room": leg3.get("room"), "kind": "L" if len(leg3["periods"]) > 1 else "T"},
+                          dt.date.fromisoformat(m["date"]) - dt.timedelta(days=1))
+    key = "rebooked" if alt else "none left"
+    if key not in cases:
+        sub.apply_plan(con, c3, f3, MON)
+        cases[key] = (m, leg3, [r for r in booked(c3["id"]) if r["subject"] == leg3["subject"]],
+                      [x["reason"] for x in rows(con, "SELECT reason FROM overrides WHERE plan_ref=? AND slot_id=?",
+                                                 (c3["id"], leg3["slot_id"]))])
+    con.execute("DELETE FROM makeup_sessions WHERE plan_ref='squatter'")
+    con.commit()
+    if len(cases) == 2:
+        break
+m, leg3, mine, _why = cases.get("rebooked", ({}, {}, [], []))
 check("2c a slot taken between proposal and apply is rebooked, not double-booked",
       mine and not any(r["date"] == m["date"] and r["period"] == m["period"] for r in mine), str(mine[:2]))
-con.execute("DELETE FROM makeup_sessions WHERE plan_ref='squatter'")
-con.commit()
+m, leg3, mine, why = cases.get("none left", ({}, {}, [], []))
+check("2d with no other hour left that week, it is not booked on the taken hour and says it is not scheduled",
+      m and not mine and why and all("NOT yet scheduled" in x for x in why), str((mine[:1], why)))
 
 # ------------------------------------------------------ 3 · nothing is double-booked
 print("\n3 · across many applied plans, nothing is double-booked")
@@ -279,7 +301,13 @@ con.commit()
 # #54, constructed: a teacher holding a make-up at an hour is not free then.
 # Saturday P6 is outside every batch's day, so only the booking can make them busy.
 sat = MON + dt.timedelta(days=5)
-t54 = tue_teachers[5]
+# a teacher with nothing at all at that hour, read straight from the tables; the
+# make-ups the sections above booked have taken some Saturday afternoons (#20)
+t54 = next(t for t in tue_teachers[5:]
+           if not one(con, "SELECT 1 FROM makeup_sessions WHERE status='Scheduled' AND faculty=? AND date=? AND period=6",
+                      (t, sat.isoformat()))
+           and not one(con, "SELECT 1 FROM faculty_availability WHERE status='Active' AND faculty=? AND day='Sat' "
+                            "AND 6 BETWEEN p_from AND p_to", (t,)))
 check("6g (#54) with nothing booked, the teacher is free at Sat P6",
       t54 not in sub.busy_faculty(con, "Sat", 6, sat.isoformat()))
 con.execute("""INSERT INTO makeup_sessions(date,day,period,dept,sem,section,subject,faculty,room,plan_ref,status,
