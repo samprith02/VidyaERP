@@ -192,11 +192,12 @@ def classes(con):
     return out
 
 
-def resolve_class(con, dept, sem, section):
+def resolve_class(con, dept, sem, section, why_not="so there is nothing to rebuild"):
     """(dept, sem, section) normalised to a section that runs, or (None, why).
 
     A section that does not run used to be "rebuilt" as 0 of 0 periods and
     reported as applied and verified clean - for "cse" in lower case too (#89).
+    `why_not` finishes the refusal for the caller: a rebuild, a timetable (#129).
     """
     d, x = str(dept or "").strip().upper(), str(section or "").strip().upper()
     try:
@@ -207,7 +208,7 @@ def resolve_class(con, dept, sem, section):
     if (d, s, x) in have:
         return (d, s, x), None
     near = [f"{a}-{b}{c}" for a, b, c in have if a == d] or sorted({a for a, _b, _c in have})
-    return None, (f"No section {d}-{s}{x} runs this semester, so there is nothing to rebuild. "
+    return None, (f"No section {d}-{s}{x} runs this semester, {why_not}. "
                   f"{'Sections in ' + d if any(a == d for a, _b, _c in have) else 'Departments'}: "
                   f"{', '.join(near)}.")
 
