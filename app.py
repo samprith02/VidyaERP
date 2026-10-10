@@ -630,7 +630,8 @@ def generate_stream(scope: str = "class", dept: str = "CSE", sem: int = 5,
                                "unplaced", "capacity_relaxed", "classes")},
             "bookings": [{"cls": "-".join(str(x) for x in b["cls"]), "day": b["day"],
                           "period": b["period"], "subject": b["subject"],
-                          "faculty": b["faculty"], "room": b["room"], "kind": b["kind"]}
+                          "faculty": b["faculty"], "room": b["room"], "kind": b["kind"],
+                          "batch": b.get("batch")}                # a split lab hour: one per batch (#20)
                          for b in res["bookings"]],
             "args": a}) + "\n\n"
 

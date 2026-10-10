@@ -719,8 +719,13 @@ print("\n20 · attendance: same refusal, same commit, every path")
 print("-" * 78)
 import teaching                                                    # noqa: E402
 
-ATT_ARGS = {"take_attendance": {"date": "2026-09-03", "period": 1, "dept": "CIVIL", "sem": 5, "section": "A",
-                                "absent": "none"}}
+# three lecture hours of CIVIL-5A that Thursday, read from the timetable rather
+# than assumed: a rebuilt timetable (#20) moves them, and an activity hour keeps
+# no register at all
+ATT_HOURS = [r["period"] for r in con.execute("""SELECT period FROM timetable WHERE dept='CIVIL' AND sem=5
+                                                 AND section='A' AND day='Thu' AND kind='T' ORDER BY period""")][:3]
+ATT_ARGS = {"take_attendance": {"date": "2026-09-03", "period": ATT_HOURS[0], "dept": "CIVIL", "sem": 5,
+                                "section": "A", "absent": "none"}}
 check("20a every attendance write has a parity probe", set(ATT_ARGS) == set(teaching.GATED_WRITES))
 check("20b every attendance write is in tools.GATED_WRITES", set(teaching.GATED_WRITES) <= set(tools.GATED_WRITES))
 
@@ -743,7 +748,8 @@ for name, targs in ATT_ARGS.items():
         check(f"20 {name} · {path} · refused, nothing written", vs[path] == "blocked" and att_snapshot() == before,
               f"{vs[path]}: {json.dumps(r.get('data'), default=str)[:120]}")
     check(f"20 {name} · PARITY", len(set(vs.values())) == 1, str(vs))
-for path, period in zip(PATHS, (1, 2, 4)):
+check("20 the probe has three lecture hours to write", len(ATT_HOURS) == 3, str(ATT_HOURS))
+for path, period in zip(PATHS, ATT_HOURS):
     S = fresh_session()                     # a different class hour per path, so each commit is its own session
     r = run_path(path, S, "take_attendance", {**ATT_ARGS["take_attendance"], "period": period}, approves=True)
     got = one(con, "SELECT present, absent FROM attendance_sessions WHERE date='2026-09-03' AND dept='CIVIL' "

@@ -538,16 +538,19 @@ function runSolver(reload){
     // admin approves is the finished timetable, not wherever the animation ended.
     const k=CLS.find(c=>c.i===focusIdx);
     const key=k?`${k.dept}-${k.sem}-${k.section}`:null;   // server joins the tuple with '-'
-    if(k) r.bookings.filter(b=>b.cls===key)
-      .forEach(b=>{const di=DAYS.indexOf(b.day),c=cell(di,b.period);if(!c)return;
+    // a split lab hour is one booking per batch (#20): the cell names them all
+    const at={};
+    if(k) r.bookings.filter(b=>b.cls===key).forEach(b=>{(at[b.day+'|'+b.period]=at[b.day+'|'+b.period]||[]).push(b);});
+    Object.values(at).forEach(bs=>{const b=bs[0],di=DAYS.indexOf(b.day),c=cell(di,b.period);if(!c)return;
+        bs.sort((x,y)=>(x.batch||'').localeCompare(y.batch||''));
         c.className='sc in '+(b.kind==='A'?'A':b.kind==='L'?'L':'T');
-        c.querySelector('.a').textContent=b.subject;
-        c.querySelector('.b').textContent=b.room||'';});
+        c.querySelector('.a').textContent=bs.map(x=>(x.batch?x.batch+' ':'')+x.subject).join(' | ');
+        c.querySelector('.b').textContent=bs.map(x=>x.room||'').join(' / ');});
     const warn=[];
     if(r.unplaced.length)warn.push(`<b>${r.unplaced.length} curriculum period(s) could not be placed</b> and became activity slots: ${
       [...new Set(r.unplaced.map(u=>u.subject))].slice(0,6).join(', ')}.`);
     if(r.capacity_relaxed.length)warn.push(`<b>${r.capacity_relaxed.length} lab block(s) exceed room capacity</b> for ${
-      [...new Set(r.capacity_relaxed.map(x=>x.cls))].slice(0,5).join(', ')} — this dataset has no lab batch splitting, so the constraint was relaxed and recorded rather than hidden.`);
+      [...new Set(r.capacity_relaxed.map(x=>x.cls))].slice(0,5).join(', ')} — no room of that kind seats the group and its students have no lab batches to rotate, so the constraint was relaxed and recorded rather than hidden.`);
     if(r.timed_out)warn.push('<b>The solver hit its time budget</b> and returned the best assignment it had.');
     if(warn.length)$('#swarnbox').innerHTML=`<div class="swarn">${warn.map(w=>'<div>'+w+'</div>').join('')}</div>`;
     $('#smsg').innerHTML=`Solved <b>${r.placed}/${r.total}</b> curriculum periods in <b>${(r.ms/1000).toFixed(2)}s</b>

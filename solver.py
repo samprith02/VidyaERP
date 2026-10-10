@@ -38,11 +38,19 @@ What this port adds over the reference:
 
 Honest limits, stated where a reader will see them:
 
+  * Lab batches (#20). A section larger than a lab seats is split into batches
+    (`students.batch`), and its labs ROTATE: one variable is a 3-period block in
+    which every batch is in a DIFFERENT lab, with its own teacher and its own
+    room, and over the section's lab blocks each batch meets each lab once. A
+    variable therefore carries one leg per batch, and every hard rule is checked
+    for every leg. A project is whole-section work and needs a room that seats
+    the section, of any kind.
   * Room capacity is a HARD constraint when some room of the required kind can
-    hold the class, and RELAXED with a recorded flag when none can. The lab rooms
-    seat 36 and a CSE section is ~60, because real colleges split a lab into
-    batches and this dataset does not model batches. Relaxing silently would hide
+    hold the class (or the batch), and RELAXED with a recorded flag when none
+    can - a section with more batches than labs to rotate them through, or an
+    older database whose students carry no batches. Relaxing silently would hide
     that; `capacity_relaxed` in the result names every class it happened to.
+    On the seeded institution it is empty, and the suite asserts so.
   * Teacher unavailability is read from `faculty_availability` (#19): standing
     weekly windows, which is what a weekly timetable can honour. Approved leave
     is dated, so it drives the RESCHEDULING path, not generation.
@@ -83,17 +91,27 @@ def period_of(slot: int) -> int:
 
 
 def weekly_periods(kind: str, credits: int) -> int:
-    """Total periods a subject needs per week."""
+    """Total periods a subject needs per week, for one student."""
     return 6 if kind == "P" else 3 if kind == "L" else credits + 1
+
+
+def lab_codes(k) -> list:
+    return [c for c, _n, _cr, kind in SUBJECTS[k.dept][k.sem] if kind == "L"]
+
+
+def rotates(k) -> bool:
+    """Can this section's labs run as a batch rotation? It needs batches, and at
+    least as many labs as batches, so every batch is in some lab in every block."""
+    return bool(k.batches) and len(lab_codes(k)) >= len(k.batches)
 
 
 # --------------------------------------------------------------------------- input
 
 
 class Klass:
-    __slots__ = ("key", "idx", "dept", "sem", "section", "size", "day_len", "home_room", "label")
+    __slots__ = ("key", "idx", "dept", "sem", "section", "size", "day_len", "home_room", "label", "batches")
 
-    def __init__(self, idx, dept, sem, section, size, home_room):
+    def __init__(self, idx, dept, sem, section, size, home_room, batches=None):
         self.idx = idx
         self.dept, self.sem, self.section = dept, sem, section
         self.key = (dept, sem, section)
@@ -101,21 +119,30 @@ class Klass:
         self.home_room = home_room
         self.day_len = {d: day_periods(sem, d) for d in DAYS}
         self.label = f"{dept}-{sem}{section}"
+        self.batches = dict(batches or {})      # {"B1": 31, "B2": 31}; {} = taught whole
 
 
 class Var:
-    """One placeable unit: `length` consecutive periods of one subject for one class."""
+    """One placeable unit: `length` consecutive periods for one class, made of
+    one LEG per group that is taught at once - the whole section, or each lab
+    batch in its own lab (#20). A leg is (subject, teacher, batch, headcount);
+    `s` and `t` are the first leg's, for the trace."""
     __slots__ = ("k", "c", "s", "t", "n", "length", "room_kind", "max_per_day",
-                 "priority", "slots", "rooms", "cap_relaxed")
+                 "priority", "slots", "rooms", "cap_relaxed", "legs", "ss", "ts", "kinds")
 
-    def __init__(self, k, c, s, t, n, length, room_kind, max_per_day, priority):
-        self.k, self.c, self.s, self.t, self.n = k, c, s, t, n
+    def __init__(self, k, c, legs, n, length, room_kind, max_per_day, priority):
+        self.k, self.c, self.n = k, c, n
+        self.legs = legs
+        self.ss = tuple(l[0] for l in legs)
+        self.ts = tuple(l[1] for l in legs)
+        self.s, self.t = self.ss[0], self.ts[0]
         self.length = length
         self.room_kind = room_kind
         self.max_per_day = max_per_day
         self.priority = priority
         self.slots = []          # structurally legal start slots, precomputed
-        self.rooms = []          # room indices that can host it
+        self.rooms = []          # per leg: room indices that can host it
+        self.kinds = set()       # room kinds its pools draw on, for related()
         self.cap_relaxed = False
 
 
@@ -236,14 +263,15 @@ def build_input(con, scope="all", dept=None, sem=None, section=None, seed=7,
         size = con.execute("SELECT COUNT(*) c FROM students WHERE dept=? AND sem=? AND section=?",
                            (d, sm, sec)).fetchone()["c"] or 60
         home = class_rooms[i % len(class_rooms)] if class_rooms else None
-        inp.classes.append(Klass(len(inp.classes), d, sm, sec, size, home))
+        inp.classes.append(Klass(len(inp.classes), d, sm, sec, size, home, db.batches_of(con, d, sm, sec)))
 
-    # ---- lessons: one per (class, subject), carrying its weekly period demand
+    # ---- lessons: one per (class, subject), carrying its weekly TEACHING demand:
+    # a split section's lab is taught once per batch (#20)
     for k in inp.classes:
         for code, name, credits, kind in SUBJECTS[k.dept][k.sem]:
             inp.lessons.append({
                 "cls": k.idx, "subject": code, "kind": kind,
-                "periods": weekly_periods(kind, credits),
+                "periods": weekly_periods(kind, credits) * (len(k.batches) if kind == "L" and rotates(k) else 1),
                 "block": BLOCK[kind],
                 "priority": 3.0 if kind == "P" else 2.2 if kind == "L" else 1.0 + credits * 0.15,
             })
@@ -326,16 +354,33 @@ def solve(inp: Input):
 
     # ------------------------------------------------------------- variables
     vars_: list[Var] = []
+    rotated = set()                      # (class, lab code) placed by a rotation, not on its own
+    for k in classes:
+        if not rotates(k):
+            continue
+        labs = lab_codes(k)
+        teach = {inp.lessons[li]["subject"]: lesson_teacher.get(li) for li in range(len(inp.lessons))
+                 if inp.lessons[li]["cls"] == k.idx}
+        if any(teach.get(c) is None for c in labs):
+            continue
+        bs = sorted(k.batches)
+        prio = max(l["priority"] for l in inp.lessons if l["cls"] == k.idx and l["kind"] == "L")
+        # block j: batch i takes lab (i + j) mod L - different labs at once, each lab once per batch
+        for j in range(len(labs)):
+            legs = [(six[labs[(i + j) % len(labs)]], tix[teach[labs[(i + j) % len(labs)]]], b, k.batches[b])
+                    for i, b in enumerate(bs)]
+            vars_.append(Var(len(vars_), k.idx, legs, j, BLOCK["L"], "Lab", 1, prio))
+        rotated.update((k.idx, c) for c in labs)
     for li, lesson in enumerate(inp.lessons):
         k = classes[lesson["cls"]]
         t = lesson_teacher.get(li)
-        if t is None:
+        if t is None or (k.idx, lesson["subject"]) in rotated:
             continue
         length = lesson["block"]
         occurrences = max(1, lesson["periods"] // length)
         kind = "Lab" if lesson["kind"] in ("L", "P") else "Classroom"
         for n in range(occurrences):
-            vars_.append(Var(len(vars_), k.idx, six[lesson["subject"]], tix[t], n,
+            vars_.append(Var(len(vars_), k.idx, [(six[lesson["subject"]], tix[t], None, k.size)], n,
                              length, kind, 1 if length > 1 else 2, lesson["priority"]))
     V = len(vars_)
 
@@ -353,17 +398,23 @@ def solve(inp: Input):
                     if start + v.length - 1 <= dl:
                         legal.append(slot_of(di, start))
         v.slots = legal
-        fit = [rix[r] for r in rooms
-               if inp.room_meta[r]["kind"] == v.room_kind
-               and inp.room_meta[r]["capacity"] >= k.size]
-        if not fit:
-            # No room of the required kind can seat this class. Real colleges split
-            # the batch; this dataset has no batches, so relax and SAY SO.
-            fit = [rix[r] for r in rooms if inp.room_meta[r]["kind"] == v.room_kind]
-            v.cap_relaxed = True
-            capacity_relaxed.append({"cls": k.label, "subject": inp.subjects[v.s],
-                                     "size": k.size, "kind": v.room_kind})
-        v.rooms = fit
+        # A project is the whole section at work, not a practical: it may use any
+        # room that seats the section, labs first.
+        project = inp.subject_meta.get(inp.subjects[v.s], {}).get("kind") == "P"
+        kinds = ("Lab", "Classroom") if project else (v.room_kind,)
+        v.rooms = []
+        for s_, _t, batch, seats in v.legs:
+            fit = [rix[r] for kd in kinds for r in rooms
+                   if inp.room_meta[r]["kind"] == kd and inp.room_meta[r]["capacity"] >= seats]
+            if not fit:
+                # No room of the required kind seats this group: a section with no
+                # batches, or more batches than labs to rotate through. Relax and SAY SO.
+                fit = [rix[r] for r in rooms if inp.room_meta[r]["kind"] == v.room_kind]
+                v.cap_relaxed = True
+                capacity_relaxed.append({"cls": k.label + (f" {batch}" if batch else ""),
+                                         "subject": inp.subjects[s_], "size": seats, "kind": v.room_kind})
+            v.rooms.append(fit)
+        v.kinds = {inp.room_meta[rooms[r]]["kind"] for pool in v.rooms for r in pool}
 
     yield {"t": "init",
            "days": DAYS, "periods": PMAX, "period_labels": [PERIODS[p] for p in sorted(PERIODS)],
@@ -372,7 +423,8 @@ def solve(inp: Input):
                         "day_len": [k.day_len[d] for d in DAYS]} for k in classes],
            "rooms": [{"id": r, "kind": inp.room_meta[r]["kind"],
                       "cap": inp.room_meta[r]["capacity"]} for r in rooms],
-           "vars": [{"k": v.k, "c": v.c, "s": inp.subjects[v.s], "n": v.n,
+           "vars": [{"k": v.k, "c": v.c, "s": " | ".join(inp.subjects[l[0]] + (f" {l[2]}" if l[2] else "")
+                                                         for l in v.legs), "n": v.n,
                      "len": v.length, "t": inp.teachers[v.t]} for v in vars_],
            "total": V, "pins": len(inp.pins)}
     emitted += 1
@@ -392,7 +444,7 @@ def solve(inp: Input):
     teacher_day = [0] * (T * NDAYS)
     teacher_week = [0] * T
     assign_slot = [-1] * V
-    assign_room = [-1] * V
+    assign_room = [None] * V
     placed_count = 0
 
     unavail = [inp.unavailable.get(t, set()) for t in inp.teachers]
@@ -412,38 +464,50 @@ def solve(inp: Input):
 
     steps = backtracks = conflicts = restarts = 0
 
-    def find_room(v: Var, slot: int) -> int:
-        pool = v.rooms
-        if not pool:
-            return -1
-        off = slot % len(pool)
-        for i in range(len(pool)):
-            r = pool[(i + off) % len(pool)]
-            base = r * NSLOTS
-            if all(room_busy[base + slot + j] == -1 for j in range(v.length)):
-                return r
-        return -1
+    def find_room(v: Var, slot: int):
+        """One free room per leg, no room twice, as a tuple; None if any leg has none."""
+        got = []
+        for pool in v.rooms:
+            if not pool:
+                return None
+            off = slot % len(pool)
+            for i in range(len(pool)):
+                r = pool[(i + off) % len(pool)]
+                base = r * NSLOTS
+                if r not in got and all(room_busy[base + slot + j] == -1 for j in range(v.length)):
+                    got.append(r)
+                    break
+            else:
+                return None
+        return tuple(got)
+
+    def rname(rt) -> str:
+        return " / ".join(rooms[r] for r in rt)
 
     def violation(vk: int, slot: int):
-        """None when feasible, else (reason, entity). Every check is a hard rule."""
+        """None when feasible, else (reason, entity). Every check is a hard rule,
+        for every leg."""
         v = vars_[vk]
         d = day_of(slot)
-        cb, tb = v.c * NSLOTS, v.t * NSLOTS
+        cb = v.c * NSLOTS
         for j in range(v.length):
             s = slot + j
             if class_busy[cb + s] != -1:
                 return ("class", classes[v.c].label)
-            if s in unavail[v.t]:
-                return ("unavail", inp.teachers[v.t])
-            if teacher_busy[tb + s] != -1:
-                return ("teacher", inp.teachers[v.t])
-        if teacher_day[v.t * NDAYS + d] + v.length > max_day[v.t]:
-            return ("dayload", inp.teachers[v.t])
-        if teacher_week[v.t] + v.length > max_week[v.t]:
-            return ("weekload", inp.teachers[v.t])
-        if class_subj_day.get((v.c, v.s, d), 0) >= v.max_per_day:
-            return ("spread", inp.subjects[v.s])
-        if find_room(v, slot) == -1:
+            for t in v.ts:
+                if s in unavail[t]:
+                    return ("unavail", inp.teachers[t])
+                if teacher_busy[t * NSLOTS + s] != -1:
+                    return ("teacher", inp.teachers[t])
+        for t in v.ts:
+            if teacher_day[t * NDAYS + d] + v.length > max_day[t]:
+                return ("dayload", inp.teachers[t])
+            if teacher_week[t] + v.length > max_week[t]:
+                return ("weekload", inp.teachers[t])
+        for s_ in v.ss:
+            if class_subj_day.get((v.c, s_, d), 0) >= v.max_per_day:
+                return ("spread", inp.subjects[s_])
+        if find_room(v, slot) is None:
             return ("room", v.room_kind)
         return None
 
@@ -454,26 +518,30 @@ def solve(inp: Input):
         # Core subjects belong early in the day; a tired 4th-year 15:35 slot is worse.
         cost = v.priority * p0 * 0.8
         # Spread a teacher's day rather than stacking it.
-        cost += teacher_day[v.t * NDAYS + d] * 0.35
+        cost += sum(teacher_day[t * NDAYS + d] for t in v.ts) * 0.35 / len(v.ts)
         # The dominant term: never give a class the same subject twice in one day
         # if any other day will take it. (Chronos also carried a small term pulling
         # a subject BACK onto days it already used, which fought its own comment
         # about weekly spread - dropped here rather than transliterated.)
-        cost += class_subj_day.get((v.c, v.s, d), 0) * 6.0
+        cost += sum(class_subj_day.get((v.c, s_, d), 0) for s_ in v.ss) * 6.0
         return cost
 
-    def place(vk: int, slot: int, room: int):
+    def place(vk: int, slot: int, room):
         nonlocal placed_count
         v = vars_[vk]
         d = day_of(slot)
         for j in range(v.length):
             s = slot + j
             class_busy[v.c * NSLOTS + s] = vk
-            teacher_busy[v.t * NSLOTS + s] = vk
-            room_busy[room * NSLOTS + s] = vk
-        class_subj_day[(v.c, v.s, d)] = class_subj_day.get((v.c, v.s, d), 0) + 1
-        teacher_day[v.t * NDAYS + d] += v.length
-        teacher_week[v.t] += v.length
+            for t in v.ts:
+                teacher_busy[t * NSLOTS + s] = vk
+            for r in room:
+                room_busy[r * NSLOTS + s] = vk
+        for s_ in v.ss:
+            class_subj_day[(v.c, s_, d)] = class_subj_day.get((v.c, s_, d), 0) + 1
+        for t in v.ts:
+            teacher_day[t * NDAYS + d] += v.length
+            teacher_week[t] += v.length
         assign_slot[vk], assign_room[vk] = slot, room
         placed_count += 1
 
@@ -487,12 +555,17 @@ def solve(inp: Input):
         for j in range(v.length):
             s = slot + j
             class_busy[v.c * NSLOTS + s] = -1
-            teacher_busy[v.t * NSLOTS + s] = -1
-            room_busy[assign_room[vk] * NSLOTS + s] = -1
-        class_subj_day[(v.c, v.s, d)] -= 1
-        teacher_day[v.t * NDAYS + d] -= v.length
-        teacher_week[v.t] -= v.length
-        assign_slot[vk] = assign_room[vk] = -1
+            for t in v.ts:
+                teacher_busy[t * NSLOTS + s] = -1
+            for r in assign_room[vk]:
+                room_busy[r * NSLOTS + s] = -1
+        for s_ in v.ss:
+            class_subj_day[(v.c, s_, d)] -= 1
+        for t in v.ts:
+            teacher_day[t * NDAYS + d] -= v.length
+            teacher_week[t] -= v.length
+        assign_slot[vk] = -1
+        assign_room[vk] = None
         placed_count -= 1
 
     def build_cands(vk: int):
@@ -519,8 +592,9 @@ def solve(inp: Input):
     lab_vars = []
     for v in vars_:
         by_class.setdefault(v.c, []).append(v.k)
-        by_teacher.setdefault(v.t, []).append(v.k)
-        if v.room_kind == "Lab":
+        for t in v.ts:
+            by_teacher.setdefault(t, []).append(v.k)
+        if "Lab" in v.kinds:
             lab_vars.append(v.k)
 
     dom = [0] * V
@@ -529,8 +603,9 @@ def solve(inp: Input):
     def touch(vk: int):
         v = vars_[vk]
         dirty.update(by_class.get(v.c, ()))
-        dirty.update(by_teacher.get(v.t, ()))
-        if v.room_kind == "Lab":
+        for t in v.ts:
+            dirty.update(by_teacher.get(t, ()))
+        if "Lab" in v.kinds:
             dirty.update(lab_vars)      # small set, and lab rooms are the scarce ones
 
     assigned = bytearray(V)
@@ -596,7 +671,7 @@ def solve(inp: Input):
     def related(a: int, b: int) -> bool:
         """Could undoing `a` ever free a slot for `b`? Anything else is noise."""
         va, vb = vars_[a], vars_[b]
-        return va.c == vb.c or va.t == vb.t or va.room_kind == vb.room_kind
+        return va.c == vb.c or bool(set(va.ts) & set(vb.ts)) or bool(va.kinds & vb.kinds)
 
     out_of_time = False
 
@@ -684,7 +759,7 @@ def solve(inp: Input):
                         assigned[f["v"]] = 1
                         touch(f["v"])
                         if keep("place"):
-                            yield {"t": "place", "v": f["v"], "s": slot, "r": rooms[room],
+                            yield {"t": "place", "v": f["v"], "s": slot, "r": rname(room),
                                    "tch": inp.teachers[vars_[f["v"]].t]}
                             emitted += 1
                         applied = True
@@ -720,7 +795,7 @@ def solve(inp: Input):
         touch(vk)
         stack.append({"v": vk, "cands": cands, "pos": 0})
         if keep("place"):
-            yield {"t": "place", "v": vk, "s": slot, "r": rooms[room],
+            yield {"t": "place", "v": vk, "s": slot, "r": rname(room),
                    "tch": inp.teachers[vars_[vk].t]}
             emitted += 1
 
@@ -747,10 +822,10 @@ def solve(inp: Input):
             v = vars_[target]
             best_slot, best_eject, best_cost = -1, -1, 1e18
             for slot in v.slots:
-                if any(s in unavail[v.t] for s in range(slot, slot + v.length)):
+                if any(s in unavail[t] for t in v.ts for s in range(slot, slot + v.length)):
                     continue
                 occ = {class_busy[v.c * NSLOTS + s] for s in range(slot, slot + v.length)}
-                tocc = {teacher_busy[v.t * NSLOTS + s] for s in range(slot, slot + v.length)}
+                tocc = {teacher_busy[t * NSLOTS + s] for t in v.ts for s in range(slot, slot + v.length)}
                 occ.discard(-1)
                 tocc.discard(-1)
                 if -2 in occ or -2 in tocc:
@@ -784,7 +859,7 @@ def solve(inp: Input):
             assigned[target] = 1
             touch(target)
             if keep("place"):
-                yield {"t": "place", "v": target, "s": best_slot, "r": rooms[room],
+                yield {"t": "place", "v": target, "s": best_slot, "r": rname(room),
                        "tch": inp.teachers[v.t]}
                 emitted += 1
 
@@ -807,7 +882,7 @@ def solve(inp: Input):
 
     def entity_cost(vk: int) -> float:
         v = vars_[vk]
-        return gap_cost(teacher_busy, v.t * NSLOTS) + gap_cost(class_busy, v.c * NSLOTS)
+        return sum(gap_cost(teacher_busy, t * NSLOTS) for t in v.ts) + gap_cost(class_busy, v.c * NSLOTS)
 
     def place_cost(vk: int) -> float:
         slot = assign_slot[vk]
@@ -858,7 +933,7 @@ def solve(inp: Input):
                 touch(b)
                 if keep("swap"):
                     yield {"t": "swap", "v": a, "from": sa, "to": sb,
-                           "r": rooms[assign_room[a]], "gain": round(before - after, 1)}
+                           "r": rname(assign_room[a]), "gain": round(before - after, 1)}
                     emitted += 1
             else:
                 unplace(a)
@@ -890,7 +965,7 @@ def solve(inp: Input):
             touch(vk)
             if keep("swap"):
                 yield {"t": "swap", "v": vk, "from": frm, "to": best_slot,
-                       "r": rooms[best_room], "gain": round(best_gain, 1)}
+                       "r": rname(best_room), "gain": round(best_gain, 1)}
                 emitted += 1
         else:
             place(vk, frm, frm_room)
@@ -948,23 +1023,24 @@ def solve(inp: Input):
         v = vars_[vk]
         k = classes[v.c]
         if assign_slot[vk] < 0:
-            unplaced.append({"cls": k.label, "subject": inp.subjects[v.s],
-                             "kind": v.room_kind, "length": v.length})
+            unplaced += [{"cls": k.label + (f" {batch}" if batch else ""), "subject": inp.subjects[s_],
+                          "kind": v.room_kind, "length": v.length} for s_, _t, batch, _n in v.legs]
             continue
         slot = assign_slot[vk]
-        for j in range(v.length):
-            out.append({"cls": k.key, "day": DAYS[day_of(slot + j)],
-                        "period": period_of(slot + j),
-                        "subject": inp.subjects[v.s], "faculty": inp.teachers[v.t],
-                        "room": rooms[assign_room[vk]],
-                        "kind": "L" if v.length > 1 else "T",
-                        "var": vk, "slot": slot + j})
+        for (s_, t, batch, _n), r in zip(v.legs, assign_room[vk]):
+            for j in range(v.length):
+                out.append({"cls": k.key, "day": DAYS[day_of(slot + j)],
+                            "period": period_of(slot + j),
+                            "subject": inp.subjects[s_], "faculty": inp.teachers[t],
+                            "room": rooms[r], "batch": batch,
+                            "kind": "L" if v.length > 1 else "T",
+                            "var": vk, "slot": slot + j})
 
     score = total_soft()
     result = {
         "ok": not unplaced,
         "bookings": out + filler,
-        "placed": V - len(unplaced), "total": V,
+        "placed": sum(1 for vk in range(V) if assign_slot[vk] >= 0), "total": V,
         "steps": steps, "backtracks": backtracks, "conflicts": conflicts,
         "restarts": restarts, "score": score,
         "ms": int((time.time() - started) * 1000),
@@ -1007,10 +1083,10 @@ def apply(con, result, scope="all", dept=None, sem=None, section=None, actor="ad
         cur.execute("DELETE FROM timetable")
     for b in result["bookings"]:
         d, sm, sec = b["cls"]
-        cur.execute("""INSERT INTO timetable(dept,sem,section,day,period,subject,faculty,room,kind)
-                       VALUES(?,?,?,?,?,?,?,?,?)""",
+        cur.execute("""INSERT INTO timetable(dept,sem,section,day,period,subject,faculty,room,kind,batch)
+                       VALUES(?,?,?,?,?,?,?,?,?,?)""",
                     (d, sm, sec, b["day"], b["period"], b["subject"],
-                     b["faculty"], b["room"], b["kind"]))
+                     b["faculty"], b["room"], b["kind"], b.get("batch")))
     con.commit()
     return cur.rowcount
 
@@ -1026,11 +1102,13 @@ def verify(con, scope="all", dept=None, sem=None, section=None):
     for cls in classes:
         for day in DAYS:
             got = sorted(r["period"] for r in con.execute(
-                "SELECT period FROM timetable WHERE dept=? AND sem=? AND section=? AND day=?",
+                "SELECT DISTINCT period FROM timetable WHERE dept=? AND sem=? AND section=? AND day=?",
                 (*cls, day)))
             want = list(range(1, day_periods(cls[1], day) + 1))
             if got != want:
                 problems.append(f"DAY BLOCK {cls} {day}: {got} != {want}")
+    # one row per batch or one for the section, and every room seats its group (#20)
+    problems += db.batch_problems(con, where.replace("WHERE ", "WHERE t.").replace(" AND ", " AND t."), args)
     for r in con.execute("""SELECT day,period,faculty,COUNT(*) n FROM timetable
                             WHERE faculty IS NOT NULL
                             GROUP BY day,period,faculty HAVING n>1"""):

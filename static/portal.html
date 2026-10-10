@@ -185,7 +185,7 @@ async function loadTT(date){
   $('#ttList').innerHTML=TT.items.length?TT.items.map(ttCard).join(''):empty(`No classes on ${MawosCalendar.longDate(d.date)}.`);
   const pa=d.pending_attendance||[],mp=d.marks_pending||[];
   $('#ttTodo').innerHTML=(pa.length?`<h4 class="blk">Attendance to take</h4><div class="desk-todo">${pa.map((p,i)=>
-      `<div><span>${esc(p.subject)} · ${esc(p.sname)} · Sem ${esc(p.sem)} · ${esc(p.dept)} · Section ${esc(p.section)} · ${esc(MawosCalendar.longDate(p.date))} · P${esc(p.period)}</span>
+      `<div><span>${esc(p.subject)} · ${esc(p.sname)} · Sem ${esc(p.sem)} · ${esc(p.dept)} · Section ${esc(p.section)}${p.batch?' · Batch '+esc(p.batch):''} · ${esc(MawosCalendar.longDate(p.date))} · P${esc(p.period)}</span>
        <button type="button" class="btn sm" data-pend="${i}">Take attendance</button></div>`).join('')}</div>`:'')
     +(mp.length?`<h4 class="blk">Marks to enter or submit</h4><div class="desk-todo">${mp.map((m,i)=>
       `<div><span>${esc(m.label)} · ${esc(m.subject)} ${esc(m.sname)} · ${esc(m.cls)} · ${esc(m.state)}</span>
@@ -202,7 +202,7 @@ function ttCard(c,i){
   return `<div class="desk-cls ${ST_CLASS[c.status]||''}">
     <div class="desk-time"><b>P${esc(c.period)}</b><span>${esc(c.time)}</span></div>
     <div class="desk-main"><div class="desk-sub">${esc(c.subject)} · ${esc(c.sname)}</div>
-      <div class="desk-ctx">Sem ${esc(c.sem)} · ${esc(c.dept)} · Section ${esc(c.section)}${c.room?' · Room '+esc(c.room):''}</div>
+      <div class="desk-ctx">Sem ${esc(c.sem)} · ${esc(c.dept)} · Section ${esc(c.section)}${c.batch?' · Batch '+esc(c.batch):''}${c.room?' · Room '+esc(c.room):''}</div>
       ${src||why?`<div class="desk-note">${esc([src,why].filter(Boolean).join(' · '))}</div>`:''}</div>
     <div class="desk-side"><span class="desk-st">${esc(c.status)}</span>
       <span class="desk-att ${a.state==='Recorded'?'ok':a.state==='Pending'?'due':''}">${esc(a.label)}</span>
@@ -253,7 +253,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-settle]');
 /* the attendance sheet of one class hour */
 const ATT={ctx:null,data:null,marks:{}};
 async function openAtt(c){
-  ATT.ctx={date:c.date,period:c.period,dept:c.dept,sem:c.sem,section:c.section};
+  ATT.ctx={date:c.date,period:c.period,dept:c.dept,sem:c.sem,section:c.section,...(c.batch?{batch:c.batch}:{})};   // a lab batch's own register (#20)
   tab('att');$('#attBody').innerHTML='<div class="loading">Loading the register…</div>';
   const d=(await read('attendance_sheet',ATT.ctx)).data||{};
   if(d.error||d.DENIED){$('#attBody').innerHTML=empty(d.error||d.DENIED);return;}
@@ -263,7 +263,7 @@ async function openAtt(c){
 function drawAtt(){
   const d=ATT.data,ro=!d.open;
   const kv=[['Subject',`${d.subject} · ${d.sname}`],['Semester',d.sem],['Department',d.dept],['Section',d.section],
-    ['Date',MawosCalendar.longDate(d.date)],['Hour',`P${d.period} · ${d.time}`],['Room',d.room||'—']];
+    ...(d.batch?[['Lab batch',d.batch]]:[]),['Date',MawosCalendar.longDate(d.date)],['Hour',`P${d.period} · ${d.time}`],['Room',d.room||'—']];
   const said=d.recorded?`Recorded${d.updated_at?' and corrected':''}. `:'';
   $('#attBody').innerHTML=`<div class="desk-kv">${kv.map(([k,v])=>`<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>
     <p class="desk-state">${esc(said+(d.open?(d.recorded?`You can correct it for ${d.window_days} days after the class.`:'Mark each student, then save.'):d.why))}</p>

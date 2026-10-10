@@ -81,9 +81,10 @@ for b in res["bookings"]:
         if (key, b["room"]) in seen_r:
             clash_r += 1
         seen_r[(key, b["room"])] = b
-    if (key, b["cls"]) in seen_c:
-        clash_c += 1
-    seen_c[(key, b["cls"])] = b
+    seen_c.setdefault((key, b["cls"]), []).append(b.get("batch"))
+# A class hour is one booking for the section, or one per lab batch (#20): two
+# bookings for one group, or a batch beside a whole-section booking, is a clash.
+clash_c = sum(1 for bs in seen_c.values() if len(bs) > 1 and (None in bs or len(set(bs)) != len(bs)))
 check("no faculty is double-booked", clash_f == 0, f"{clash_f} clashes")
 check("no room is double-booked", clash_r == 0, f"{clash_r} clashes")
 check("no class is double-booked", clash_c == 0, f"{clash_c} clashes")
@@ -100,9 +101,9 @@ check("every class day is a contiguous block", not holes, str(holes[:3]))
 bad_labs = []
 for (cls, day), periods in g.items():
     runs = {}
-    for p, b in periods.items():
-        if b["kind"] == "L":
-            runs.setdefault(b["subject"], []).append(p)
+    for b in res["bookings"]:
+        if b["cls"] == cls and b["day"] == day and b["kind"] == "L":
+            runs.setdefault((b["subject"], b.get("batch")), []).append(b["period"])
     for subj, ps in runs.items():
         ps.sort()
         if len(ps) != 3 or ps != list(range(ps[0], ps[0] + 3)):
@@ -123,10 +124,52 @@ for fid, n in load.items():
         over.append((fid, n, cap))
 check("no teacher exceeds their sanctioned load", not over, str(over[:3]))
 
-# ---- capacity relaxation is REPORTED, never silent
-check("capacity relaxation is reported when it happens",
-      all(r["size"] > 36 for r in res["capacity_relaxed"]),
-      "a relaxation was recorded for a class that actually fits")
+# ---- lab batches (#20): every group sits in a room that seats it
+print("\nlab batches (#20)")
+size = {}
+for r in con.execute("SELECT dept, sem, section, batch, COUNT(*) n FROM students GROUP BY 1, 2, 3, 4"):
+    size[(r["dept"], r["sem"], r["section"], r["batch"])] = r["n"]
+seats = {r["id"]: r["capacity"] for r in con.execute("SELECT id, capacity FROM rooms")}
+crowded = []
+for b in res["bookings"]:
+    if b["kind"] in ("T", "L"):
+        cls = tuple(b["cls"])
+        n = size.get((*cls, b["batch"]), 0) if b.get("batch") else sum(v for k, v in size.items() if k[:3] == cls)
+        if n > seats[b["room"]]:
+            crowded.append((b["cls"], b.get("batch"), b["day"], b["period"], b["subject"], n, b["room"]))
+check("20a nothing is relaxed: every lab batch and every project has a room that seats it",
+      not res["capacity_relaxed"] and not crowded, f"{len(res['capacity_relaxed'])} relaxed, {crowded[:2]}")
+labs_of, hour, taught = {}, {}, {}
+for b in res["bookings"]:
+    if b["kind"] == "L" and b.get("batch"):
+        cls = tuple(b["cls"])
+        labs_of.setdefault((cls, b["batch"], b["subject"]), []).append(b["period"])
+        hour.setdefault((cls, b["day"], b["period"]), []).append(b["subject"])
+        taught.setdefault((cls, b["subject"]), {}).setdefault(b["faculty"], set()).add(b["batch"])
+batches = {}
+for (d, sm, sec, bt) in size:
+    if bt:
+        batches.setdefault((d, sm, sec), set()).add(bt)
+want = {(cls, bt, code) for cls, bts in batches.items() for bt in bts
+        for code, _n, _c, kind in db.SUBJECTS[cls[0]][cls[1]] if kind == "L"}
+check("20b each batch of a split section has each of its labs once a week, 3 periods, no other",
+      want and set(labs_of) == want and all(len(v) == 3 for v in labs_of.values()),
+      f"{len(want)} wanted, {len(labs_of)} got, {[k for k, v in labs_of.items() if len(v) != 3][:2]}")
+same_lab = [k for k, subs in hour.items() if len(set(subs)) < len(subs)]
+check("20c in a split lab hour the batches are in different labs - a rotation, not one lab twice",
+      hour and not same_lab, str(same_lab[:2]))
+check("20d a lab has one teacher, who teaches it to every batch",
+      taught and all(len(t) == 1 and next(iter(t.values())) == batches[cls] for (cls, _s), t in taught.items()),
+      str([(k, t) for k, t in taught.items() if len(t) != 1][:2]))
+
+# ---- capacity relaxation is REPORTED, never silent: an older database whose
+# students carry no batches cannot seat a section of 60 in a lab of 36
+con.execute("UPDATE students SET batch=NULL")
+nob = solver.run(solver.build_input(con, scope="all", seed=7))
+con.rollback()
+check("capacity relaxation is reported when it happens, and only for groups that do not fit",
+      nob["capacity_relaxed"] and all(r["size"] > 36 for r in nob["capacity_relaxed"]),
+      f"{len(nob['capacity_relaxed'])} relaxed")
 
 # ---------------------------------------------------------------- determinism
 print("\ndeterminism")
@@ -147,6 +190,33 @@ check("committed timetable passes independent verification", not problems, str(p
 check("every section is present",
       con.execute("SELECT COUNT(DISTINCT dept||sem||section) c FROM timetable").fetchone()["c"]
       == len(inp.classes))
+check("db.verify() agrees: the committed timetable meets every seed rule", not db.verify(), str(db.verify()[:3]))
+
+
+def broken(sql, args, want):
+    """Break one committed row, read both verifiers, put the row back."""
+    rid = args[-1]
+    keep = dict(con.execute("SELECT * FROM timetable WHERE id=?", (rid,)).fetchone())
+    con.execute(sql, args)
+    con.commit()
+    got = [p for p in db.verify() + solver.verify(con) if p.startswith(want)]
+    con.execute("UPDATE timetable SET subject=?, faculty=?, room=?, kind=?, batch=? WHERE id=?",
+                (keep["subject"], keep["faculty"], keep["room"], keep["kind"], keep["batch"], rid))
+    con.commit()
+    return got
+
+
+lab_row = con.execute("SELECT id FROM timetable WHERE batch='B1' ORDER BY id").fetchone()["id"]
+lecture = con.execute("SELECT id, day, period FROM timetable WHERE kind='T' AND sem=3 ORDER BY id").fetchone()
+spare_lab = con.execute("""SELECT id FROM rooms WHERE kind='Lab' AND id NOT IN (SELECT room FROM timetable
+                           WHERE day=? AND period=?) ORDER BY id""", (lecture["day"], lecture["period"])).fetchone()
+check("20e verify names a split hour whose batch row lost its batch (#20)",
+      broken("UPDATE timetable SET batch=NULL WHERE id=?", (lab_row,), "BATCHES"))
+check("20f verify names a lecture of a whole section put in a 36-seat lab",
+      spare_lab and broken("UPDATE timetable SET room=? WHERE id=?", (spare_lab["id"], lecture["id"]), "OVER CAPACITY"))
+check("20g db.verify names a class-subject short of its weekly quota",
+      broken("UPDATE timetable SET subject='ACT-LIB', kind='A', faculty=NULL WHERE id=?", (lecture["id"],), "QUOTA"))
+check("...and every break above was put back", not db.verify() and not solver.verify(con), str(db.verify()[:2]))
 
 # ------------------------------------------------- scoped regeneration with pins
 print("\nscoped regeneration (one section, the rest pinned)")

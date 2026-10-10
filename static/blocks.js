@@ -70,7 +70,7 @@ function rGrid(b){
   const per=Object.keys(b.periods).map(Number).sort((x,y)=>x-y);
   const br=b.breaks||{}; const dl=b.day_len||{};
   let h=`<div class="legend"><span><i style="background:#DCE2F4"></i>Lecture</span>
-    <span><i style="background:#D3E9E1"></i>Lab</span>
+    <span><i style="background:#D3E9E1"></i>Lab (B1, B2: batches)</span>
     <span><i style="background:#E4E7EC"></i>Activity or project</span>
     <span><i style="background:#6A3DB8"></i>Changed for this date</span>
     <span><i style="background:#A35A06"></i>Make-up class</span></div>
@@ -96,6 +96,13 @@ function rGrid(b){
         const who=o&&o.released?'Released':(o&&o.faculty?o.faculty:c.faculty);
         const was=o&&o.was?` (was ${esc(o.was)})`:'';
         const note=o?`, ${esc(o.action.toLowerCase())}`:k==='M'?`, make-up ${esc(c.makeup.date.slice(5))}`:'';
+        if(c.batches){
+          // a split lab hour (#20): every batch in its own lab, with its own teacher and room
+          h+=`<td><div class="cell ${cls}" title="${esc((o&&o.reason)||'')}">${c.batches.map(x=>{
+            const xo=x.override, xw=xo&&xo.released?'Released':(xo&&xo.faculty?xo.faculty:x.faculty);
+            return `<div class="ttb"><div class="s"><span class="ttbn">${esc(x.batch)}</span> ${esc(x.subject)}${xo&&xo.was?` (was ${esc(xo.was)})`:''}</div>
+              <div class="f">${esc(xw)}</div><div class="r">${esc(x.room)}${xo?`, ${esc(xo.action.toLowerCase())}`:''}</div></div>`;}).join('')}</div></td>`;
+        }else
         h+=`<td><div class="cell ${cls}" title="${esc((o&&o.reason)||(c.makeup&&c.makeup.reason)||'')}"><div class="s">${esc(c.subject)}${was}</div>
           <div class="f">${esc(who)}</div>
           <div class="r">${esc(c.room)}${note}</div></div></td>`;

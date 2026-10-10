@@ -56,7 +56,7 @@ tools) → `tools.py` (82 tool schemas, PolicyGuard-wrapped, role policy enforce
 | Self-service | `portal.py` | student / faculty / HOD tools + rule routing; acts only for `S["user"]` |
 | Write gate | `guard.py` | `approved_this_turn` lives here so every tool module can import it; `tools` re-exports it |
 | MCP surface | `mcp_server.py` | stdio JSON-RPC; `call_as` delegates to `tools.execute`. No SDK |
-| Solver | `solver.py` | timetable generation from scratch (below) |
+| Solver | `solver.py` | builds the seed's timetable and every rebuild, lab batches included (below) |
 | NLU | `nlu.py` | intent scoring + regex priority rules + Indian date parsing |
 
 **Two engines, one interface.** The rule engine is the default and costs nothing; the LLM agent
@@ -188,8 +188,11 @@ inside the budget.
   Timetable, attendance and marks views pass a date, a period and a class; `teaching.resolve()` reads
   the weekly timetable, that date's applied overrides (substitute, swap, vacated/released) and booked
   make-ups, and `_hour()` refuses a class hour the caller is not delivering (DENIED). Never let a page
-  or the model supply the subject, semester or section of an attendance write. An HOD's desk is a
-  teacher's: `access.py` restates FACULTY's rules for the six desk tools so an HOD-wide rule cannot
+  or the model supply the subject, semester or section of an attendance write. A split lab hour
+  is one class hour PER BATCH (#20): `resolve(..., batch)`, `hours_at()` lists them, `_hour()`
+  gives a teacher their own batch, refuses one who teaches neither, and asks the Registrar which.
+  The register is unique per (date, class, period, batch) and its roll is the batch's.
+  An HOD's desk is a teacher's: `access.py` restates FACULTY's rules for the six desk tools so an HOD-wide rule cannot
   widen them. Attendance rolls into `attendance` (held/attended) and the headline is recomputed from
   it; a correction moves only `attended`. Timestamps on these records use `campus.NOW`, the demo's
   clock (a wall-clock date showed a register "submitted" a month after the demo's today).
@@ -243,24 +246,42 @@ Five phases: **Staffing → Search → Repair → Polish → Fill.** `solve()` i
 browser streams every decision over SSE onto a live grid and a synchronous caller drains the same
 generator. **One code path**, so what you watch is what gets written.
 
-Measured: 456 curriculum periods across 21 sections in ~0.3 s, 0 clashes.
+Measured: 456 curriculum blocks across 21 sections in ~0.3 s, 0 clashes, 0 rooms too small.
 
-Three things that will bite you:
+**It builds the seed too (#20).** `db.seed()` calls `solver.run(build_input(con, seed=7,
+time_budget_s=inf))` and `solver.apply`, so the shipped timetable and a rebuild meet one standard
+and there is one copy of the rules. The greedy generator it replaced left 5 class-subjects an hour
+short with nothing saying so (10 once batches doubled lab hours); `db.verify()` now checks every
+class's weekly quota. The unlimited time budget is deliberate: the step limits bound the search, so
+the seed is identical on a slow box (fingerprinted in `campus_test` 1a). The solver draws from its
+own `Random`, so the leaves, requests and exams seeded after it never move when it changes.
+
+Four things that will bite you:
 
 - **MRV staleness is fine; stuck-variable thrash is not.** `dom[]` is an ordering heuristic
   refreshed only for variables a placement can affect, because `build_cands()` re-derives the
   truth for the variable actually chosen. But a variable that wipes out repeatedly must be
-  **parked** (`STUCK_LIMIT`, `solver.py:551`). The reference's `recovered` flag goes true when
+  **parked** (`STUCK_LIMIT`, `solver.py:669`). The reference's `recovered` flag goes true when
   some *other* frame retries, so the culprit is never parked and the search oscillates. Measured
   before the fix: 3,205 placements against 3,183 undos, 24 of 456 periods surviving, 20 s budget
   burned. After: 288 ms. Do not raise `STUCK_LIMIT` to "try harder".
 - **Backtracking is conflict-directed, not chronological.** Undoing another department's theory
   period cannot free a lab room, so irrelevant frames are frozen rather than unwound
-  (`related()`, `solver.py:553`). This is why it degrades gracefully instead of collapsing.
-- **Capacity relaxation is surfaced, never silent.** Lab rooms seat 36, a CSE section is ~60, and
-  this dataset has no lab batch splitting. The solver relaxes and names every affected class in
-  `capacity_relaxed`, shown as an amber warning above the Apply button. **Do not "fix" this by
-  dropping the constraint** — the honest fix is to model lab batches.
+  (`related()`, `solver.py:671`). This is why it degrades gracefully instead of collapsing.
+- **Labs run in batches, and a variable has legs (#20).** A section larger than a lab seats (36)
+  is split into batches (`students.batch`, `db.assign_batches`, roll order), and its labs ROTATE:
+  block j gives batch i lab (i + j) mod L, so the batches are in different labs at once and each
+  meets each lab once. One `Var` carries one leg per group taught at once (subject, teacher,
+  batch, headcount); every hard rule is checked for every leg (`v.ts`, `v.ss`, a room per leg),
+  and a lab teacher's hours are budgeted per batch. A project needs a room that seats the section.
+  `db.batch_problems()` is the shared check (one row per batch or one for the section; every room
+  seats its group), used by `db.verify()` and `solver.verify()`.
+- **Capacity relaxation is surfaced, never silent.** It now happens only when no room can seat a
+  group: more batches than labs to rotate, or an old database with no batches. `capacity_relaxed`
+  names it, as an amber warning above the Apply button; on the seed it is empty (`solver_test`
+  20a). **Do not "fix" a relaxation by dropping the constraint.** The cost of batches is real:
+  lab teachers teach twice, curriculum load went from 52% to 60% of sanctioned, and the coverage
+  planner recommends a make-up more often because free substitutes are scarcer.
 
 The stream is a preview and writes nothing; `POST /api/timetable/generate/apply` re-solves with
 the same seed (determinism is asserted by the suite) and commits. That is why the client never
@@ -359,7 +380,9 @@ ships a timetable back.
   2026-09-25 by `campus_test.py:1b`: the first seed in a process was reproducible and the second
   was not, so `/api/seed/reset` on a running server rebuilt a *different* institution from the one
   it booted with. The core tables are fingerprinted in `campus_test.py` (`CORE_BEFORE`, `1a`); if
-  you change the core generator on purpose, re-record them.
+  you change the core generator on purpose, re-record them. Re-recorded for #20: `students`
+  gained `batch` (every other column identical), and the timetable no longer draws from the
+  global stream, which moved leaves, requests, exams and placements once.
 - **A new table must be dropped in `db.SCHEMA` too (#64).** Tables created lazily with
   `CREATE TABLE IF NOT EXISTS` survive `db.seed(force=True)` unless `SCHEMA` drops them.
   `makeup_sessions` and `faculty_availability` once did: after `/api/seed/reset` a booking whose
@@ -387,12 +410,12 @@ ships a timetable back.
 ## Tests
 
 ```bash
-python tests/solver_test.py    # 53 assertions, no server, no API cost
-python tests/mcp_parity.py     # 323 assertions, no server, no API cost
+python tests/solver_test.py    # 62 assertions, no server, no API cost
+python tests/mcp_parity.py     # 324 assertions, no server, no API cost
 python tests/campus_test.py    # 160 assertions, no server, no API cost
 python tests/mesh_test.py      # 28 assertions, no server, no API cost (6a-6c need node)
 python tests/auth_test.py      # 111 assertions, no server, no API cost
-python tests/makeup_test.py    # 33 assertions, no server, no API cost
+python tests/makeup_test.py    # 34 assertions, no server, no API cost
 python tests/academics_test.py # 24 assertions, no server, no API cost
 python tests/ranking_test.py   # 57 assertions, no server, no API cost
 python tests/deploy_test.py    # 90 assertions, no server, no API cost
@@ -405,7 +428,7 @@ python tests/notify_test.py    # 50 assertions, no server, no API cost (a stub g
 python tests/cohort_test.py    # 40 assertions, no server, no API cost
 python tests/dashboard_test.py # 33 assertions, no server, no API cost (7a-7d need node)
 python tests/calendar_test.py  # 127 assertions, no server, no API cost (7f-7k need node)
-python tests/teaching_test.py  # 77 assertions, no server, no API cost
+python tests/teaching_test.py  # 84 assertions, no server, no API cost
 python tests/placement_test.py # 77 assertions, no server, no API cost
 python tests/smoke.py          # rule-engine regression — needs the server on :8000, signs in as registrar (#52)
 python tests/live_llm.py       # 6 real-model queries; costs tokens

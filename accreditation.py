@@ -129,13 +129,13 @@ def naac(con):
     nrooms = sum(r["n"] for r in rk.values())
     m(4, "Room utilisation across the teaching week", f"{_pct(booked, nrooms * slots)}%",
       f"timetable ({slots} weekly slots) ÷ rooms")
-    over = _n(con, """SELECT COUNT(*) n FROM timetable t JOIN rooms r ON r.id=t.room JOIN
-                      (SELECT dept, sem, section, COUNT(*) size FROM students GROUP BY dept, sem, section) c
-                      ON c.dept=t.dept AND c.sem=t.sem AND c.section=t.section
-                      WHERE t.kind='L' AND c.size > r.capacity""")
+    # the group in the room: the batch when the row names one (#20), else the section
+    over = _n(con, """SELECT COUNT(*) n FROM timetable t JOIN rooms r ON r.id=t.room
+                      WHERE t.kind='L' AND r.capacity < (SELECT COUNT(*) FROM students s WHERE s.dept=t.dept
+                        AND s.sem=t.sem AND s.section=t.section AND (t.batch IS NULL OR s.batch=t.batch))""")
     labs = _n(con, "SELECT COUNT(*) n FROM timetable WHERE kind='L'")
-    m(4, "Lab periods where the section outnumbers the lab's seats", f"{over} of {labs}",
-      "timetable ⋈ rooms ⋈ students", "0 (batches not modelled, #20)")
+    m(4, "Lab periods where the group outnumbers the room's seats", f"{over} of {labs}",
+      "timetable ⋈ rooms ⋈ students (lab batches)", "0")
     if _has(con, "books"):
         b = one(con, "SELECT COUNT(*) titles, SUM(copies) vols FROM books")
         m(4, "Library titles · volumes · volumes per student",
