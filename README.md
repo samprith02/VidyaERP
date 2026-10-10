@@ -5,7 +5,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![Dependencies: 2](https://img.shields.io/badge/dependencies-2-brightgreen.svg)](requirements.txt)
-[![Tests: 1488 assertions](https://img.shields.io/badge/tests-1488_assertions_passing-brightgreen.svg)](#tests)
+[![Tests: 1500 assertions](https://img.shields.io/badge/tests-1500_assertions_passing-brightgreen.svg)](#tests)
 [![Tools: 82, 29 gated](https://img.shields.io/badge/tools-82_·_29_writes_gated-6A3DB8.svg)](#6-guardrails-the-part-that-makes-it-deployable)
 [![Data: synthetic](https://img.shields.io/badge/data-100%25_synthetic-lightgrey.svg)](NOTICE)
 
@@ -41,7 +41,7 @@ load no external scripts, styles or fonts.
 
 | | | | |
 |:--|:--|:--|:--|
-| **21** specialist agents, **33** in the mesh | **82** tools · **29** writes, every one gated | **1488** test assertions, 0 failing | **2** dependencies |
+| **21** specialist agents, **33** in the mesh | **82** tools · **29** writes, every one gated | **1500** test assertions, 0 failing | **2** dependencies |
 | **289** absences swept: the top plan fully covers **287** | **456 / 456** periods placed by the solver, 0 clashes | **94%** less tool payload per LLM turn | **0** external assets in the console |
 
 Every number above is measured by [`docs/charts/make_charts.py`](docs/charts/make_charts.py) and
@@ -201,7 +201,7 @@ flowchart LR
 ### Tests
 
 <p align="center">
-  <img src="docs/charts/tests.svg" alt="Bar chart: 1488 assertions across 20 suites, all passing. mcp_parity 324, campus_test 160, calendar_test 127, auth_test 111, deploy_test 90, teaching_test 84, placement_test 77, solver_test 62, cie_test 59, ranking_test 57, cohort_test 55, notify_test 50, nlu_test 49, makeup_test 34, dashboard_test 33, mesh_test 28, accreditation_test 28, academics_test 24, language_test 19, risk_test 17" width="760">
+  <img src="docs/charts/tests.svg" alt="Bar chart: 1500 assertions across 20 suites, all passing. mcp_parity 324, campus_test 160, calendar_test 127, auth_test 111, deploy_test 90, teaching_test 84, placement_test 77, solver_test 62, cie_test 59, ranking_test 57, cohort_test 55, notify_test 50, nlu_test 49, makeup_test 46, dashboard_test 33, mesh_test 28, accreditation_test 28, academics_test 24, language_test 19, risk_test 17" width="760">
 </p>
 
 ```bash
@@ -210,7 +210,7 @@ python3 tests/mcp_parity.py   # MCP guard parity: 324 assertions, no server, no 
 python3 tests/campus_test.py  # campus services: 160 assertions, no server, no API cost
 python3 tests/mesh_test.py    # the agent mesh's fault channel and approval stamp: 28 assertions, no server, no API cost
 python3 tests/auth_test.py    # logins, route gating, per-role policy: 111 assertions, no server, no API cost
-python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits verified by re-read: 34 assertions, no server, no API cost
+python3 tests/makeup_test.py  # booked make-ups, never double-booked; commits verified by re-read; activity hours never made up: 46 assertions, no server, no API cost
 python3 tests/academics_test.py # standing faculty availability, honoured by every planner: 24 assertions, no server, no API cost
 python3 tests/ranking_test.py # coverage-plan ranking: 57 assertions, no server, no API cost
 python3 tests/deploy_test.py  # deployment readiness: 90 assertions, no server, no API cost
@@ -360,10 +360,18 @@ sequenceDiagram
 
    **Two plans that would commit the same rows are one option.** When no period can be
    re-sequenced, Plan B falls back to substitution and picks the same candidates as Plan A.
-   Measured: 131 of 289 absences, nearly half of them, produced two byte-identical cards at an exact
+   Measured: 133 of 289 absences, nearly half of them, produced two byte-identical cards at an exact
    rank tie, which made "recommended" arbitrary. They are folded by *committed effect*
    (`commit_signature`), and the surviving card names what it subsumed. Applying by the folded
-   letter still works.
+   letter still works. An absence of only activity hours is one card: the three plans are the same.
+
+   **Activity hours are supervised or released, never made up (#130).** Placement training, a
+   mini-project, mentoring and remedial hours get a free teacher to supervise them, or are released
+   with nobody assigned. They are never swapped and never take a make-up hour, which belongs to a
+   lecture or a lab. The decision is made once and is identical in every plan, so it cannot change
+   which plan is recommended, and every card that carries one says so. Measured on the seeded week:
+   95 of 555 teaching blocks are activities, 65 of 289 absences include one, and the plans offered
+   81 activity make-ups before this rule and none after.
 
 4. **Human-in-the-loop**: nothing is written. The admin says *“apply plan B”* (bound by **plan code**,
    not list position).
@@ -375,7 +383,7 @@ sequenceDiagram
    a room, teacher or batch) before the reply says it worked. The Auditor's `verify` step carries an
    explicit status, so a failure blinks red in the mesh.
 7. **Make-ups are booked, not just promised**: plans B and C hold a dated make-up session with a
-   room for every deferred hour (a missed 3-period lab gets 3 consecutive periods, on Saturday
+   room for every deferred class hour (an activity hour is never deferred, above) (a missed 3-period lab gets 3 consecutive periods, on Saturday
    afternoon when no batch is timetabled). Booked hours are occupied for every later plan, and each
    booking is re-checked at apply time against the weekly timetable and every other booking. They
    appear on the class timetable for that week and in each student's and teacher's day.
@@ -399,11 +407,11 @@ Each of the 53 teachers made absent on each teaching day of one week gives **289
 a default that wins by construction:
 
 <p align="center">
-  <img src="docs/charts/plans_recommended.svg" alt="Bar chart: the recommended plan across 289 absences. A substitute 40, B swap forward 55, C release plus make-up 194. The top plan fully covers 287" width="760">
+  <img src="docs/charts/plans_recommended.svg" alt="Bar chart: the recommended plan across 289 absences. A substitute 42, B swap forward 50, C release plus make-up 197. The top plan fully covers 287" width="760">
 </p>
 
 <p align="center">
-  <img src="docs/charts/plans_scatter.svg" alt="Scatter plot of every plan card: confidence on x, continuity on y. 289 plan A, 158 plan B after folding 131 duplicates, 289 plan C. Most plans cluster above 80 continuity; plan C spreads lower where a make-up slips" width="760">
+  <img src="docs/charts/plans_scatter.svg" alt="Scatter plot of every plan card: confidence on x, continuity on y. 289 plan A, 156 plan B after folding 133 duplicates, 280 plan C (9 absences of only activity hours fold into A). Most plans cluster above 80 continuity; plan C spreads lower where a make-up slips" width="760">
 </p>
 
 <p align="center">
@@ -419,8 +427,8 @@ arranged), and those cards are flagged **incomplete** on the page rather than ra
 | Measurement | Value |
 |---|---|
 | Absences swept | 289 (53 faculty × Sat 05 – Fri 11 Sep 2026, days with classes) |
-| Recommended plan | A 40 · B 55 · C 194 |
-| Plan B folded into plan A (identical committed rows) | 131 |
+| Recommended plan | A 42 · B 50 · C 197 |
+| Plan B folded into plan A (identical committed rows) | 133 |
 | Top plan covers every hour | 287 of 289 |
 | Rank of the recommended plan | min 49.0 · median 94.75 · max 98.95 |
 | Planning time | 9.6 ms per absence (wall-clock) |

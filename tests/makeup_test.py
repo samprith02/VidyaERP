@@ -360,6 +360,84 @@ check("8c standing windows are exactly the seeded ones again",
       [tuple(r) for r in con.execute("SELECT * FROM faculty_availability ORDER BY id")] == seeded,
       str([tuple(r) for r in con.execute("SELECT faculty, day, reason, status FROM faculty_availability")]))
 
+# ------------------------------- 9 · activity hours: a substitute, or released (#130)
+print("\n9 · an absent teacher's activity hours are supervised or released, never made up (#130)")
+print("-" * 78)
+# Defect: plan C booked "Make-up for ACT-PT missed on Mon P6", holding a teacher,
+# a room and the class for a Saturday hour. The owner's decision: substitute only.
+ACT = {r["subject"] for r in rows(con, "SELECT DISTINCT subject FROM timetable WHERE kind='A'")}
+sweep = []
+for d in (MON + dt.timedelta(days=i) for i in range(6)):
+    for r in rows(con, "SELECT DISTINCT faculty FROM timetable WHERE day=? AND faculty IS NOT NULL "
+                       "ORDER BY faculty", (day_of(d),)):
+        f, ps = plans_for(r["faculty"], d)
+        if ps:
+            sweep.append((f, d, ps))
+act_legs = [l for _f, _d, ps in sweep for p in ps for l in p["legs"] if l["subject"] in ACT]
+check("9a no activity hour is ever swapped or made up, in any plan of any absence",
+      len(act_legs) > 100 and all(l["action"] in ("SUBSTITUTE", "RELEASED") and not l.get("makeup")
+                                  for l in act_legs),
+      f"{len(act_legs)} activity legs; " + str(sorted({l['action'] for l in act_legs})))
+sig = lambda p: [(l["slot_id"], l["action"], l.get("to_id")) for l in p["legs"] if l["subject"] in ACT]
+check("9b an absence's activity hours are identical in every plan, so they cannot pick the winner",
+      all(sig(p) == sig(ps[0]) for _f, _d, ps in sweep for p in ps))
+only = [(f, d, ps) for f, d, ps in sweep if all(l["subject"] in ACT for l in ps[0]["legs"])]
+check("9c an absence of only activity hours is one card, and it says B and C would commit the same",
+      len(only) >= 5 and all(len(ps) == 1 and ps[0]["also_commits"] == ["B", "C"] for _f, _d, ps in only),
+      f"{len(only)} such absences; " + str([(f['id'], [p['code'] for p in ps]) for f, _d, ps in only
+                                            if len(ps) != 1][:3]))
+check("9d every card with an activity hour says how activities are handled",
+      all("never swapped or made up" in p["summary"] for _f, _d, ps in sweep for p in ps
+          if any(l["subject"] in ACT for l in p["legs"])))
+check("9e no card claims 'zero substitution' or 'no extra hour for anyone' while it assigns a substitute",
+      not [p["code"] for _f, _d, ps in sweep for p in ps
+           if any(l["action"] == "SUBSTITUTE" for l in p["legs"])
+           and {"Zero substitution burden", "No extra teaching hour for anyone — the partner's class only moves"}
+           & set(p["pros"])])
+
+
+class NobodyFree(SubstitutionAgent):
+    """Constructed: the seed always has someone free to supervise an activity,
+    so the released path is exercised by taking every candidate away."""
+    def rank_candidates(self, con, slot, date_iso, already_used):
+        return [] if slot["subject"] in ACT else super().rank_candidates(con, slot, date_iso, already_used)
+
+
+f, d, _ps = next((f, d, ps) for f, d, ps in sweep
+                 if any(l["subject"] in ACT for l in ps[0]["legs"])
+                 and any(l["subject"] not in ACT for l in ps[0]["legs"]))
+nf = NobodyFree()
+pc = next(p for p in nf.build_plans(con, f, d, T())[0] if p["code"] == "C")
+rel = [l for l in pc["legs"] if l["subject"] in ACT]
+check("9f with nobody free, an activity hour is RELEASED, never a make-up",
+      rel and all(l["action"] == "RELEASED" and not l.get("to_id") and not l.get("makeup") for l in rel),
+      str([(l["subject"], l["action"]) for l in rel]))
+nf.apply_plan(con, pc, f, d)
+v = nf.verify_plan(con, pc["id"], d.isoformat(), nf.last_commit)
+ids = [sid for l in rel for sid in l["slot_ids"]]
+ov = rows(con, f"SELECT * FROM overrides WHERE plan_ref=? AND slot_id IN ({','.join('?' * len(ids))})",
+          (pc["id"], *ids))
+check("9g ...and is recorded as released: a VACATED row per period, nobody assigned",
+      len(ov) == len(ids) and all(o["action"] == "VACATED" and o["new_faculty"] is None for o in ov),
+      str([(o["action"], o["new_faculty"]) for o in ov]))
+check("9h ...with no make-up booked for it, while the class hours keep theirs",
+      not [m for m in booked(pc["id"]) if m["subject"] in ACT]
+      and len(booked(pc["id"])) == sum(len(l["makeup"]["periods"]) for l in pc["legs"] if l.get("makeup")),
+      str([(m["subject"], m["period"]) for m in booked(pc["id"])]))
+check("9i the re-read finds the commit sound", v["ok"], str(v["problems"]))
+r0 = one(con, "SELECT * FROM timetable WHERE id=?", (ids[0],))
+cell = TimetableAgent().class_grid(con, r0["dept"], r0["sem"], r0["section"], d.isoformat())["cells"][
+    f"{r0['day']}-{r0['period']}"]
+check("9j the day's grid shows the activity hour released",
+      ((cell.get("override") or {}).get("released")) is True, str(cell.get("override")))
+from agents import NotifyAgent                                         # noqa: E402
+body = " ".join(m["body"] for m in NotifyAgent().draft_absence(con, f, d, pc))
+check("9k the class is told it is released and not made up",
+      all(f"P{l['period']} {l['subject']} released (not made up)" in body for l in rel), body[:200])
+sub.revert(con, pc["id"])
+check("9l undo clears it", not rows(con, "SELECT 1 FROM overrides WHERE plan_ref=? AND status='Applied'",
+                                     (pc["id"],)) and not booked(pc["id"]))
+
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")
 for f in FAILED:

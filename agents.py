@@ -592,7 +592,7 @@ class SubstitutionAgent:
             else:
                 parts.append(arrangement(0.0, 0.0, 0.0, 0.0))
 
-        if not parts:                                     # UNCOVERED, or nobody found
+        if not parts:                     # UNCOVERED, a RELEASED activity (#130), or nobody found
             parts.append(arrangement(0.0, 0.0, 0.0, 0.0))
 
         mean = lambda k: sum(p[k] for p in parts) / len(parts)
@@ -659,9 +659,49 @@ class SubstitutionAgent:
         if not affected:
             return None, affected
 
-        # ---------------- Plan A : competency-matched substitution
-        used, legs_a = {}, []
+        # ---------------- Activity hours (#130): a substitute, or released
+        # Placement training, a mini-project, mentoring, remedial classes: a free
+        # teacher supervises the hour, or it is released. Never swapped and never
+        # made up - a make-up hour is for a lecture or a lab, and booking one for
+        # an activity held a teacher, a room and the class for nothing. Decided
+        # ONCE and identical in every plan, so it cannot change which plan wins;
+        # the plans differ only in how they cover the class hours.
+        acts, used_act = {}, {}
         for s in affected:
+            if (s.get("kind") or "T") != "A":
+                continue
+            cands = self.rank_candidates(con, s, date_iso, used_act)
+            top = cands[0] if cands else None
+            if top:
+                used_act[top["id"]] = used_act.get(top["id"], 0) + 1
+            acts[s["id"]] = {
+                "slot_id": s["id"], "slot_ids": s["slot_ids"], "periods": s["periods"],
+                "period": s["period"], "time": _span(s["periods"]),
+                "dept": s["dept"], "sem": s["sem"], "day": day,
+                "class": f"{s['dept']}-{s['sem']}{s['section']}", "batch": s.get("batch"), "subject": s["subject"],
+                "subject_name": subj_name(con, s["subject"]), "room": s["room"], "activity": True,
+                "action": "SUBSTITUTE" if top else "RELEASED",
+                "to": top["name"] if top else "— released, nobody free to supervise —",
+                "to_id": top["id"] if top else None,
+                "why": (f"activity hour, supervised by a free teacher ({'; '.join(top['why'][:2])}); "
+                        f"activities are never swapped or made up" if top else
+                        "activity hour, no free teacher to supervise it: released, not made up"),
+                "alts": [f"{c['name']} ({c['score']})" for c in cands[1:4]],
+                "authenticity": top["authenticity"] if top else 0.0,
+                "score": top["score"] if top else 0}
+        n_act = len(acts)
+        n_cls = len(affected) - n_act
+        act_note = (f" {n_act} activity hour(s) are the same in every plan: "
+                    f"{sum(1 for a in acts.values() if a['to_id'])} supervised by a free teacher, "
+                    f"{sum(1 for a in acts.values() if not a['to_id'])} released; "
+                    f"activities are never swapped or made up." if n_act else "")
+
+        # ---------------- Plan A : competency-matched substitution
+        used, legs_a = dict(used_act), []
+        for s in affected:
+            if s["id"] in acts:
+                legs_a.append(dict(acts[s["id"]]))
+                continue
             cands = self.rank_candidates(con, s, date_iso, used)
             top = cands[0] if cands else None
             if top:
@@ -689,8 +729,11 @@ class SubstitutionAgent:
         # A's, which scored B's fallback substitutes as if A had already been
         # applied (-9 per assignment) — but the plans are alternatives and only
         # one is ever committed, so that understated B's confidence against A's.
-        legs_b, swaps, used_b, held_b = [], 0, {}, []
+        legs_b, swaps, used_b, held_b = [], 0, dict(used_act), []
         for s in affected:
+            if s["id"] in acts:
+                legs_b.append(dict(acts[s["id"]]))
+                continue
             sw = self.find_swap(con, s, date_iso)
             if sw:
                 swaps += 1
@@ -731,6 +774,9 @@ class SubstitutionAgent:
         # ---------------- Plan C : compact + makeup
         legs_c, held_c = [], []
         for s in affected:
+            if s["id"] in acts:
+                legs_c.append(dict(acts[s["id"]]))
+                continue
             mk = self.find_makeup(con, s, date, held=held_c)
             legs_c.append({
                 "slot_id": s["id"], "slot_ids": s["slot_ids"], "periods": s["periods"],
@@ -749,6 +795,8 @@ class SubstitutionAgent:
         covered_a = sum(1 for l in legs_a if l["to_id"])
         made_up_b = sum(1 for l in legs_b if l["action"] == "SWAP" and l.get("makeup"))
         made_up_c = sum(1 for l in legs_c if l.get("makeup"))
+        subs_b = any(l["action"] == "SUBSTITUTE" for l in legs_b)
+        subs_c = any(l["action"] == "SUBSTITUTE" for l in legs_c)
         plans = [
             {"id": f"A-{pid}", "code": "A", "title": "Competency-matched substitution",
              "summary": f"{covered_a} of {len(legs_a)} periods covered by free, subject-competent "
@@ -759,14 +807,15 @@ class SubstitutionAgent:
                       "Subject depth varies — a stand-in is not the subject teacher"],
              "legs": legs_a},
             {"id": f"B-{pid}", "code": "B", "title": "Swap-forward re-sequencing",
-             "summary": (f"{swaps} of {len(legs_b)} block(s) re-sequenced: a later class of the same "
+             "summary": (f"{swaps} of {n_cls} class block(s) re-sequenced: a later class of the same "
                          f"batch moves up with its own teacher, and the absent teacher's subject "
                          f"takes the vacated slot for a make-up ({made_up_b} scheduled)."
                          if swaps else
                          f"No period could be re-sequenced — every later slot is a lab block or its "
-                         f"teacher is unavailable. All {len(legs_b)} block(s) fall back to "
+                         f"teacher is unavailable. All {n_cls} class block(s) fall back to "
                          f"substitution."),
-             "pros": ["No extra teaching hour for anyone — the partner's class only moves",
+             "pros": [("A swap adds no teaching hour — the partner's class only moves" if subs_b else
+                       "No extra teaching hour for anyone — the partner's class only moves"),
                       "Every delivered hour is taught by its own subject teacher",
                       "The batch's day still has no free hole"],
              "cons": ["The student timetable changes for the day — needs notice",
@@ -774,15 +823,17 @@ class SubstitutionAgent:
              "legs": legs_b},
             {"id": f"C-{pid}", "code": "C", "title": "Release + guaranteed make-up",
              "summary": f"Periods released to supervised self-study; the same faculty conducts the "
-                        f"make-up in the earliest mutually-free slot ({made_up_c} of {len(legs_c)} "
+                        f"make-up in the earliest mutually-free slot ({made_up_c} of {n_cls} "
                         f"scheduled).",
-             "pros": ["The original faculty retains the topic", "Zero substitution burden"],
+             "pros": ["The original faculty retains the topic",
+                      "No substitute for any class hour" if subs_c else "Zero substitution burden"],
              "cons": ["Contact hours deferred — CIE calendar risk if repeated",
                       "Requires library/proctor booking"],
              "legs": legs_c},
         ]
         # ---- every number on a plan card is measured from this instance ----
         for p in plans:
+            p["summary"] += act_note
             p.update(self.score_plan(con, p["legs"], faculty, date))
             p["weights"] = dict(RANK_WEIGHTS)
             p["incomplete"] = p["coverage"] < 100
@@ -878,6 +929,14 @@ class SubstitutionAgent:
                 for sid in slots:
                     writes.append((sid, "MAKEUP", leg["to_id"], "Central Library", None,
                                    "Released; make-up " + mk_label(leg.get("makeup"))))
+            elif leg["action"] == "RELEASED":
+                # An activity hour with nobody free to supervise it (#130): released,
+                # never made up, and recorded so the day's grid and the absent
+                # teacher's desk show it released rather than still theirs.
+                for sid in slots:
+                    writes.append((sid, "VACATED", None, leg.get("room"), None,
+                                   f"Released — {leg['subject']} is an activity hour and nobody was free to "
+                                   f"supervise it; activities are not made up"))
             elif leg["to_id"]:
                 for sid in slots:
                     writes.append((sid, leg["action"], leg["to_id"], leg.get("room"), None,
@@ -1227,6 +1286,8 @@ class NotifyAgent:
                 elif l["action"] == "SWAP":
                     lines.append(f"P{l['period']} re-sequenced ({l['to']}); {l['subject']} made up "
                                  + mk_label(l.get("makeup")))
+                elif l["action"] == "RELEASED":
+                    lines.append(f"P{l['period']} {l['subject']} released (not made up)")
                 else:
                     lines.append(f"P{l['period']} released; make-up " + mk_label(l.get("makeup")))
             msgs.append({"audience": f"Students · {c}", "channel": "App push + class WhatsApp",
