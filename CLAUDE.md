@@ -321,7 +321,11 @@ ships a timetable back.
 - **`CSE-7A` is semester 7 (#98).** `extract_sem` read only "sem 7" / "7th sem", so the class
   name the console itself prints gave `None`, two handlers defaulted to 5, and "Rebuild the
   timetable for CSE-7A" staged CSE-5A. `nlu.CLASS_RX` reads `CSE-7A`, `CSE 7A`, `cse7a`;
-  a bare "CSE 7" is not a class.
+  a bare "CSE 7" is not a class. The tools read it too (#129): a model passed `dept='ECE-3B'`
+  and got "No timetable for ECE-3B-5A". `tools.class_args` splits a whole class (or a
+  `section='3B'`) for every tool that takes dept + sem + section (`tools.CLASS_TOOLS`), in
+  `execute` BEFORE the access policy, so a rule compares a department with a department; a part
+  named two ways is refused, never picked. `get_timetable` has no default class any more.
 - **A request that names nothing real is refused, never "done" as an empty set (#89, #90).**
   `solver.resolve_class` is the one answer to "does this section run?" (`solver.classes`, the
   list `build_input` itself uses), and both `tools._gen_scope` and `app._gen_args` go through it.
@@ -425,7 +429,7 @@ python tests/cie_test.py       # 59 assertions, no server, no API cost
 python tests/accreditation_test.py # 28 assertions, no server, no API cost
 python tests/risk_test.py      # 17 assertions, no server, no API cost
 python tests/notify_test.py    # 50 assertions, no server, no API cost (a stub gateway on loopback)
-python tests/cohort_test.py    # 40 assertions, no server, no API cost
+python tests/cohort_test.py    # 55 assertions, no server, no API cost
 python tests/dashboard_test.py # 33 assertions, no server, no API cost (7a-7d need node)
 python tests/calendar_test.py  # 127 assertions, no server, no API cost (7f-7k need node)
 python tests/teaching_test.py  # 84 assertions, no server, no API cost

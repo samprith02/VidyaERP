@@ -51,6 +51,37 @@ def _date(s):
         return d or TODAY
 
 
+# A class named the way the console prints it: dept='ECE-3B', or section='3B'
+# beside sem=3 (#129). Read before the access policy, so a rule compares a
+# department with a department; a part named twice, differently, is refused.
+WHOLE_CLASS = re.compile(r"\s*([A-Za-z]{2,5})\s*-?\s*([1-9])\s*([A-Za-z])\s*")
+SEM_SECTION = re.compile(r"\s*([1-9])\s*-?\s*([A-Za-z])\s*")
+
+
+def class_args(a):
+    a = dict(a or {})
+    whole = WHOLE_CLASS.fullmatch(str(a.get("dept") or ""))
+    part = SEM_SECTION.fullmatch(str(a.get("section") or ""))
+    if not (whole or part):
+        return a, None                       # nothing written as one token: untouched
+    seen = {k: {str(a[k]).strip().upper()} for k in ("dept", "sem", "section") if a.get(k) not in (None, "")}
+    if whole:
+        seen["dept"] = {whole[1].upper()}
+        seen.setdefault("sem", set()).add(whole[2])
+        seen.setdefault("section", set()).add(whole[3].upper())
+    if part:
+        seen["section"] = (seen["section"] - {str(a["section"]).strip().upper()}) | {part[2].upper()}
+        seen.setdefault("sem", set()).add(part[1])
+    clash = {k: sorted(v) for k, v in seen.items() if len(v) > 1}
+    if clash:
+        return None, ("The class was named two ways (" +
+                      "; ".join(f"{k} {' or '.join(v)}" for k, v in clash.items()) +
+                      "). Name it once, as dept='ECE', sem=3, section='B' or as dept='ECE-3B'.")
+    for k, (v,) in seen.items():
+        a[k] = int(v) if k == "sem" and v.isdigit() else v
+    return a, None
+
+
 def _find_faculty(con, name):
     fac = rows(con, "SELECT id,name,dept,designation,expertise,max_load,email,phone FROM faculty")
     f, score = nlu.match_faculty(name or "", fac)
@@ -92,9 +123,19 @@ def t_institution_overview(con, S, U, **kw):
             "trace": [("AnalyticsAgent", "kpi_rollup", "students · faculty · finance · approvals")]}
 
 
-def t_get_timetable(con, S, U, dept="CSE", sem=5, section="A", date=None, **kw):
+def t_get_timetable(con, S, U, dept=None, sem=None, section=None, date=None, **kw):
     d = _date(date)
-    g = TimetableAgent().class_grid(con, dept.upper(), int(sem), section.upper(), d.isoformat())
+    # No default class: an omitted part was CSE / 5 / A, so "ECE" alone showed
+    # ECE-5A and a refusal named a class nobody asked for (#129).
+    if not (dept and sem and section):
+        return {"data": {"error": "Which class? Name the department, semester and section, "
+                                  "as dept='ECE', sem=3, section='B' or as dept='ECE-3B'."},
+                "blocks": [], "trace": []}
+    cls, why = solver.resolve_class(con, dept, sem, section, why_not="so it has no timetable")
+    if why:
+        return {"data": {"error": why}, "blocks": [], "trace": []}
+    dept, sem, section = cls
+    g = TimetableAgent().class_grid(con, dept, sem, section, d.isoformat())
     if not g["cells"]:
         return {"data": {"error": f"No timetable for {dept}-{sem}{section}."}, "blocks": [], "trace": []}
     compact = {}
@@ -923,6 +964,9 @@ REGISTRY += teaching.REGISTRY
 REGISTRY += placement.REGISTRY
 
 FUNCS = {name: fn for fn, name, _d, _s in REGISTRY}
+# Every tool that takes a class as dept + sem + section reads it through class_args (#129).
+CLASS_TOOLS = {name for _f, name, _d, sch in REGISTRY
+               if {"dept", "sem", "section"} <= set((sch or {}).get("properties", {}))}
 
 # Which agent owns each tool - so a failed call can be pinned on the agent that
 # failed, rather than on the bus that carried it. The console's agent mesh
@@ -976,6 +1020,13 @@ def execute(con, S, U, name, args=None):
     fn = FUNCS.get(name)
     if fn is None:
         return {"data": {"error": f"unknown tool {name}"}, "blocks": [], "trace": []}
+    if name in CLASS_TOOLS:
+        try:
+            args, why = class_args(args)
+        except Exception as e:                       # never kill the turn over a class name
+            args, why = None, f"could not read the class: {type(e).__name__}"
+        if why:
+            return {"data": {"error": why}, "blocks": [], "trace": []}
     # WHO may do this, on WHOSE data (#27). The web always puts the signed-in
     # person on the session; no principal means an operator (MCP over stdio,
     # the suites, internal code) and is unrestricted. A refusal is the guard

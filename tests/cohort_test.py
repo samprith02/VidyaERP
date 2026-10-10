@@ -246,6 +246,45 @@ out, text = turn("Show CSE 7A timetable")
 check("5c ...and 'Show CSE 7A timetable' shows semester 7", "Semester 7" in text and "Semester 5" not in text,
       text[:120])
 
+# ============================================ 6 · a class passed to a tool whole (#129)
+print("\n6 · a class passed to a tool as one token (#129)")
+print("-" * 78)
+# Defect: dept='ECE-3B' answered "No timetable for ECE-3B-5A" - the token was
+# taken as a department and the defaults sem=5, section='A' were glued on.
+grid = call("get_timetable", {"dept": "ECE", "sem": 3, "section": "B"})["data"]
+for a in ({"dept": "ECE-3B"}, {"dept": "ece 3b"}, {"dept": "ECE", "sem": 3, "section": "3B"},
+          {"dept": "ECE-3B", "sem": 3, "section": "B"}):
+    r = call("get_timetable", a)["data"]
+    check(f"6a get_timetable {a} is ECE-3B's grid", r.get("class") == "ECE-3B" and r["week"] == grid["week"],
+          str(r)[:120])
+r = err(call("get_timetable", {"dept": "ECE-3B", "sem": 5}))
+check("6b a class named two ways is refused, naming both, never guessed", "3 or 5" in r and "named two ways" in r, r)
+for a, real in (({"dept": "ECE-3Z"}, "ECE-3B"), ({"dept": "EEE-3A"}, "CSE")):
+    r = err(call("get_timetable", a))
+    check(f"6c {a['dept']} is refused with the sections that do run, not a class nobody asked for",
+          a["dept"] in r and real in r and "-5A" not in r.split(".")[0], r)
+for a in ({"dept": "ECE"}, {}):
+    r = call("get_timetable", a)["data"]
+    check(f"6d {a or 'no class'} asks which class rather than showing CSE-5A or ECE-5A",
+          "class" not in r and "Which class" in err({"data": r}), str(r)[:120])
+r = call("class_strength", {"dept": "CSE-7A"})["data"]
+check("6e every class tool reads it: class_strength dept='CSE-7A' counts CSE-7A",
+      r.get("scope") == "CSE-7A" and r.get("students") == count("dept='CSE' AND sem=7 AND section='A'"),
+      str(r)[:160])
+ECE_STU = one(con, "SELECT * FROM students WHERE dept='ECE' AND sem=3 AND section='B' ORDER BY usn")
+ECE_HOD = one(con, "SELECT * FROM faculty WHERE is_hod=1 AND dept='ECE'")
+r = call("get_timetable", {"dept": "ECE-3B"}, ECE_STU["usn"])["data"]
+check("6f a student's own class written whole passes the policy (read before it, not after)",
+      r.get("class") == "ECE-3B", str(r)[:120])
+check("6g ...and another class written whole is still refused",
+      "DENIED" in call("get_timetable", {"dept": "ECE-3A"}, ECE_STU["usn"])["data"])
+r = call("get_timetable", {"dept": "ECE-3B"}, ECE_HOD["id"])["data"]
+check("6h an HOD's own department's class written whole is shown", r.get("class") == "ECE-3B", str(r)[:120])
+check("6i ...and another department's is still refused",
+      "DENIED" in call("get_timetable", {"dept": "CSE-7A"}, ECE_HOD["id"])["data"])
+check("6j a part not written as a token is passed through untouched",
+      tools.class_args({"dept": "cse", "sem": "five"}) == ({"dept": "cse", "sem": "five"}, None))
+
 print("-" * 78)
 print(f"{PASSED} passed, {len(FAILED)} failed")
 for f in FAILED:
